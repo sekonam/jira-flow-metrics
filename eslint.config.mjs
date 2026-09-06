@@ -18,11 +18,11 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        // Root-level tooling configs (vitest.config.ts) belong to no package
-        // tsconfig; let the parser fall back to a default project for them.
-        projectService: {
-          allowDefaultProject: ['*.config.ts'],
-        },
+        // Explicit project list rather than `projectService: true`: package
+        // tsconfigs cover `src` only (so the build does not emit test files),
+        // while `tsconfig.tests.json` covers the test files and the root
+        // tooling configs. Both must be visible to the type-aware rules.
+        project: ['./packages/*/tsconfig.json', './apps/*/tsconfig.json', './tsconfig.tests.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },

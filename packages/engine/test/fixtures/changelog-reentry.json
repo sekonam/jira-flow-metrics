@@ -1,0 +1,107 @@
+{
+  "_comment": "Recorded shape of GET /rest/api/3/issue/{id}/changelog. Timestamps and ids were rewritten to a deterministic scenario; the structure, field names and Jira's colonless timezone offsets are as returned by Jira Cloud REST v3. This issue re-enters 'In Progress' after being blocked, which is the case Jira's own Control Chart cannot report.",
+  "startAt": 0,
+  "maxResults": 100,
+  "total": 5,
+  "isLast": true,
+  "values": [
+    {
+      "id": "10001",
+      "created": "2026-03-02T09:00:00.000+0000",
+      "author": { "accountId": "acc-anna", "displayName": "Anna Weber", "active": true },
+      "items": [
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "10000",
+          "fromString": "To Do",
+          "to": "3",
+          "toString": "In Progress"
+        }
+      ]
+    },
+    {
+      "id": "10002",
+      "created": "2026-03-02T13:00:00.000+0000",
+      "author": { "accountId": "acc-anna", "displayName": "Anna Weber", "active": true },
+      "items": [
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "3",
+          "fromString": "In Progress",
+          "to": "10100",
+          "toString": "Blocked"
+        },
+        {
+          "field": "assignee",
+          "fieldtype": "jira",
+          "fieldId": "assignee",
+          "from": "acc-anna",
+          "fromString": "Anna Weber",
+          "to": "acc-ben",
+          "toString": "Ben Fischer"
+        }
+      ]
+    },
+    {
+      "id": "10003",
+      "created": "2026-03-04T09:00:00.000+0000",
+      "author": { "accountId": "acc-ben", "displayName": "Ben Fischer", "active": true },
+      "items": [
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "10100",
+          "fromString": "Blocked",
+          "to": "3",
+          "toString": "In Progress"
+        }
+      ]
+    },
+    {
+      "id": "10004",
+      "created": "2026-03-04T17:00:00.000+0000",
+      "author": { "accountId": "acc-ben", "displayName": "Ben Fischer", "active": true },
+      "items": [
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "3",
+          "fromString": "In Progress",
+          "to": "10200",
+          "toString": "In Review"
+        }
+      ]
+    },
+    {
+      "id": "10005",
+      "created": "2026-03-05T11:30:00.000+0000",
+      "author": { "accountId": "acc-cara", "displayName": "Cara Nowak", "active": true },
+      "items": [
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "10200",
+          "fromString": "In Review",
+          "to": "10001",
+          "toString": "Done"
+        },
+        {
+          "field": "resolution",
+          "fieldtype": "jira",
+          "fieldId": "resolution",
+          "from": null,
+          "fromString": null,
+          "to": "10000",
+          "toString": "Done"
+        }
+      ]
+    }
+  ]
+}

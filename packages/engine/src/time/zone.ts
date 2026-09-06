@@ -168,18 +168,18 @@ export function zonedToInstant(
   timeZone: string,
 ): Millis {
   const utcGuess = utcFromFields(year, month, day, hour, minute, second);
-  const firstOffset = offsetMsAt(utcGuess, timeZone);
-  const firstGuess = utcGuess - firstOffset;
-  const secondOffset = offsetMsAt(firstGuess, timeZone);
-  if (secondOffset === firstOffset) return firstGuess;
-  const secondGuess = utcGuess - secondOffset;
-  // Prefer the earlier instant that actually round-trips; this is what makes
-  // fall-back ambiguity resolve to the first occurrence.
-  const candidates = [firstGuess, secondGuess].sort((a, b) => a - b);
-  for (const candidate of candidates) {
-    if (offsetMsAt(candidate, timeZone) === utcGuess - candidate) return candidate;
-  }
-  return secondGuess;
+  const DAY = 86_400_000;
+  // Probe the offset a day either side of the target. For a normal local time
+  // both probes agree; around a transition they bracket the two candidate
+  // offsets, which is what makes the ambiguous and nonexistent cases decidable.
+  const offsetBefore = offsetMsAt(utcGuess - DAY, timeZone);
+  const offsetAfter = offsetMsAt(utcGuess + DAY, timeZone);
+  const candidates = [utcGuess - offsetBefore, utcGuess - offsetAfter];
+  const valid = candidates.filter((c) => offsetMsAt(c, timeZone) === utcGuess - c);
+  if (valid.length > 0) return Math.min(...valid);
+  // Nonexistent local time: no candidate round-trips. Take the later instant,
+  // which shifts the reading forward past the gap (02:30 reads as 03:30).
+  return Math.max(...candidates);
 }
 
 /** Start of the local day containing `instant`, as an instant. */
