@@ -21,9 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `version:` input on purpose. pnpm/action-setup reads the
+      # `packageManager` field from package.json, and supplying both is an
+      # error when they could disagree. One source of truth.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.3
 
       - uses: actions/setup-node@v4
         with:
@@ -57,13 +58,22 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # No `version:` input on purpose. pnpm/action-setup reads the
+      # `packageManager` field from package.json, and supplying both is an
+      # error when they could disagree. One source of truth.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.3
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: pnpm audit (high and above)
+
+      # Two gates with different thresholds, because they cover different risk.
+      # Production dependencies are what ends up in the Forge bundle a customer
+      # runs, so they are held to `moderate`. The dev tree (vitest, the Forge
+      # CLI's tunnel server) never ships, so it is held to `high`.
+      - name: pnpm audit — production dependencies (moderate and above)
+        run: pnpm audit --prod --audit-level moderate
+
+      - name: pnpm audit — whole tree (high and above)
         run: pnpm audit --audit-level high
