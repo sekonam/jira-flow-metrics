@@ -1,0 +1,356 @@
+import {
+  CREATE_STATEMENTS,
+  DELETE_ISSUE_STATEMENTS,
+  ESTIMATED_ROW_BYTES,
+  type HistoryQuery,
+  type HistoryRecord,
+  type IndexStateRow,
+  type IssueMetaRow,
+  type MetricsStore,
+  type StatusAggregateRow,
+  type StatusDurationQuery,
+  type StatusId,
+  type StatusMetaRow,
+  type StatusNameHistoryRow,
+  type WorklogQuery,
+  type WorklogRecord,
+} from '@jfm/engine';
+import type { SqlExecutor } from './executor.js';
+import {
+  historyFromRow,
+  historyToParams,
+  indexStateFromRow,
+  indexStateToParams,
+  issueMetaFromRow,
+  issueMetaToParams,
+  placeholders,
+  statusAggregateFromRow,
+  statusAggregateToParams,
+  statusMetaFromRow,
+  statusNameHistoryFromRow,
+  toNumber,
+  worklogFromRow,
+  worklogToParams,
+} from './rows.js';
+
+/**
+ * `MetricsStore` on Forge SQL.
+ *
+ * ⚠️ **This adapter has never executed against Forge SQL.** No Atlassian
+ * developer account exists in this environment, so it cannot be. What *is*
+ * verified is the statement text and parameter binding, which the tests assert
+ * exactly, and the row mapping, which is pure. Treat the first `forge tunnel`
+ * run as the acceptance test for this file.
+ *
+ * Design notes that matter for cost, since Forge is consumption-priced:
+ *
+ * - **Multi-row `INSERT … ON DUPLICATE KEY UPDATE`.** One statement per batch
+ *   rather than one per row; a backfill slice of 50 issues is a handful of
+ *   statements, not several hundred.
+ * - **Delete-then-insert per issue**, so re-processing is idempotent. This is
+ *   what lets the backfill be at-least-once and still correct.
+ * - **Every query is bound**, never interpolated. The only place a value is
+ *   ever put into statement text is the placeholder count.
+ */
+export class SqlMetricsStore implements MetricsStore {
+  constructor(private readonly sql: SqlExecutor) {}
+
+  async migrate(): Promise<void> {
+    for (const statement of CREATE_STATEMENTS) {
+      await this.sql.execute(statement);
+    }
+  }
+
+  putIssueAggregate(meta: IssueMetaRow, rows: readonly StatusAggregateRow[]): Promise<void> {
+    return this.putIssueAggregates([{ meta, rows }]);
+  }
+
+  async putIssueAggregates(
+    batch: readonly { meta: IssueMetaRow; rows: readonly StatusAggregateRow[] }[],
+  ): Promise<void> {
+    if (batch.length === 0) return;
+
+    const metaValues = batch.map(() => `(${placeholders(13)})`).join(', ');
+    await this.sql.execute(
+      `INSERT INTO issue_meta (
+         issue_id, issue_key, project_id, issue_type_id, priority_id,
+         assignee_account_id, current_status_id, created_at, resolved_at, due_at,
+         history_through_at, truncated, updated_at
+       ) VALUES ${metaValues}
+       ON DUPLICATE KEY UPDATE
+         issue_key = VALUES(issue_key),
+         project_id = VALUES(project_id),
+         issue_type_id = VALUES(issue_type_id),
+         priority_id = VALUES(priority_id),
+         assignee_account_id = VALUES(assignee_account_id),
+         current_status_id = VALUES(current_status_id),
+         created_at = VALUES(created_at),
+         resolved_at = VALUES(resolved_at),
+         due_at = VALUES(due_at),
+         history_through_at = VALUES(history_through_at),
+         truncated = VALUES(truncated),
+         updated_at = VALUES(updated_at)`,
+      batch.flatMap(({ meta }) => issueMetaToParams(meta)),
+    );
+
+    // Replace, never merge: an issue's aggregate is always recomputed from its
+    // whole changelog, so stale rows for statuses it no longer touches must go.
+    const issueIds = batch.map(({ meta }) => meta.issueId);
+    await this.sql.execute(
+      `DELETE FROM issue_status_agg WHERE issue_id IN (${placeholders(issueIds.length)})`,
+      issueIds,
+    );
+
+    const aggregateRows = batch.flatMap(({ meta, rows }) =>
+      rows.map((row) => statusAggregateToParams(row, meta.projectId)),
+    );
+    if (aggregateRows.length > 0) {
+      const values = aggregateRows.map(() => `(${placeholders(9)})`).join(', ');
+      await this.sql.execute(
+        `INSERT INTO issue_status_agg (
+           issue_id, status_id, project_id, elapsed_ms, business_ms,
+           entries, last_entered_at, last_exited_at, updated_at
+         ) VALUES ${values}`,
+        aggregateRows.flat(),
+      );
+    }
+  }
+
+  async deleteIssue(issueId: string): Promise<void> {
+    for (const statement of DELETE_ISSUE_STATEMENTS) {
+      await this.sql.execute(statement, [issueId]);
+    }
+  }
+
+  async getIssueMeta(issueId: string): Promise<IssueMetaRow | null> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      'SELECT * FROM issue_meta WHERE issue_id = ?',
+      [issueId],
+    );
+    const row = rows[0];
+    return row === undefined ? null : issueMetaFromRow(row);
+  }
+
+  async queryIssueMeta(projectId: string, limit: number, offset: number): Promise<IssueMetaRow[]> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT * FROM issue_meta WHERE project_id = ?
+       ORDER BY created_at ASC, issue_id ASC LIMIT ? OFFSET ?`,
+      [projectId, clampLimit(limit), clampOffset(offset)],
+    );
+    return rows.map(issueMetaFromRow);
+  }
+
+  async queryStatusDurations(query: StatusDurationQuery): Promise<StatusAggregateRow[]> {
+    const clauses = ['project_id = ?'];
+    const params: unknown[] = [query.projectId];
+    if (query.issueIds !== undefined) {
+      clauses.push(`issue_id IN (${placeholders(query.issueIds.length)})`);
+      params.push(...query.issueIds);
+    }
+    if (query.statusIds !== undefined) {
+      clauses.push(`status_id IN (${placeholders(query.statusIds.length)})`);
+      params.push(...query.statusIds);
+    }
+    params.push(clampLimit(query.limit ?? 10_000), clampOffset(query.offset ?? 0));
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT * FROM issue_status_agg WHERE ${clauses.join(' AND ')}
+       ORDER BY issue_id ASC, status_id ASC LIMIT ? OFFSET ?`,
+      params,
+    );
+    return rows.map(statusAggregateFromRow);
+  }
+
+  async upsertStatusMeta(rows: readonly StatusMetaRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    const values = rows.map(() => `(${placeholders(5)})`).join(', ');
+    await this.sql.execute(
+      `INSERT INTO status_meta (status_id, name, category, first_seen_at, last_seen_at)
+       VALUES ${values}
+       ON DUPLICATE KEY UPDATE
+         name = VALUES(name),
+         category = VALUES(category),
+         first_seen_at = LEAST(first_seen_at, VALUES(first_seen_at)),
+         last_seen_at = GREATEST(last_seen_at, VALUES(last_seen_at))`,
+      rows.flatMap((r) => [r.statusId, r.name, r.category, r.firstSeenAt, r.lastSeenAt]),
+    );
+  }
+
+  async getStatusMeta(): Promise<StatusMetaRow[]> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      'SELECT * FROM status_meta ORDER BY status_id ASC',
+    );
+    return rows.map(statusMetaFromRow);
+  }
+
+  async recordStatusNames(rows: readonly StatusNameHistoryRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    const values = rows.map(() => `(${placeholders(4)})`).join(', ');
+    await this.sql.execute(
+      `INSERT INTO status_name_history (status_id, name, first_seen_at, last_seen_at)
+       VALUES ${values}
+       ON DUPLICATE KEY UPDATE
+         first_seen_at = LEAST(first_seen_at, VALUES(first_seen_at)),
+         last_seen_at = GREATEST(last_seen_at, VALUES(last_seen_at))`,
+      rows.flatMap((r) => [r.statusId, r.name, r.firstSeenAt, r.lastSeenAt]),
+    );
+  }
+
+  async getStatusNameHistory(statusId: StatusId): Promise<StatusNameHistoryRow[]> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT * FROM status_name_history WHERE status_id = ?
+       ORDER BY first_seen_at ASC, name ASC`,
+      [statusId],
+    );
+    return rows.map(statusNameHistoryFromRow);
+  }
+
+  async putWorklogs(issueId: string, records: readonly WorklogRecord[]): Promise<void> {
+    await this.sql.execute('DELETE FROM worklog WHERE issue_id = ?', [issueId]);
+    if (records.length === 0) return;
+    const values = records.map(() => `(${placeholders(10)})`).join(', ');
+    await this.sql.execute(
+      `INSERT INTO worklog (
+         worklog_id, issue_id, issue_key, project_id, author_account_id,
+         author_display_name, started_at, time_spent_ms, created_at, updated_at
+       ) VALUES ${values}`,
+      records.flatMap(worklogToParams),
+    );
+  }
+
+  async queryWorklogs(query: WorklogQuery): Promise<WorklogRecord[]> {
+    const clauses = ['project_id = ?'];
+    const params: unknown[] = [query.projectId];
+    if (query.from !== undefined) {
+      clauses.push('started_at >= ?');
+      params.push(query.from);
+    }
+    if (query.to !== undefined) {
+      clauses.push('started_at < ?');
+      params.push(query.to);
+    }
+    if (query.authorAccountIds !== undefined) {
+      clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
+      params.push(...query.authorAccountIds);
+    }
+    params.push(clampLimit(query.limit ?? 10_000), clampOffset(query.offset ?? 0));
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT * FROM worklog WHERE ${clauses.join(' AND ')}
+       ORDER BY started_at ASC, worklog_id ASC LIMIT ? OFFSET ?`,
+      params,
+    );
+    return rows.map(worklogFromRow);
+  }
+
+  async putHistory(issueId: string, records: readonly HistoryRecord[]): Promise<void> {
+    await this.sql.execute('DELETE FROM issue_history WHERE issue_id = ?', [issueId]);
+    if (records.length === 0) return;
+    const values = records.map(() => `(${placeholders(13)})`).join(', ');
+    await this.sql.execute(
+      `INSERT INTO issue_history (
+         change_id, issue_id, issue_key, project_id, changed_at,
+         author_account_id, author_display_name, field, field_label,
+         from_value, to_value, from_id, to_id
+       ) VALUES ${values}`,
+      records.flatMap(historyToParams),
+    );
+  }
+
+  async queryHistory(query: HistoryQuery): Promise<HistoryRecord[]> {
+    const clauses = ['project_id = ?'];
+    const params: unknown[] = [query.projectId];
+    if (query.from !== undefined) {
+      clauses.push('changed_at >= ?');
+      params.push(query.from);
+    }
+    if (query.to !== undefined) {
+      clauses.push('changed_at < ?');
+      params.push(query.to);
+    }
+    if (query.fields !== undefined) {
+      clauses.push(`field IN (${placeholders(query.fields.length)})`);
+      params.push(...query.fields.map((f) => f.toLowerCase()));
+    }
+    if (query.authorAccountIds !== undefined) {
+      clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
+      params.push(...query.authorAccountIds);
+    }
+    params.push(clampLimit(query.limit ?? 10_000), clampOffset(query.offset ?? 0));
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT * FROM issue_history WHERE ${clauses.join(' AND ')}
+       ORDER BY changed_at ASC, change_id ASC LIMIT ? OFFSET ?`,
+      params,
+    );
+    return rows.map(historyFromRow);
+  }
+
+  async getIndexState(projectId: string): Promise<IndexStateRow | null> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      'SELECT * FROM index_state WHERE project_id = ?',
+      [projectId],
+    );
+    const row = rows[0];
+    return row === undefined ? null : indexStateFromRow(row);
+  }
+
+  async putIndexState(row: IndexStateRow): Promise<void> {
+    await this.sql.execute(
+      `INSERT INTO index_state (
+         project_id, state, backfill_cursor, backfill_from, issues_processed,
+         issues_total, last_processed_at, last_error, started_at, updated_at
+       ) VALUES (${placeholders(10)})
+       ON DUPLICATE KEY UPDATE
+         state = VALUES(state),
+         backfill_cursor = VALUES(backfill_cursor),
+         backfill_from = VALUES(backfill_from),
+         issues_processed = VALUES(issues_processed),
+         issues_total = VALUES(issues_total),
+         last_processed_at = VALUES(last_processed_at),
+         last_error = VALUES(last_error),
+         started_at = VALUES(started_at),
+         updated_at = VALUES(updated_at)`,
+      indexStateToParams(row),
+    );
+  }
+
+  async listIndexStates(): Promise<IndexStateRow[]> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      'SELECT * FROM index_state ORDER BY project_id ASC',
+    );
+    return rows.map(indexStateFromRow);
+  }
+
+  /**
+   * Approximate stored bytes, from row counts times the per-row estimates in
+   * `@jfm/engine`'s schema module. It is an **estimate**, not a measurement of
+   * on-disk size, and the UI labels it as one.
+   */
+  async estimateBytes(): Promise<number> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT
+         (SELECT COUNT(*) FROM issue_meta)          AS issue_meta,
+         (SELECT COUNT(*) FROM issue_status_agg)    AS issue_status_agg,
+         (SELECT COUNT(*) FROM worklog)             AS worklog,
+         (SELECT COUNT(*) FROM issue_history)       AS issue_history,
+         (SELECT COUNT(*) FROM status_meta)         AS status_meta,
+         (SELECT COUNT(*) FROM status_name_history) AS status_name_history,
+         (SELECT COUNT(*) FROM index_state)         AS index_state,
+         (SELECT COUNT(*) FROM app_settings)        AS app_settings`,
+    );
+    const counts = rows[0];
+    if (counts === undefined) return 0;
+    let total = 0;
+    for (const [table, bytes] of Object.entries(ESTIMATED_ROW_BYTES)) {
+      total += toNumber(counts[table] ?? 0) * bytes;
+    }
+    return total;
+  }
+}
+
+/** Keep `LIMIT` inside sane bounds; an unbounded read is a cost incident. */
+function clampLimit(limit: number): number {
+  return Math.max(1, Math.min(10_000, Math.trunc(limit)));
+}
+
+function clampOffset(offset: number): number {
+  return Math.max(0, Math.trunc(offset));
+}

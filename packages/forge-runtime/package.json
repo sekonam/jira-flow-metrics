@@ -1,0 +1,42 @@
+{
+  "name": "@jfm/forge-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Forge platform adapters: Jira REST client, Forge SQL store, async-events scheduler and per-listing app wiring.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@jfm/engine": "workspace:*"
+  },
+  "peerDependencies": {
+    "@forge/api": "^8.0.0",
+    "@forge/events": "^3.0.0",
+    "@forge/sql": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@forge/api": {
+      "optional": true
+    },
+    "@forge/events": {
+      "optional": true
+    },
+    "@forge/sql": {
+      "optional": true
+    }
+  }
+}

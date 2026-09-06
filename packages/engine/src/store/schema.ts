@@ -125,6 +125,13 @@ export const CREATE_STATEMENTS: readonly string[] = [
      PRIMARY KEY (project_id)
    )`,
 
+  `CREATE TABLE IF NOT EXISTS app_settings (
+     scope_key  VARCHAR(64)   NOT NULL,
+     settings   TEXT          NOT NULL,
+     updated_at BIGINT        NOT NULL,
+     PRIMARY KEY (scope_key)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS schema_meta (
      id      TINYINT NOT NULL,
      version INT     NOT NULL,
@@ -153,4 +160,5 @@ export const ESTIMATED_ROW_BYTES = {
   status_meta: 80,
   status_name_history: 80,
   index_state: 120,
+  app_settings: 512,
 } as const;
