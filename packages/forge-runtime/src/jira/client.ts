@@ -45,11 +45,11 @@ export type JiraFetch = (
 ) => Promise<JiraResponseLike>;
 
 /**
- * Shape of `@forge/api`'s default export used here. Declared structurally so
- * this package builds without `@forge/api` present.
+ * Shape of a `@forge/api` requester (`api.asApp()` / `api.asUser()`).
+ * Declared structurally so this package builds without `@forge/api` present.
  */
-export interface ForgeApiLike {
-  asApp(): { requestJira(route: unknown, init?: unknown): Promise<JiraResponseLike> };
+export interface ForgeRequester {
+  requestJira(route: unknown, init?: unknown): Promise<JiraResponseLike>;
 }
 
 /**
@@ -61,7 +61,11 @@ export interface ForgeApiLike {
  * is rejected by the SDK.
  */
 export function forgeJiraFetch(
-  api: ForgeApiLike,
+  // A factory, not a requester: `api.asUser()` is only valid inside a
+  // user-invoked context, and the runtime is memoised across invocations that
+  // include product events and queue consumers. Resolving it lazily means an
+  // as-user client can exist on an object that is also used from an event.
+  getRequester: () => ForgeRequester,
   // Declared with no rest parameter so that Forge's own `route`, whose values
   // are narrowly typed, remains assignable. Nothing is ever interpolated.
   route: (strings: TemplateStringsArray) => unknown,
@@ -71,7 +75,7 @@ export function forgeJiraFetch(
     // so the path is handed to it as a zero-interpolation template. There is
     // nothing to interpolate: every dynamic segment was already encoded by
     // `JiraRestClient` with `encodeURIComponent`/`URLSearchParams`.
-    api.asApp().requestJira(route(asTemplateStrings(path)), init);
+    getRequester().requestJira(route(asTemplateStrings(path)), init);
 }
 
 /** Build a real `TemplateStringsArray` (it must carry a `raw` array). */
@@ -87,11 +91,39 @@ export interface JiraClientOptions {
   readonly now?: () => number;
 }
 
+interface JiraMyPermissions {
+  readonly permissions?: Readonly<Record<string, { readonly havePermission?: boolean }>>;
+}
+
 export class JiraRestClient implements JiraApi {
+  /**
+   * @param fetch        reads Jira **as the app** — used for all ingestion.
+   * @param fetchAsUser  reads Jira **as the calling user** — used only by
+   *                     {@link canBrowseProject}. Required rather than
+   *                     optional, because a client constructed without it
+   *                     would silently have no authorization check.
+   */
   constructor(
     private readonly fetch: JiraFetch,
+    private readonly fetchAsUser: JiraFetch,
     private readonly options: JiraClientOptions = {},
   ) {}
+
+  /**
+   * Ask Jira, as the calling user, whether they may browse this project.
+   *
+   * Fails closed: any response that does not explicitly grant the permission
+   * is treated as a refusal, and a transport failure propagates rather than
+   * being swallowed into a `false`-that-looks-like-an-answer.
+   */
+  async canBrowseProject(projectId: string): Promise<boolean> {
+    const query = new URLSearchParams({ projectId, permissions: 'BROWSE_PROJECTS' });
+    const result = await this.request<JiraMyPermissions>(
+      `/rest/api/3/mypermissions?${query.toString()}`,
+      this.fetchAsUser,
+    );
+    return result.permissions?.['BROWSE_PROJECTS']?.havePermission === true;
+  }
 
   async searchIssues(params: SearchParams): Promise<JiraSearchPage> {
     const query = new URLSearchParams();
@@ -141,8 +173,12 @@ export class JiraRestClient implements JiraApi {
       }));
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await this.fetch(path, { headers: { Accept: 'application/json' } });
+  private get<T>(path: string): Promise<T> {
+    return this.request<T>(path, this.fetch);
+  }
+
+  private async request<T>(path: string, fetch: JiraFetch): Promise<T> {
+    const response = await fetch(path, { headers: { Accept: 'application/json' } });
     if (response.status >= 400) {
       const body = await safeText(response);
       const now = this.options.now?.() ?? Date.now();

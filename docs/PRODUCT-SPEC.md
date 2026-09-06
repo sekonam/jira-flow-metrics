@@ -253,6 +253,13 @@ leader's price.
 
 - **No customer data leaves the Atlassian tenant.** Everything is Forge SQL inside the installation.
 - **Read-only.** No Jira write scope is requested by any listing; a manifest test asserts it.
+- **The caller's Jira permissions are honoured.** Every report checks `BROWSE_PROJECTS` for the
+  person asking, as that person, before returning anything — the app's own Jira reads are made as
+  the app and would otherwise ignore who is looking.
+- **Issues under a Jira issue security level are never indexed**, and worklogs restricted to a role
+  or group are dropped at ingest. Both under-report rather than over-disclose.
+- **Nothing is stored for a project nobody asked to index.** The platform sends issue events for
+  the whole instance; the app ignores projects with no index.
 - Scopes are `read:jira-work`, `read:jira-user`, `storage:app` and nothing else.
 - Error messages shown to users never carry Jira response bodies, and JQL is redacted before any
   log line — issue summaries can contain anything.

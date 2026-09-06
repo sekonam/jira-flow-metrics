@@ -346,11 +346,19 @@ export class SqlMetricsStore implements MetricsStore {
   }
 }
 
-/** Keep `LIMIT` inside sane bounds; an unbounded read is a cost incident. */
+/**
+ * Keep `LIMIT` inside sane bounds; an unbounded read is a cost incident.
+ *
+ * `Math.trunc(NaN)` is `NaN` and both `Math.min` and `Math.max` propagate it,
+ * so a bare clamp would pass `NaN` straight into the statement. These fail
+ * closed on any non-finite input instead.
+ */
 function clampLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return 10_000;
   return Math.max(1, Math.min(10_000, Math.trunc(limit)));
 }
 
 function clampOffset(offset: number): number {
+  if (!Number.isFinite(offset)) return 0;
   return Math.max(0, Math.trunc(offset));
 }

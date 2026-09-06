@@ -75,6 +75,19 @@ export interface JiraWorklogEntry {
   readonly updated?: string;
   readonly timeSpentSeconds?: number;
   readonly comment?: unknown;
+  /**
+   * Present when the worklog is restricted to a project role or group.
+   *
+   * The app reads Jira as the app, so a restricted worklog comes back in full
+   * even though the person looking at the report may not be allowed to see it.
+   * Restricted worklogs are therefore **dropped at ingest** — see
+   * `toWorklogRecord`.
+   */
+  readonly visibility?: {
+    readonly type?: string;
+    readonly value?: string;
+    readonly identifier?: string;
+  } | null;
 }
 
 export interface JiraWorklogPage {

@@ -20,6 +20,7 @@ import {
   enumerateDays,
 } from '../src/metrics/wip-aging.js';
 import { evaluateDueDate, evaluateSla, attainmentRate, type SlaGoal } from '../src/metrics/sla.js';
+import { describeIndexError } from '../src/ingest/backfill.js';
 import { filterHistory, summariseByField, toHistoryRecords } from '../src/metrics/history.js';
 import { parseJiraTimestamp, requireJiraTimestamp, toStatusCategory } from '../src/jira/parse.js';
 import { normaliseCalendar, standardBusinessCalendar } from '../src/time/calendar.js';
@@ -610,3 +611,53 @@ function simpleFlow(key: string, startedIso: string, doneIso: string | null) {
     entries,
   });
 }
+
+describe('worklog visibility restrictions', () => {
+  const context = { issueId: '20001', issueKey: 'FLOW-1', projectId: '10000' };
+
+  /**
+   * Jira lets a worklog be restricted to a project role or group. Because this
+   * app reads Jira as the app rather than as the viewer, a restricted worklog
+   * arrives in full and would otherwise be totalled into a report shown to the
+   * very people the restriction exists to exclude.
+   */
+  it('drops a worklog restricted to a role or group', () => {
+    const base = { id: '1', started: '2026-03-01T09:00:00.000+0000', timeSpentSeconds: 3600 };
+    expect(toWorklogRecord(base, context)).not.toBeNull();
+    expect(
+      toWorklogRecord({ ...base, visibility: { type: 'role', value: 'Administrators' } }, context),
+    ).toBeNull();
+    expect(
+      toWorklogRecord({ ...base, visibility: { type: 'group', value: 'jira-admins' } }, context),
+    ).toBeNull();
+  });
+
+  it('keeps a worklog whose visibility is explicitly absent', () => {
+    const base = { id: '1', started: '2026-03-01T09:00:00.000+0000', timeSpentSeconds: 3600 };
+    expect(toWorklogRecord({ ...base, visibility: null }, context)).not.toBeNull();
+  });
+});
+
+describe('index errors crossing to the browser', () => {
+  it('classifies rather than echoing the recorded message', () => {
+    // index_state.last_error holds a raw exception. A Jira error is already
+    // JQL-redacted, but a database driver error can echo statement fragments
+    // and constraint values, and the report page renders this string.
+    expect(describeIndexError(null)).toBeNull();
+    expect(describeIndexError('   ')).toBeNull();
+    expect(describeIndexError('Jira responded 429 for /rest/api/3/search')).toContain(
+      'rate-limited',
+    );
+    expect(describeIndexError('Jira responded 403 for /rest/api/3/issue/1')).toContain(
+      'administrator',
+    );
+    expect(describeIndexError('Jira responded 404 for /rest/api/3/issue/1')).toContain(
+      'no longer exists',
+    );
+    const leaky = describeIndexError(
+      "Duplicate entry 'FLOW-42: acquire Contoso' for key 'issue_meta.PRIMARY'",
+    );
+    expect(leaky).not.toContain('Contoso');
+    expect(leaky).toContain('app logs');
+  });
+});

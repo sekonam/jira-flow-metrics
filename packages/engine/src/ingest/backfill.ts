@@ -1,4 +1,4 @@
-import type { JiraIssue } from '../jira/types.js';
+import type { JiraIssue, JiraSearchPage } from '../jira/types.js';
 import type { MetricsStore, IndexStateRow } from '../store/types.js';
 import type { Millis } from '../types.js';
 import type { Clock, JiraApi, Logger, Scheduler } from './ports.js';
@@ -44,10 +44,17 @@ import { withRetry } from './retry.js';
 
 export interface BackfillOptions {
   readonly projectId: string;
-  /** Extra JQL, ANDed with the project clause. */
-  readonly extraJql?: string;
   /** Do not index issues created before this instant. `null` means all history. */
   readonly historyFrom?: Millis | null;
+  /**
+   * Skip issues that carry a Jira **issue security level**. Defaults to true.
+   *
+   * The app reads Jira as the app, so a restricted issue is returned in full
+   * even though the person reading the report may not be entitled to see it.
+   * Excluding them at ingest is the only place the restriction can be honoured
+   * without re-checking every issue against every viewer.
+   */
+  readonly excludeRestrictedIssues?: boolean;
   readonly issuesPerSlice: number;
   readonly pageSize: number;
   readonly timeBudgetMs: number;
@@ -60,6 +67,7 @@ export const DEFAULT_BACKFILL_OPTIONS: Omit<BackfillOptions, 'projectId'> = {
   pageSize: 50,
   timeBudgetMs: 40_000,
   throttleMs: 0,
+  excludeRestrictedIssues: true,
 };
 
 export interface BackfillDeps {
@@ -114,14 +122,21 @@ export function initialIndexState(
   };
 }
 
-/** Build the JQL for a backfill. Ordered by `created ASC` for a stable cursor. */
+/**
+ * Build the JQL for a backfill. Ordered by `created ASC` for a stable cursor.
+ *
+ * Every clause is assembled from values this module controls: a context-derived
+ * project id, escaped by {@link quoteJql}, and a numeric instant formatted by
+ * {@link formatJqlInstant}. There is deliberately **no free-text JQL option** —
+ * an `extraJql` passthrough existed briefly and was removed, because an unused
+ * raw-JQL parameter on an exported interface is an injection sink waiting for a
+ * caller.
+ */
 export function buildBackfillJql(options: BackfillOptions): string {
   const clauses = [`project = ${quoteJql(options.projectId)}`];
+  if (options.excludeRestrictedIssues !== false) clauses.push('level IS EMPTY');
   if (options.historyFrom !== undefined && options.historyFrom !== null) {
     clauses.push(`created >= ${formatJqlInstant(options.historyFrom)}`);
-  }
-  if (options.extraJql !== undefined && options.extraJql.trim() !== '') {
-    clauses.push(`(${options.extraJql.trim()})`);
   }
   return `${clauses.join(' AND ')} ORDER BY created ASC`;
 }
@@ -174,7 +189,7 @@ export async function runBackfillSlice(
     lastError: null,
   });
 
-  const jql = buildBackfillJql(options);
+  let jql = buildBackfillJql(options);
   let cursor = state.backfillCursor;
   let processedCount = 0;
   let skipped = 0;
@@ -185,24 +200,48 @@ export async function runBackfillSlice(
 
   try {
     outer: for (;;) {
-      const page = await withRetry(
-        () =>
-          deps.api.searchIssues({
-            jql,
-            nextPageToken: cursor ?? undefined,
-            maxResults: options.pageSize,
-            fields: BACKFILL_FIELDS,
-            expandChangelog: deps.config.datasets.statusDurations || deps.config.datasets.history,
-          }),
-        { ...deps.config.retry, label: `search ${options.projectId}` },
-      );
+      const search = (): Promise<JiraSearchPage> =>
+        deps.api.searchIssues({
+          jql,
+          nextPageToken: cursor ?? undefined,
+          maxResults: options.pageSize,
+          fields: BACKFILL_FIELDS,
+          expandChangelog: deps.config.datasets.statusDurations || deps.config.datasets.history,
+        });
+
+      let page: JiraSearchPage;
+      try {
+        page = await withRetry(search, {
+          ...deps.config.retry,
+          label: `search ${options.projectId}`,
+        });
+      } catch (error: unknown) {
+        // `level` is only a searchable JQL field on instances that have an
+        // issue security scheme. Where it is not, the clause is rejected — and
+        // an instance with no security scheme has no restricted issues, so
+        // dropping the clause there loses nothing and hides nothing.
+        if (!isUnknownLevelFieldError(error) || jql === buildBackfillJql(unrestricted(options))) {
+          throw error;
+        }
+        deps.logger?.log('info', 'issue security level is not searchable; indexing without it', {
+          projectId: options.projectId,
+        });
+        jql = buildBackfillJql(unrestricted(options));
+        page = await withRetry(search, {
+          ...deps.config.retry,
+          label: `search ${options.projectId} (unrestricted)`,
+        });
+        requests += 1;
+      }
       requests += 1;
       if (typeof page.total === 'number') issuesTotal = page.total;
 
       const issues: readonly JiraIssue[] = page.issues ?? [];
       const batch: ProcessedIssue[] = [];
+      let handledInPage = 0;
 
       for (const issue of issues) {
+        handledInPage += 1;
         const processed = await processIssue(issue, deps.api, deps.config, deps.clock.now());
         if (processed === null) {
           skipped += 1;
@@ -231,11 +270,23 @@ export async function runBackfillSlice(
 
       const nextToken = page.nextPageToken ?? null;
       const pageWasLast = page.isLast === true || nextToken === null || issues.length === 0;
+      const pageFullyConsumed = handledInPage === issues.length;
 
       if (stoppedBecause !== 'complete') {
-        // We stopped mid-page. The cursor still points at this page, so the
-        // next slice re-reads it and re-processes the issues we already wrote.
-        // That is safe because writes replace rather than merge.
+        // A budget ran out. If it ran out *exactly* at the end of the page,
+        // the page is finished and the cursor may advance — otherwise the next
+        // slice would re-fetch and re-process a page it already stored, which
+        // with the default budgets (100 issues, 50 per page) would repeat the
+        // last page of every single slice and roughly double the backfill's
+        // Jira request count.
+        //
+        // Stopping mid-page leaves the cursor where it is on purpose: the next
+        // slice re-reads that page and re-processes issues already written,
+        // which is safe because writes replace rather than merge.
+        if (pageFullyConsumed) {
+          cursor = nextToken;
+          if (pageWasLast) done = true;
+        }
         break outer;
       }
 
@@ -314,6 +365,16 @@ export async function runBackfillSlice(
   };
 }
 
+function unrestricted(options: BackfillOptions): BackfillOptions {
+  return { ...options, excludeRestrictedIssues: false };
+}
+
+/** Does this failure mean Jira does not know the `level` field? */
+function isUnknownLevelFieldError(error: unknown): boolean {
+  if (!(error instanceof HttpError) || error.status !== 400) return false;
+  return /level/i.test(error.body ?? '') || /level/i.test(error.message);
+}
+
 export interface BackfillProgress {
   readonly state: IndexStateRow['state'];
   readonly issuesProcessed: number;
@@ -323,6 +384,29 @@ export interface BackfillProgress {
   readonly lastError: string | null;
   readonly startedAt: Millis | null;
   readonly updatedAt: Millis;
+}
+
+/**
+ * Reduce a recorded error to something safe to show a person.
+ *
+ * `index_state.last_error` holds a raw exception message, and the report page
+ * renders it. A Jira error is already JQL-redacted, but a database driver
+ * error can echo statement fragments and constraint values, so only a fixed
+ * classification crosses to the browser. The full message stays in the row for
+ * the vendor to read through the logs.
+ */
+export function describeIndexError(lastError: string | null): string | null {
+  if (lastError === null || lastError.trim() === '') return null;
+  if (/\b429\b|rate.?limit/i.test(lastError)) {
+    return 'Jira rate-limited the indexer. It will resume automatically.';
+  }
+  if (/\b40[13]\b|permission|forbidden|unauthor/i.test(lastError)) {
+    return 'Jira refused the request. A Jira administrator may need to re-approve the app.';
+  }
+  if (/\b404\b|not found/i.test(lastError)) {
+    return 'Something the indexer asked for no longer exists in Jira.';
+  }
+  return 'Indexing stopped on an unexpected error. The details are in the app logs.';
 }
 
 /** Progress for the UI. Deliberately honest about not knowing the total. */
@@ -336,7 +420,7 @@ export function toProgress(row: IndexStateRow): BackfillProgress {
     issuesProcessed: row.issuesProcessed,
     issuesTotal: row.issuesTotal,
     fraction,
-    lastError: row.lastError,
+    lastError: describeIndexError(row.lastError),
     startedAt: row.startedAt,
     updatedAt: row.updatedAt,
   };

@@ -81,6 +81,8 @@ export interface FakeJiraOptions {
   readonly failSearchFromCall?: { call: number; error: Error };
   /** Page size Jira actually honours for changelog pages. */
   readonly changelogPageSize?: number;
+  /** What `canBrowseProject` answers. Defaults to true. */
+  readonly canBrowse?: boolean;
 }
 
 /** Fixture-backed `JiraApi`. Records every call for assertions. */
@@ -90,7 +92,14 @@ export class FakeJiraApi implements JiraApi {
   readonly worklogCalls: string[] = [];
   readonly issueCalls: string[] = [];
 
+  readonly permissionCalls: string[] = [];
+
   constructor(private readonly options: FakeJiraOptions = {}) {}
+
+  canBrowseProject(projectId: string): Promise<boolean> {
+    this.permissionCalls.push(projectId);
+    return Promise.resolve(this.options.canBrowse ?? true);
+  }
 
   searchIssues(params: SearchParams): Promise<JiraSearchPage> {
     this.searchCalls.push(params);

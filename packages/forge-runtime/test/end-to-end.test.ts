@@ -63,6 +63,11 @@ const ISSUE: JiraIssue = {
 class FixtureJira implements JiraApi {
   readonly requests: string[] = [];
 
+  canBrowseProject(): Promise<boolean> {
+    this.requests.push('mypermissions');
+    return Promise.resolve(true);
+  }
+
   searchIssues(): Promise<JiraSearchPage> {
     this.requests.push('search');
     return Promise.resolve({ issues: [ISSUE], isLast: true, nextPageToken: null, total: 1 });

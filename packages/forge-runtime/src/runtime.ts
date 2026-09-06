@@ -115,6 +115,18 @@ export class ListingRuntime {
     this.deps.settings.clearCache();
   }
 
+  /**
+   * May the calling user browse this project?
+   *
+   * Delegates to the Jira port, which asks Jira **as the user**. Everything
+   * else this runtime does reads as the app, so this is the only place a
+   * caller's own Jira permissions are consulted — and every project-scoped
+   * resolver goes through it before returning a single row.
+   */
+  canBrowseProject(projectId: string): Promise<boolean> {
+    return this.deps.api.canBrowseProject(projectId);
+  }
+
   /** Build the ingest config for one project, using its stored calendar. */
   async ingestConfig(projectId: string): Promise<IngestConfig> {
     const settings = await this.deps.settings.get(projectId);
@@ -202,6 +214,10 @@ export class ListingRuntime {
         throttleMs: this.options.throttleMs ?? 0,
         historyFrom:
           settings.backfillMonths === null ? null : now - settings.backfillMonths * 30 * 86_400_000,
+        // Issues carrying a Jira issue security level are never indexed. The
+        // app reads as itself, so a restricted issue would otherwise be
+        // aggregated into a report shown to people the restriction excludes.
+        excludeRestrictedIssues: true,
       },
       slice,
     );

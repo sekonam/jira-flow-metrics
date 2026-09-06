@@ -3,7 +3,7 @@
 > One engine, five listings, on Atlassian Forge. This document covers the data model, the
 > ingestion pipeline, the backfill algorithm, the per-listing module map and the cost model.
 
-**What has and has not been verified.** Everything in `packages/` is covered by 403 automated
+**What has and has not been verified.** Everything in `packages/` is covered by 434 automated
 tests against recorded fixtures. **Nothing in this repository has ever executed on the Forge
 platform** — there is no Atlassian developer account here, so `forge lint`, `forge tunnel` and
 `forge deploy` cannot be run. Sections marked ⚠️ UNVERIFIED name the exact surface that the first
@@ -391,6 +391,17 @@ Coverage floor is **80%** on `packages/**` and CI fails below it. Current: **98.
    is run.
 5. **Nothing has run on Forge.** The SQL executor, the Jira fetch adapter, every manifest and every
    UI Kit component are unverified against the platform.
+6. **★ Residual issue-visibility risk, stated plainly.** The `BROWSE_PROJECTS` check establishes
+   that a viewer may see the _project_. Within a project, Jira can restrict individual issues by
+   issue security level — those are excluded at ingest — but Jira can also restrict visibility in
+   ways this app does not model (for example a JQL-scoped board filter, or a permission scheme that
+   grants browse but restricts a subset). The app does **not** re-check per-issue visibility per
+   viewer, because doing so would mean an as-user query on every report render, which the
+   consumption-priced platform makes prohibitive. **This must be stated in the Marketplace privacy
+   statement rather than left for a reviewer to find.**
+7. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
+   instance-wide row counts and has no project scope, so no app registers it as a resolver. It
+   stays as an internal method until there is an admin surface that can authorise it properly.
 
 ---
 

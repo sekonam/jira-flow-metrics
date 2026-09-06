@@ -452,12 +452,64 @@ describe('JiraRestClient', () => {
     };
   }
 
+  it('asks Jira as the user, not as the app, for the browse permission', async () => {
+    const appPaths: string[] = [];
+    const userPaths: string[] = [];
+    const client = new JiraRestClient(
+      (path) => {
+        appPaths.push(path);
+        return Promise.resolve(respond(200, {}));
+      },
+      (path) => {
+        userPaths.push(path);
+        return Promise.resolve(
+          respond(200, { permissions: { BROWSE_PROJECTS: { havePermission: true } } }),
+        );
+      },
+    );
+    expect(await client.canBrowseProject('10000')).toBe(true);
+    expect(userPaths[0]).toBe(
+      '/rest/api/3/mypermissions?projectId=10000&permissions=BROWSE_PROJECTS',
+    );
+    // Asking as the app would defeat the whole point of the check.
+    expect(appPaths).toEqual([]);
+  });
+
+  it('treats anything short of an explicit grant as a refusal', async () => {
+    const answers: unknown[] = [
+      { permissions: { BROWSE_PROJECTS: { havePermission: false } } },
+      { permissions: { BROWSE_PROJECTS: {} } },
+      { permissions: {} },
+      {},
+    ];
+    for (const body of answers) {
+      const client = new JiraRestClient(
+        () => Promise.resolve(respond(200, {})),
+        () => Promise.resolve(respond(200, body)),
+      );
+      expect(await client.canBrowseProject('10000')).toBe(false);
+    }
+  });
+
+  it('propagates a permission-check failure rather than answering false', async () => {
+    // A transport failure is "unknown", not "no". The handler turns it into a
+    // refusal, but the client must not manufacture an answer.
+    const client = new JiraRestClient(
+      () => Promise.resolve(respond(200, {})),
+      () => Promise.resolve(respond(503, 'unavailable')),
+    );
+    await expect(client.canBrowseProject('10000')).rejects.toBeInstanceOf(HttpError);
+  });
+
   it('builds the search request with the fields and page token it was given', async () => {
     const paths: string[] = [];
-    const client = new JiraRestClient((path) => {
-      paths.push(path);
-      return Promise.resolve(respond(200, { issues: [] }));
-    });
+    const client = new JiraRestClient(
+      (path) => {
+        paths.push(path);
+        return Promise.resolve(respond(200, { issues: [] }));
+      },
+      () => Promise.reject(new Error('as-user fetch must not be used for ingestion')),
+    );
     await client.searchIssues({
       jql: 'project = "10000" ORDER BY created ASC',
       maxResults: 50,
@@ -475,20 +527,26 @@ describe('JiraRestClient', () => {
 
   it('omits expand when the listing does not need the changelog', async () => {
     const paths: string[] = [];
-    const client = new JiraRestClient((path) => {
-      paths.push(path);
-      return Promise.resolve(respond(200, {}));
-    });
+    const client = new JiraRestClient(
+      (path) => {
+        paths.push(path);
+        return Promise.resolve(respond(200, {}));
+      },
+      () => Promise.reject(new Error('unused')),
+    );
     await client.searchIssues({ jql: 'x', maxResults: 1, fields: [] });
     expect(paths[0]).not.toContain('expand=');
   });
 
   it('encodes issue keys into the path', async () => {
     const paths: string[] = [];
-    const client = new JiraRestClient((path) => {
-      paths.push(path);
-      return Promise.resolve(respond(200, {}));
-    });
+    const client = new JiraRestClient(
+      (path) => {
+        paths.push(path);
+        return Promise.resolve(respond(200, {}));
+      },
+      () => Promise.reject(new Error('unused')),
+    );
     await client.getIssue('FLOW-1/../admin', ['status']);
     await client.getChangelog('FLOW 2', { startAt: 10, maxResults: 100 });
     await client.getWorklogs('FLOW-3', { startAt: 0, maxResults: 100 });
@@ -498,15 +556,17 @@ describe('JiraRestClient', () => {
   });
 
   it('maps status metadata onto the engine categories', async () => {
-    const client = new JiraRestClient(() =>
-      Promise.resolve(
-        respond(200, [
-          { id: '10000', name: 'To Do', statusCategory: { key: 'new' } },
-          { id: '3', name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-          { id: '10001', statusCategory: { key: 'done' } },
-          { name: 'no id — dropped' },
-        ]),
-      ),
+    const client = new JiraRestClient(
+      () =>
+        Promise.resolve(
+          respond(200, [
+            { id: '10000', name: 'To Do', statusCategory: { key: 'new' } },
+            { id: '3', name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            { id: '10001', statusCategory: { key: 'done' } },
+            { name: 'no id — dropped' },
+          ]),
+        ),
+      () => Promise.reject(new Error('unused')),
     );
     const statuses = await client.getStatuses();
     expect(statuses).toEqual<StatusMeta[]>([
@@ -519,6 +579,7 @@ describe('JiraRestClient', () => {
   it('turns an HTTP failure into a retryable HttpError with Retry-After', async () => {
     const client = new JiraRestClient(
       () => Promise.resolve(respond(429, 'too many', { 'Retry-After': '30' })),
+      () => Promise.reject(new Error('unused')),
       { now: () => NOW, retryAfterPaddingMs: 250 },
     );
     await expect(
@@ -527,7 +588,10 @@ describe('JiraRestClient', () => {
   });
 
   it('keeps JQL out of the error message that reaches the logs', async () => {
-    const client = new JiraRestClient(() => Promise.resolve(respond(500, 'boom')));
+    const client = new JiraRestClient(
+      () => Promise.resolve(respond(500, 'boom')),
+      () => Promise.reject(new Error('unused')),
+    );
     const error = await client
       .searchIssues({ jql: 'summary ~ "customer secret"', maxResults: 1, fields: [] })
       .catch((e: unknown) => e);
@@ -538,13 +602,15 @@ describe('JiraRestClient', () => {
   });
 
   it('survives a response body it cannot read', async () => {
-    const client = new JiraRestClient(() =>
-      Promise.resolve({
-        status: 502,
-        headers: { get: () => null },
-        text: () => Promise.reject(new Error('stream closed')),
-        json: () => Promise.resolve(null),
-      }),
+    const client = new JiraRestClient(
+      () =>
+        Promise.resolve({
+          status: 502,
+          headers: { get: () => null },
+          text: () => Promise.reject(new Error('stream closed')),
+          json: () => Promise.resolve(null),
+        }),
+      () => Promise.reject(new Error('unused')),
     );
     await expect(client.getIssue('X-1', [])).rejects.toBeInstanceOf(HttpError);
   });
@@ -664,6 +730,9 @@ describe('settings', () => {
 describe('ListingRuntime', () => {
   class StubJira implements JiraApi {
     constructor(private readonly issue: JiraIssue) {}
+    canBrowseProject(): Promise<boolean> {
+      return Promise.resolve(true);
+    }
     searchIssues(): Promise<JiraSearchPage> {
       return Promise.resolve({ issues: [this.issue], isLast: true, nextPageToken: null, total: 1 });
     }
@@ -752,6 +821,7 @@ describe('ListingRuntime', () => {
 
   it('ingests a single changed issue', async () => {
     const { runtime, store } = build();
+    await runtime.startBackfill('10000');
     await runtime.onIssueChanged(
       { issue: { id: '20001' }, changelog: { items: [{ fieldId: 'status' }] } },
       '10000',
@@ -1035,7 +1105,7 @@ describe('forgeJiraFetch', () => {
         },
       }),
     };
-    const fetch = forgeJiraFetch(fakeApi, fakeRoute);
+    const fetch = forgeJiraFetch(() => fakeApi.asApp(), fakeRoute);
     await fetch('/rest/api/3/status');
     expect(seen[0]).toEqual({
       strings: ['/rest/api/3/status'],

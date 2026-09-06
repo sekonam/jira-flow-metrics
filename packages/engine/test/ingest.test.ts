@@ -26,7 +26,12 @@ import {
   type IngestConfig,
 } from '../src/ingest/process-issue.js';
 import { MemoryStore } from '../src/store/memory-store.js';
-import type { JiraChangelogPage, JiraSearchPage, JiraWorklogPage } from '../src/jira/types.js';
+import type {
+  JiraChangelogPage,
+  JiraIssue,
+  JiraSearchPage,
+  JiraWorklogPage,
+} from '../src/jira/types.js';
 import {
   FakeClock,
   FakeJiraApi,
@@ -311,18 +316,32 @@ describe('backfill', () => {
 
   it('builds JQL ordered by created for a stable cursor', () => {
     expect(buildBackfillJql({ ...DEFAULT_BACKFILL_OPTIONS, projectId: '10000' })).toBe(
-      'project = "10000" ORDER BY created ASC',
+      'project = "10000" AND level IS EMPTY ORDER BY created ASC',
     );
     expect(
       buildBackfillJql({
         ...DEFAULT_BACKFILL_OPTIONS,
         projectId: '10000',
         historyFrom: T('2026-01-01T00:00:00Z'),
-        extraJql: 'issuetype = Bug',
       }),
     ).toBe(
-      'project = "10000" AND created >= "2026/01/01 00:00" AND (issuetype = Bug) ORDER BY created ASC',
+      'project = "10000" AND level IS EMPTY AND created >= "2026/01/01 00:00" ORDER BY created ASC',
     );
+  });
+
+  it('excludes issues carrying a Jira issue security level by default', () => {
+    // The app reads Jira as itself, so a restricted issue would otherwise be
+    // aggregated into a report shown to people the restriction excludes.
+    expect(buildBackfillJql({ ...DEFAULT_BACKFILL_OPTIONS, projectId: '1' })).toContain(
+      'level IS EMPTY',
+    );
+    expect(
+      buildBackfillJql({
+        ...DEFAULT_BACKFILL_OPTIONS,
+        projectId: '1',
+        excludeRestrictedIssues: false,
+      }),
+    ).not.toContain('level');
   });
 
   it('escapes JQL literals', () => {
@@ -544,8 +563,22 @@ describe('incremental ingestion', () => {
     ).toBe(true);
   });
 
+  it('ignores an event for a project nobody has asked to index', async () => {
+    // The product-event trigger fires for every project on the instance.
+    // Storing history for projects nobody opened a report for is both a cost
+    // on a byte-priced backend and an answer nobody wants to give a reviewer.
+    const d = deps();
+    const outcome = await handleIssueUpdated(
+      { issue: { id: '20001' }, changelog: { items: [{ fieldId: 'status' }] } },
+      d,
+    );
+    expect(outcome).toMatchObject({ kind: 'ignored' });
+    expect(await d.store.getIssueMeta('20001')).toBeNull();
+  });
+
   it('updates one issue on a relevant event', async () => {
     const d = deps();
+    await d.store.putIndexState(initialIndexState('10000', NOW, null));
     const outcome = await handleIssueUpdated(
       { issue: { id: '20001' }, changelog: { items: [{ fieldId: 'status' }] } },
       d,
@@ -573,6 +606,7 @@ describe('incremental ingestion', () => {
 
   it('deletes an issue and everything attached to it', async () => {
     const d = deps();
+    await d.store.putIndexState(initialIndexState('10000', NOW, null));
     await handleIssueUpdated(
       { issue: { id: '20001' }, changelog: { items: [{ fieldId: 'status' }] } },
       d,
@@ -598,10 +632,170 @@ describe('incremental ingestion', () => {
       ...deps(),
       api: new FakeJiraApi({ issues: { bad: { id: 'bad', fields: {} } } }),
     };
+    await d.store.putIndexState(initialIndexState('10000', NOW, null));
     const outcome = await handleIssueUpdated(
       { issue: { id: 'bad' }, changelog: { items: [{ fieldId: 'status' }] } },
       d,
     );
     expect(outcome.kind).toBe('ignored');
+  });
+});
+
+describe('backfill cursor advancement', () => {
+  const changelog = loadFixture<JiraChangelogPage>('changelog-reentry.json');
+
+  function issue(id: string): JiraIssue {
+    return {
+      id,
+      key: `FLOW-${id}`,
+      fields: {
+        created: '2026-03-02T08:00:00.000+0000',
+        status: { id: '10001', name: 'Done' },
+        project: { id: '10000', key: 'FLOW' },
+      },
+      changelog: { total: 0, values: [], isLast: true },
+    };
+  }
+
+  function threePages(): JiraSearchPage[] {
+    return [
+      { issues: [issue('1'), issue('2')], isLast: false, nextPageToken: 'P2', total: 6 },
+      { issues: [issue('3'), issue('4')], isLast: false, nextPageToken: 'P3', total: 6 },
+      { issues: [issue('5'), issue('6')], isLast: true, nextPageToken: null, total: 6 },
+    ];
+  }
+
+  function deps() {
+    return {
+      api: new FakeJiraApi({
+        pages: threePages(),
+        changelogs: { '1': changelog.values ?? [] },
+      }),
+      store: new MemoryStore(),
+      scheduler: new RecordingScheduler(),
+      clock: new FakeClock(NOW),
+      config: config(),
+      logger: silentLogger,
+    };
+  }
+
+  it('advances past a page the issue budget ended exactly on', async () => {
+    // Budget of 4 with pages of 2: the second page is fully consumed when the
+    // budget runs out. Re-reading it in the next slice would double the request
+    // cost of the whole backfill.
+    const d = deps();
+    const first = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      issuesPerSlice: 4,
+      pageSize: 2,
+    });
+    expect(first.stoppedBecause).toBe('issue_budget');
+    expect(first.issuesProcessed).toBe(4);
+    expect(first.nextCursor).toBe('P3');
+    expect((await d.store.getIndexState('10000'))?.backfillCursor).toBe('P3');
+
+    const second = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      issuesPerSlice: 4,
+      pageSize: 2,
+    });
+    // Only the third page is left; nothing is processed twice.
+    expect(second.issuesProcessed).toBe(2);
+    expect(second.done).toBe(true);
+    expect(d.store.aggregateRowCount).toBeGreaterThan(0);
+
+    // Four search calls total across both slices: P1, P2 in the first slice and
+    // P3 in the second, plus the second slice's initial call. Never a repeat of
+    // a page that was already fully stored.
+    const tokens = d.api.searchCalls.map((c) => c.nextPageToken ?? 'FIRST');
+    expect(tokens).toEqual(['FIRST', 'P2', 'P3']);
+  });
+
+  it('keeps the cursor on a page it stopped in the middle of', async () => {
+    const d = deps();
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      issuesPerSlice: 3,
+      pageSize: 2,
+    });
+    expect(result.stoppedBecause).toBe('issue_budget');
+    // Stopped after the first issue of page 2, so page 2 must be re-read.
+    expect(result.nextCursor).toBe('P2');
+  });
+
+  it('marks itself done when the budget ends exactly on the final page', async () => {
+    const d = deps();
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      issuesPerSlice: 6,
+      pageSize: 2,
+    });
+    expect(result.done).toBe(true);
+    expect((await d.store.getIndexState('10000'))?.state).toBe('complete');
+  });
+});
+
+describe('issue security levels', () => {
+  it('falls back to an unrestricted search when Jira does not know the level field', async () => {
+    // `level` is only searchable where an issue security scheme exists — and an
+    // instance with no scheme has no restricted issues, so dropping the clause
+    // there loses nothing and hides nothing.
+    let firstJql: string | undefined;
+    let calls = 0;
+    const api = {
+      canBrowseProject: () => Promise.resolve(true),
+      searchIssues: (params: { jql: string }) => {
+        calls += 1;
+        if (calls === 1) {
+          firstJql = params.jql;
+          return Promise.reject(
+            new HttpError(400, 'bad request', null, "Field 'level' does not exist"),
+          );
+        }
+        return Promise.resolve({ issues: [], isLast: true, nextPageToken: null, total: 0 });
+      },
+      getIssue: () => Promise.reject(new Error('unused')),
+      getChangelog: () => Promise.resolve({ values: [], total: 0, isLast: true }),
+      getWorklogs: () => Promise.resolve({ worklogs: [], total: 0 }),
+      getStatuses: () => Promise.resolve([]),
+    };
+    const d = {
+      api,
+      store: new MemoryStore(),
+      scheduler: new RecordingScheduler(),
+      clock: new FakeClock(NOW),
+      config: config(),
+      logger: silentLogger,
+    };
+    const result = await runBackfillSlice(d, { ...DEFAULT_BACKFILL_OPTIONS, projectId: '10000' });
+    expect(firstJql).toContain('level IS EMPTY');
+    expect(calls).toBe(2);
+    expect(result.done).toBe(true);
+  });
+
+  it('does not swallow an unrelated 400', async () => {
+    const api = {
+      canBrowseProject: () => Promise.resolve(true),
+      searchIssues: () =>
+        Promise.reject(new HttpError(400, 'bad request', null, 'Unable to parse JQL')),
+      getIssue: () => Promise.reject(new Error('unused')),
+      getChangelog: () => Promise.resolve({ values: [], total: 0, isLast: true }),
+      getWorklogs: () => Promise.resolve({ worklogs: [], total: 0 }),
+      getStatuses: () => Promise.resolve([]),
+    };
+    const d = {
+      api,
+      store: new MemoryStore(),
+      scheduler: new RecordingScheduler(),
+      clock: new FakeClock(NOW),
+      config: config(),
+      logger: silentLogger,
+    };
+    const result = await runBackfillSlice(d, { ...DEFAULT_BACKFILL_OPTIONS, projectId: '10000' });
+    expect(result.stoppedBecause).toBe('error');
   });
 });

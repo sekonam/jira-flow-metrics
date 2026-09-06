@@ -34,7 +34,13 @@ export function getRuntime(): ListingRuntime {
   const executor = forgeSqlExecutor(sql as unknown as Parameters<typeof forgeSqlExecutor>[0]);
   const store = new SqlMetricsStore(executor);
   const settings = new SettingsStore(executor);
-  const jira = new JiraRestClient(forgeJiraFetch(api, route));
+  // Two Jira clients on purpose. Ingestion reads as the app, because a
+  // background event has no user; the permission check reads as the calling
+  // user, because that is the only way to honour their Jira permissions.
+  const jira = new JiraRestClient(
+    forgeJiraFetch(() => api.asApp(), route),
+    forgeJiraFetch(() => api.asUser(), route),
+  );
   const scheduler = new QueueScheduler(new Queue({ key: BACKFILL_QUEUE }));
 
   cached = new ListingRuntime(

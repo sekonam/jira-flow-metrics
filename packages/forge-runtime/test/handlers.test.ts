@@ -22,6 +22,8 @@ import {
   handleIssueEvent,
   handleStartIndexing,
   handleStorageEstimate,
+  NOT_IN_PROJECT,
+  NO_PERMISSION,
   parseReportRequest,
   projectIdFromContext,
   projectIdFromEvent,
@@ -43,6 +45,12 @@ const CONTEXT = { extension: { project: { id: '10000', key: 'FLOW' } } };
 
 class StubJira implements JiraApi {
   failWith: Error | null = null;
+  canBrowse = true;
+  readonly permissionCalls: string[] = [];
+  canBrowseProject(projectId: string): Promise<boolean> {
+    this.permissionCalls.push(projectId);
+    return Promise.resolve(this.canBrowse);
+  }
   searchIssues(): Promise<JiraSearchPage> {
     if (this.failWith !== null) return Promise.reject(this.failWith);
     return Promise.resolve({ issues: [ISSUE], isLast: true, nextPageToken: null, total: 1 });
@@ -197,6 +205,7 @@ describe('handlers', () => {
 describe('product events', () => {
   it('routes created and updated events to ingestion', async () => {
     const { runtime, store } = build();
+    await handleStartIndexing(runtime, { context: CONTEXT });
     expect(
       await handleIssueEvent(
         runtime,
@@ -213,6 +222,7 @@ describe('product events', () => {
 
   it('routes deleted events to removal', async () => {
     const { runtime, store } = build();
+    await handleStartIndexing(runtime, { context: CONTEXT });
     await handleIssueEvent(
       runtime,
       {
@@ -404,5 +414,125 @@ describe('per-invocation cache hygiene', () => {
     await handleGetReport(runtime, { context: CONTEXT });
     const afterSecond = sql.statements.filter((s) => s.statement.includes('app_settings')).length;
     expect(afterSecond).toBeGreaterThan(afterFirst);
+  });
+});
+
+describe('caller authorization', () => {
+  /**
+   * Every read this app performs is made *as the app*, which by design ignores
+   * who is asking. Without a caller check, anyone who can reach a report
+   * surface would read any project's aggregates regardless of their own Jira
+   * permissions. That is the single finding an Atlassian security review would
+   * raise against this shape of app, so it gets its own suite.
+   */
+  const PROJECT_HANDLERS = [
+    handleGetReport,
+    handleExportCsv,
+    handleStartIndexing,
+    handleWorklogReport,
+    handleAgingReport,
+    handleSlaReport,
+    handleHistoryReport,
+  ];
+
+  it('asks Jira, as the user, before returning anything', async () => {
+    const { runtime, jira } = build();
+    for (const handler of PROJECT_HANDLERS) {
+      jira.permissionCalls.length = 0;
+      const result = await handler(runtime, { context: CONTEXT });
+      expect(result.ok).toBe(true);
+      expect(jira.permissionCalls).toEqual(['10000']);
+    }
+  });
+
+  it('refuses every project-scoped handler when the user cannot browse', async () => {
+    const { runtime, jira } = build();
+    jira.canBrowse = false;
+    for (const handler of PROJECT_HANDLERS) {
+      const result = await handler(runtime, { context: CONTEXT });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toBe(NO_PERMISSION);
+    }
+  });
+
+  it('fails closed when the permission itself cannot be determined', async () => {
+    const { runtime, jira } = build();
+    jira.canBrowseProject = () => Promise.reject(new Error('Jira unreachable'));
+    const result = await handleGetReport(runtime, { context: CONTEXT });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe(NO_PERMISSION);
+  });
+
+  it('does not start indexing for a project the caller cannot browse', async () => {
+    const { runtime, jira, jobs } = build();
+    jira.canBrowse = false;
+    await handleStartIndexing(runtime, { context: CONTEXT });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('distinguishes "not in a project" from "not permitted"', async () => {
+    const { runtime } = build();
+    const noContext = await handleGetReport(runtime, { context: {} });
+    expect(noContext.ok).toBe(false);
+    if (!noContext.ok) expect(noContext.error).toBe(NOT_IN_PROJECT);
+  });
+});
+
+describe('untrusted payload limits', () => {
+  it('caps how many filter values a client can send', async () => {
+    const { runtime, store } = build();
+    const seen: unknown[][] = [];
+    const realQuery = store.queryHistory.bind(store);
+    store.queryHistory = (query) => {
+      seen.push([...(query.fields ?? [])]);
+      return realQuery(query);
+    };
+    const result = await handleHistoryReport(runtime, {
+      context: CONTEXT,
+      payload: { fields: Array.from({ length: 5000 }, (_, i) => `field${i}`) },
+    });
+    expect(result.ok).toBe(true);
+    // Uncapped, this list becomes 5,000 `?` markers in one SQL statement.
+    expect(seen[0]).toHaveLength(100);
+  });
+
+  it('rejects NaN, which is typeof "number", wherever a number is accepted', async () => {
+    const { runtime, store } = build();
+    const limits: (number | undefined)[] = [];
+    const realQuery = store.queryHistory.bind(store);
+    store.queryHistory = (query) => {
+      limits.push(query.limit);
+      return realQuery(query);
+    };
+    await handleHistoryReport(runtime, { context: CONTEXT, payload: { limit: Number.NaN } });
+    // A NaN bound as a SQL LIMIT is a runtime error, not an empty result.
+    expect(limits[0] === undefined || Number.isFinite(limits[0])).toBe(true);
+
+    const worklogWindows: (number | undefined)[] = [];
+    const realWorklogs = store.queryWorklogs.bind(store);
+    store.queryWorklogs = (query) => {
+      worklogWindows.push(query.from, query.to);
+      return realWorklogs(query);
+    };
+    await handleWorklogReport(runtime, {
+      context: CONTEXT,
+      payload: { from: Number.NaN, to: Number.NaN },
+    });
+    expect(worklogWindows.every((v) => v === undefined || Number.isFinite(v))).toBe(true);
+  });
+
+  it('cannot have its context-derived project overridden by the payload', async () => {
+    const { runtime, store } = build();
+    const projects: string[] = [];
+    const realQuery = store.queryHistory.bind(store);
+    store.queryHistory = (query) => {
+      projects.push(query.projectId);
+      return realQuery(query);
+    };
+    await handleHistoryReport(runtime, {
+      context: CONTEXT,
+      payload: { projectId: 'SOMEONE-ELSES-PROJECT' },
+    });
+    expect(projects).toEqual(['10000']);
   });
 });

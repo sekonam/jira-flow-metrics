@@ -41,11 +41,19 @@ export interface WorklogContext {
  * Normalise a raw Jira worklog. Returns `null` when the entry cannot be
  * attributed — an unattributable worklog silently skews every total, so it is
  * dropped and counted rather than guessed at.
+ *
+ * **Restricted worklogs are also dropped.** Jira lets a worklog be limited to
+ * a project role or group; because this app reads Jira as the app rather than
+ * as the viewer, a restricted worklog arrives in full and would otherwise be
+ * totalled into a report visible to people the restriction exists to exclude.
+ * Dropping it under-reports rather than over-discloses, which is the correct
+ * direction for a mistake in a reporting product.
  */
 export function toWorklogRecord(
   entry: JiraWorklogEntry,
   context: WorklogContext,
 ): WorklogRecord | null {
+  if (entry.visibility !== undefined && entry.visibility !== null) return null;
   const worklogId = entry.id;
   const startedAt = parseJiraTimestamp(entry.started) ?? parseJiraTimestamp(entry.created);
   const seconds = entry.timeSpentSeconds;

@@ -1,6 +1,5 @@
 import type { JiraIssueUpdatedEvent } from '../jira/types.js';
 import type { MetricsStore } from '../store/types.js';
-import type { Millis } from '../types.js';
 import type { Clock, JiraApi, Logger } from './ports.js';
 import { BACKFILL_FIELDS } from './backfill.js';
 import { processIssue, writeProcessed, type IngestConfig } from './process-issue.js';
@@ -103,8 +102,24 @@ export async function handleIssueUpdated(
   const processed = await processIssue(issue, deps.api, deps.config, deps.clock.now());
   if (processed === null) return { kind: 'ignored', reason: 'issue payload unusable' };
 
+  // Data minimisation. The product-event trigger fires for **every** project on
+  // the instance, not only the ones someone opened a report for. Storing issue
+  // metadata, worklogs and field history for projects nobody asked about is
+  // both a cost on a byte-priced backend and an answer nobody wants to give a
+  // security reviewer. Ingest only where an index has been started.
+  const projectId = processed.meta.projectId;
+  const indexState = projectId === '' ? null : await deps.store.getIndexState(projectId);
+  if (indexState === null) {
+    deps.logger?.log('debug', 'skipping event for an unindexed project', { issueId, projectId });
+    return { kind: 'ignored', reason: 'project has not been indexed' };
+  }
+
   await writeProcessed(deps.store, [processed], deps.config.datasets);
-  await touchLastProcessed(deps.store, processed.meta.projectId, deps.clock.now());
+  await deps.store.putIndexState({
+    ...indexState,
+    lastProcessedAt: deps.clock.now(),
+    updatedAt: deps.clock.now(),
+  });
   return { kind: 'updated', issueId, requests: processed.requests + 1 };
 }
 
@@ -117,15 +132,4 @@ export async function handleIssueDeleted(
   if (issueId === null) return { kind: 'ignored', reason: 'event carried no issue id' };
   await deps.store.deleteIssue(issueId);
   return { kind: 'deleted', issueId };
-}
-
-async function touchLastProcessed(
-  store: MetricsStore,
-  projectId: string,
-  now: Millis,
-): Promise<void> {
-  if (projectId === '') return;
-  const state = await store.getIndexState(projectId);
-  if (state === null) return;
-  await store.putIndexState({ ...state, lastProcessedAt: now, updatedAt: now });
 }

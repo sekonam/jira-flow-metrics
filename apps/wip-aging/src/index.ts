@@ -5,7 +5,6 @@ import {
   handleGetReport,
   handleIssueEvent,
   handleStartIndexing,
-  handleStorageEstimate,
   projectIdFromEvent,
   handleAgingReport,
 } from '@jfm/forge-runtime';
@@ -25,7 +24,6 @@ const resolver = new Resolver();
 resolver.define('getReport', (req) => handleGetReport(getRuntime(), req));
 resolver.define('exportCsv', (req) => handleExportCsv(getRuntime(), req));
 resolver.define('startIndexing', (req) => handleStartIndexing(getRuntime(), req));
-resolver.define('getStorageEstimate', () => handleStorageEstimate(getRuntime()));
 
 resolver.define('getAgingReport', (req) => handleAgingReport(getRuntime(), req));
 

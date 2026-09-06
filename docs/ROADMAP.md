@@ -15,7 +15,7 @@ and a half months building five.
 | Delivered                                                                            | State                                                           |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | Monorepo, TypeScript strict, ESLint + Prettier, CI with an 80% coverage floor        | Green                                                           |
-| Shared duration-analytics engine                                                     | 403 tests, 98.8% statements / 90.8% branches                    |
+| Shared duration-analytics engine                                                     | 434 tests, 98.8% statements / 90.9% branches                    |
 | Working-calendar arithmetic with hand-computed golden tests                          | Green                                                           |
 | Incremental ingestion + chunked resumable backfill                                   | Green, against fixtures                                         |
 | Forge SQL store, Jira REST client, queue scheduler                                   | Statement- and request-level tests; **never executed on Forge** |

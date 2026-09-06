@@ -63,6 +63,8 @@ export function parseReportRequest(projectId: string, payload: unknown): StatusR
     offset?: number;
     assigneeAccountIds?: string[];
     issueTypeIds?: string[];
+    // NOTE: `projectId` is assigned on its own line below and never inside an
+    // object spread, so no future payload-derived spread can overwrite it.
   } = { projectId };
   if (basis === 'business' || basis === 'elapsed') request.basis = basis;
   const limit = record['limit'];
@@ -76,14 +78,62 @@ export function parseReportRequest(projectId: string, payload: unknown): StatusR
   return request;
 }
 
+/**
+ * Maximum length of any client-supplied list of ids.
+ *
+ * Uncapped, these lists reach `placeholders(n)` and become the number of `?`
+ * markers in a SQL statement. There is no injection — the value itself is
+ * always bound — but a resolver call carrying 200,000 field names would build
+ * a 400 KB statement with 200,000 parameters against a metered database. The
+ * in-memory filters have the same shape (an O(n·m) `includes` over up to
+ * 10,000 rows), so one cap covers every call site.
+ */
+const MAX_FILTER_VALUES = 100;
+
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const strings = value.filter((v): v is string => typeof v === 'string' && v !== '');
-  return strings.length === 0 ? null : strings;
+  return strings.length === 0 ? null : strings.slice(0, MAX_FILTER_VALUES);
 }
 
 export type HandlerResult<T> =
   { readonly ok: true; readonly data: T } | { readonly ok: false; readonly error: string };
+
+export const NOT_IN_PROJECT = 'This report can only be opened from inside a Jira project.';
+
+export const NO_PERMISSION =
+  'You do not have permission to browse this project in Jira, so this report is not available.';
+
+/**
+ * Resolve and authorise the project for a resolver call.
+ *
+ * Two separate things, deliberately in one place because forgetting either is
+ * a data leak:
+ *
+ * 1. The project id comes from the platform **context**, never the payload —
+ *    otherwise any user could name any project.
+ * 2. The **calling user's** Jira permission is checked. Every other read this
+ *    app performs happens as the app, which by design ignores who is asking,
+ *    so without this a user who can reach the page would read a project they
+ *    may have no access to at all.
+ *
+ * Fails closed: an error while determining the permission is a refusal, not a
+ * pass.
+ */
+async function authoriseProject(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<{ ok: true; projectId: string } | { ok: false; error: string }> {
+  const projectId = projectIdFromContext(invocation.context);
+  if (projectId === null) return { ok: false, error: NOT_IN_PROJECT };
+  let allowed: boolean;
+  try {
+    allowed = await runtime.canBrowseProject(projectId);
+  } catch {
+    return { ok: false, error: NO_PERMISSION };
+  }
+  return allowed ? { ok: true, projectId } : { ok: false, error: NO_PERMISSION };
+}
 
 /**
  * Turn a thrown error into a message safe to show a user.
@@ -111,10 +161,9 @@ export async function handleGetReport(
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<ReportEnvelope>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   try {
     return {
       ok: true,
@@ -130,10 +179,9 @@ export async function handleExportCsv(
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<{ filename: string; csv: string }>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   try {
     const csv = await runtime.statusReportCsv(parseReportRequest(projectId, invocation.payload));
     return {
@@ -150,10 +198,9 @@ export async function handleStartIndexing(
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<{ started: true }>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'Indexing can only be started from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   try {
     await runtime.startBackfill(projectId);
     return { ok: true, data: { started: true } };
@@ -241,26 +288,39 @@ export function projectIdFromEvent(event: unknown): string | null {
 
 const WORKLOG_GROUPINGS = ['author', 'issue', 'project', 'day', 'week', 'month'] as const;
 
+/**
+ * Read a number from an untrusted payload.
+ *
+ * `typeof NaN === 'number'`, so a bare `typeof` guard lets `NaN` through — and
+ * a `NaN` bound as a SQL `LIMIT` or a timestamp comparison is a runtime error
+ * rather than an empty result. Every numeric field a client can set goes
+ * through here.
+ */
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 /** Listing 2 — worklog totals. */
 export async function handleWorklogReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<WorklogAggregateResult>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   const record =
     typeof invocation.payload === 'object' && invocation.payload !== null
       ? (invocation.payload as Record<string, unknown>)
       : {};
   const groupBy = record['groupBy'];
   const request: WorklogReportRequest = {
-    projectId,
     ...(isWorklogGrouping(groupBy) ? { groupBy } : {}),
-    ...(typeof record['from'] === 'number' ? { from: record['from'] } : {}),
-    ...(typeof record['to'] === 'number' ? { to: record['to'] } : {}),
+    ...(finiteNumber(record['from']) === null ? {} : { from: finiteNumber(record['from'])! }),
+    ...(finiteNumber(record['to']) === null ? {} : { to: finiteNumber(record['to'])! }),
+    // Written last on purpose: a payload-derived spread can never overwrite
+    // the context-derived project.
+    projectId,
   };
   try {
     return { ok: true, data: await runtime.worklogReport(request) };
@@ -279,10 +339,9 @@ export async function handleAgingReport(
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<AgingReport>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   try {
     return { ok: true, data: await runtime.agingReport(projectId) };
   } catch (error: unknown) {
@@ -303,20 +362,17 @@ export async function handleSlaReport(
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<SlaReport>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   const record =
     typeof invocation.payload === 'object' && invocation.payload !== null
       ? (invocation.payload as Record<string, unknown>)
       : {};
   const counted = stringArray(record['countedStatusIds']) ?? [];
-  const rawTarget = record['targetMs'];
+  const rawTarget = finiteNumber(record['targetMs']);
   const targetMs =
-    typeof rawTarget === 'number' && Number.isFinite(rawTarget)
-      ? Math.max(60_000, Math.min(365 * 86_400_000, rawTarget))
-      : 8 * 3_600_000;
+    rawTarget === null ? 8 * 3_600_000 : Math.max(60_000, Math.min(365 * 86_400_000, rawTarget));
   try {
     return {
       ok: true,
@@ -338,20 +394,23 @@ export async function handleHistoryReport(
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<HistoryReport>> {
   runtime.beginInvocation();
-  const projectId = projectIdFromContext(invocation.context);
-  if (projectId === null) {
-    return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
-  }
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const projectId = auth.projectId;
   const record =
     typeof invocation.payload === 'object' && invocation.payload !== null
       ? (invocation.payload as Record<string, unknown>)
       : {};
   const request: HistoryReportRequest = {
-    projectId,
-    ...(typeof record['from'] === 'number' ? { from: record['from'] } : {}),
-    ...(typeof record['to'] === 'number' ? { to: record['to'] } : {}),
+    ...(finiteNumber(record['from']) === null ? {} : { from: finiteNumber(record['from'])! }),
+    ...(finiteNumber(record['to']) === null ? {} : { to: finiteNumber(record['to'])! }),
     ...(stringArray(record['fields']) === null ? {} : { fields: stringArray(record['fields'])! }),
-    ...(typeof record['limit'] === 'number' ? { limit: Math.min(1000, record['limit']) } : {}),
+    ...(finiteNumber(record['limit']) === null
+      ? {}
+      : { limit: Math.min(1000, Math.max(1, finiteNumber(record['limit'])!)) }),
+    // Written last on purpose: a payload-derived spread can never overwrite
+    // the context-derived project.
+    projectId,
   };
   try {
     return { ok: true, data: await runtime.historyReport(request) };

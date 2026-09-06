@@ -120,6 +120,10 @@ Repeat steps 1-2 and 6-8 for each of the other four apps once listing 1 is confi
 6. **Listing content** — see `PROMOTION.md`. Budget a full week.
 7. **Privacy and security statements** — the honest version is short: read-only Jira access, all
    data stays inside the customer's Atlassian tenant, no external service, no telemetry.
+   **State the residual explicitly** (see `TECHNICAL-SPEC.md` § 11.6): reports are authorised on
+   `BROWSE_PROJECTS` for the viewer, issues under an issue security level are excluded from
+   indexing, restricted worklogs are dropped — but the app does not re-check per-issue visibility
+   per viewer on every render. A reviewer will ask; saying it first is cheaper than being asked.
 8. **Submit for review.** Atlassian's Forge review is typically 5-10 calendar days.
 9. **Respond to feedback**, redeploy, resubmit.
 10. **Publish.**

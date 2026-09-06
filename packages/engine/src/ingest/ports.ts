@@ -32,6 +32,17 @@ export interface PageParams {
 
 /** Read-only Jira access. The apps never write to Jira. */
 export interface JiraApi {
+  /**
+   * Can the **current user** browse this project?
+   *
+   * Every other method on this port reads Jira *as the app*, which by design
+   * ignores the caller's Jira permissions. Without this check, any user of the
+   * instance who could reach a report surface would read any project's
+   * aggregates. Implementations must ask Jira as the user, and must fail
+   * closed — a failure to determine the answer is not permission.
+   */
+  canBrowseProject(projectId: string): Promise<boolean>;
+
   searchIssues(params: SearchParams): Promise<JiraSearchPage>;
   getIssue(issueIdOrKey: string, fields: readonly string[]): Promise<JiraIssue>;
   getChangelog(issueIdOrKey: string, page: PageParams): Promise<JiraChangelogPage>;
