@@ -11,7 +11,11 @@ export default defineConfig({
       reporter: ['text', 'json-summary', 'lcov'],
       // The coverage floor is enforced on the shared packages. They hold every
       // load-bearing calculation; the app packages are thin presentation shells.
-      include: ['packages/engine/src/**/*.ts', 'packages/forge-runtime/src/**/*.ts'],
+      include: [
+        'packages/engine/src/**/*.ts',
+        'packages/forge-runtime/src/**/*.ts',
+        'packages/ui/src/**/*.ts',
+      ],
       exclude: [
         '**/index.ts',
         // Pure type declarations, no executable statements to cover.

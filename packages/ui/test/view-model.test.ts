@@ -1,0 +1,234 @@
+import { describe, expect, it } from 'vitest';
+import type { BackfillProgress, StatusReport } from '@jfm/engine';
+import {
+  formatBytes,
+  formatCell,
+  formatDate,
+  formatDurationForHumans,
+  surfaceStateOf,
+  toProgressBanner,
+  toReportTable,
+  toSummaryTiles,
+} from '../src/view-model.js';
+
+const HOUR = 3_600_000;
+
+function report(overrides: Partial<StatusReport> = {}): StatusReport {
+  return {
+    columns: [
+      { statusId: '10000', name: 'To Do' },
+      { statusId: '3', name: 'In Progress' },
+    ],
+    rows: [
+      {
+        issueId: '1',
+        issueKey: 'FLOW-1',
+        currentStatusId: '3',
+        createdAt: Date.parse('2026-03-02T00:00:00Z'),
+        resolvedAt: null,
+        assigneeAccountId: null,
+        issueTypeId: null,
+        truncated: false,
+        byStatus: { '10000': HOUR, '3': 12 * HOUR },
+        entriesByStatus: { '10000': 1, '3': 2 },
+        totalMs: 13 * HOUR,
+      },
+    ],
+    basis: 'elapsed',
+    summaryByStatus: {
+      '3': {
+        count: 2,
+        meanMs: 8 * HOUR,
+        medianMs: 8 * HOUR,
+        p85Ms: 11 * HOUR,
+        p95Ms: 12 * HOUR,
+        minMs: 4 * HOUR,
+        maxMs: 12 * HOUR,
+      },
+    },
+    issueCount: 1,
+    anyTruncated: false,
+    ...overrides,
+  };
+}
+
+function progress(overrides: Partial<BackfillProgress> = {}): BackfillProgress {
+  return {
+    state: 'running',
+    issuesProcessed: 500,
+    issuesTotal: 2000,
+    fraction: 0.25,
+    lastError: null,
+    startedAt: 0,
+    updatedAt: 0,
+    ...overrides,
+  };
+}
+
+describe('duration formatting', () => {
+  it('distinguishes "never in this status" from "no time recorded"', () => {
+    expect(formatCell(undefined)).toBe('—');
+    expect(formatCell(0)).toBe('0m');
+  });
+
+  it('never rounds a real duration down to zero', () => {
+    expect(formatDurationForHumans(12_000)).toBe('<1m');
+    expect(formatDurationForHumans(1)).toBe('<1m');
+  });
+
+  it('scales the unit to what a human can act on', () => {
+    expect(formatDurationForHumans(90_000)).toBe('2m');
+    expect(formatDurationForHumans(HOUR)).toBe('1h');
+    expect(formatDurationForHumans(HOUR + 1_800_000)).toBe('1h 30m');
+    expect(formatDurationForHumans(26 * HOUR)).toBe('1d 2h');
+    expect(formatDurationForHumans(Number.NaN)).toBe('—');
+    expect(formatDurationForHumans(-5)).toBe('0m');
+  });
+
+  it('formats dates unambiguously and locale-independently', () => {
+    expect(formatDate(Date.parse('2026-03-02T00:00:00Z'))).toBe('2 Mar 2026');
+    expect(formatDate(null)).toBe('—');
+    expect(formatDate(Number.NaN)).toBe('—');
+  });
+
+  it('formats byte counts', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(-1)).toBe('0 B');
+    expect(formatBytes(512)).toBe('512 B');
+    expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatBytes(16 * 1024 * 1024)).toBe('16 MB');
+  });
+});
+
+describe('surface state', () => {
+  it('picks one of the four designed states', () => {
+    expect(surfaceStateOf({ loading: true, error: null, rowCount: 0 })).toBe('loading');
+    expect(surfaceStateOf({ loading: false, error: 'x', rowCount: 5 })).toBe('error');
+    expect(surfaceStateOf({ loading: false, error: null, rowCount: 0 })).toBe('empty');
+    expect(surfaceStateOf({ loading: false, error: null, rowCount: 5 })).toBe('ready');
+  });
+});
+
+describe('report table model', () => {
+  it('builds headers from the report columns', () => {
+    expect(toReportTable(report()).headers).toEqual([
+      'Issue',
+      'Status',
+      'Created',
+      'Resolved',
+      'To Do',
+      'In Progress',
+      'Total',
+    ]);
+  });
+
+  it('marks a re-entered status, which is the product argument in one badge', () => {
+    const table = toReportTable(report());
+    const row = table.rows[0]!;
+    expect(row.cells[1]).toEqual({ text: '12h', entries: 2, reentered: true });
+    expect(row.cells[0]?.reentered).toBe(false);
+    expect(table.footnotes.some((f) => f.includes('cumulative across every visit'))).toBe(true);
+  });
+
+  it('explains partial history rather than hiding it', () => {
+    const base = report();
+    const truncated = report({
+      rows: [{ ...base.rows[0]!, truncated: true }],
+      anyTruncated: true,
+    });
+    const table = toReportTable(truncated);
+    expect(table.rows[0]?.truncated).toBe(true);
+    expect(table.footnotes.some((f) => f.includes('lower bound'))).toBe(true);
+  });
+
+  it('labels the basis', () => {
+    expect(toReportTable(report()).basisLabel).toBe('Elapsed time');
+    expect(toReportTable(report({ basis: 'business' })).basisLabel).toBe('Working hours');
+  });
+
+  it('handles a row whose current status is unknown', () => {
+    const base = report();
+    const table = toReportTable(report({ rows: [{ ...base.rows[0]!, currentStatusId: null }] }));
+    expect(table.rows[0]?.currentStatus).toBe('—');
+  });
+
+  it('falls back to the status id when no name is known', () => {
+    const base = report();
+    const table = toReportTable(report({ rows: [{ ...base.rows[0]!, currentStatusId: 'ghost' }] }));
+    expect(table.rows[0]?.currentStatus).toBe('ghost');
+  });
+});
+
+describe('summary tiles', () => {
+  it('leads with the issue count and reports median plus 85th percentile', () => {
+    const tiles = toSummaryTiles(report());
+    expect(tiles[0]).toMatchObject({ label: 'Issues', value: '1' });
+    expect(tiles[1]?.label).toBe('In Progress · median');
+    expect(tiles[1]?.value).toBe('8h');
+    expect(tiles[1]?.hint).toContain('85th percentile 11h');
+  });
+
+  it('skips statuses with no sample', () => {
+    expect(toSummaryTiles(report({ summaryByStatus: {} }))).toHaveLength(1);
+  });
+
+  it('copes with a summary that has no median', () => {
+    const tiles = toSummaryTiles(
+      report({
+        summaryByStatus: {
+          '3': {
+            count: 1,
+            meanMs: null,
+            medianMs: null,
+            p85Ms: null,
+            p95Ms: null,
+            minMs: null,
+            maxMs: null,
+          },
+        },
+      }),
+    );
+    expect(tiles[1]?.value).toBe('—');
+    expect(tiles[1]?.hint).toBe('Across 1 issues.');
+  });
+});
+
+describe('indexing banner', () => {
+  it('tells the user when nothing is indexed yet', () => {
+    expect(toProgressBanner(null)).toMatchObject({ title: 'Not indexed yet' });
+  });
+
+  it('disappears only once indexing is complete', () => {
+    expect(toProgressBanner(progress({ state: 'complete' }))).toBeNull();
+  });
+
+  it('says the numbers are partial while indexing runs', () => {
+    const banner = toProgressBanner(progress());
+    expect(banner?.showSpinner).toBe(true);
+    expect(banner?.body).toContain('500 of 2,000 issues indexed (25%)');
+    expect(banner?.body).toContain('only the issues indexed so far');
+  });
+
+  it('reports a rate-limit pause as expected rather than as a fault', () => {
+    const banner = toProgressBanner(progress({ state: 'paused' }));
+    expect(banner?.appearance).toBe('warning');
+    expect(banner?.body).toContain('resume automatically');
+  });
+
+  it('surfaces the recorded error on failure', () => {
+    const banner = toProgressBanner(progress({ state: 'failed', lastError: 'HTTP 403' }));
+    expect(banner?.appearance).toBe('error');
+    expect(banner?.body).toContain('HTTP 403');
+    expect(toProgressBanner(progress({ state: 'failed' }))?.body).toContain('No error detail');
+  });
+
+  it('does not invent a percentage when Jira gave no total', () => {
+    const banner = toProgressBanner(progress({ fraction: null, issuesTotal: null }));
+    expect(banner?.body).toContain('500 issues indexed.');
+    expect(banner?.body).not.toContain('%');
+  });
+
+  it('treats not_started as indexing in progress', () => {
+    expect(toProgressBanner(progress({ state: 'not_started' }))?.showSpinner).toBe(true);
+  });
+});

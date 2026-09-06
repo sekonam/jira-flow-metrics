@@ -1,4 +1,8 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/engine" }, { "path": "./packages/forge-runtime" }]
+  "references": [
+    { "path": "./packages/engine" },
+    { "path": "./packages/forge-runtime" },
+    { "path": "./packages/ui" }
+  ]
 }
