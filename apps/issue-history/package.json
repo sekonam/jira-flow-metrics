@@ -1,0 +1,30 @@
+{
+  "name": "@jfm/app-issue-history",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Atlassian Marketplace listing: Issue History & Audit Log.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "forge:lint": "forge lint",
+    "forge:deploy": "forge deploy"
+  },
+  "dependencies": {
+    "@jfm/engine": "workspace:*",
+    "@jfm/forge-runtime": "workspace:*",
+    "@jfm/ui": "workspace:*",
+    "@forge/api": "^8.0.5",
+    "@forge/bridge": "^6.3.1",
+    "@forge/events": "^3.0.5",
+    "@forge/react": "^12.1.3",
+    "@forge/resolver": "^2.0.0",
+    "@forge/sql": "^4.0.5",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@forge/cli": "^13.5.0",
+    "@types/react": "^18.3.12"
+  }
+}

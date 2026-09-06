@@ -7,4 +7,5 @@
  */
 
 export * from './view-model.js';
+export * from './listing-models.js';
 export * from './components.js';

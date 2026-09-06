@@ -23,6 +23,19 @@ import {
   type StatusReport,
 } from '@jfm/engine';
 import { type SettingsStore, type ProjectSettings } from './settings.js';
+import {
+  buildAgingReport,
+  buildHistoryReport,
+  buildSlaReport,
+  buildWorklogReport,
+  type AgingReport,
+  type HistoryReport,
+  type HistoryReportRequest,
+  type SlaCountedGoal,
+  type SlaReport,
+  type WorklogReportRequest,
+} from './reports.js';
+import type { WorklogAggregateResult } from '@jfm/engine';
 
 /**
  * Per-listing runtime wiring.
@@ -208,6 +221,31 @@ export class ListingRuntime {
   async statusReportCsv(request: StatusReportRequest): Promise<string> {
     const envelope = await this.statusReport({ ...request, limit: request.limit ?? 500 });
     return statusReportToCsv(envelope.report, { durationFormat: 'hours' });
+  }
+
+  /** Listing 2 — worklog totals grouped by author, issue, day, week or month. */
+  async worklogReport(request: WorklogReportRequest): Promise<WorklogAggregateResult> {
+    await this.deps.store.migrate();
+    const settings = await this.deps.settings.get(request.projectId);
+    return buildWorklogReport(this.deps.store, request, settings.calendar.timeZone);
+  }
+
+  /** Listing 3 — how long each unfinished issue has sat where it is. */
+  async agingReport(projectId: string, limit = 500): Promise<AgingReport> {
+    await this.deps.store.migrate();
+    return buildAgingReport(this.deps.store, projectId, this.clock.now(), limit);
+  }
+
+  /** Listing 4 — working time in the counted statuses against a target. */
+  async slaReport(projectId: string, goal: SlaCountedGoal, limit = 500): Promise<SlaReport> {
+    await this.deps.store.migrate();
+    return buildSlaReport(this.deps.store, projectId, goal, this.clock.now(), limit);
+  }
+
+  /** Listing 5 — filtered, exportable field-change history across issues. */
+  async historyReport(request: HistoryReportRequest): Promise<HistoryReport> {
+    await this.deps.store.migrate();
+    return buildHistoryReport(this.deps.store, request);
   }
 
   /** Storage footprint, for the admin usage panel. Estimated, not measured. */

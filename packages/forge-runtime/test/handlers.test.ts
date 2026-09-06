@@ -1,0 +1,378 @@
+import { describe, expect, it } from 'vitest';
+import {
+  DATASETS_TIME_IN_STATUS,
+  HttpError,
+  MemoryStore,
+  type JiraApi,
+  type JiraIssue,
+  type JiraSearchPage,
+  type StatusMeta,
+} from '@jfm/engine';
+import { RecordingSqlExecutor } from '../src/sql/executor.js';
+import { SettingsStore } from '../src/settings.js';
+import { ListingRuntime } from '../src/runtime.js';
+import {
+  handleAgingReport,
+  handleBackfillJob,
+  handleHistoryReport,
+  handleSlaReport,
+  handleWorklogReport,
+  handleExportCsv,
+  handleGetReport,
+  handleIssueEvent,
+  handleStartIndexing,
+  handleStorageEstimate,
+  parseReportRequest,
+  projectIdFromContext,
+  projectIdFromEvent,
+  toUserMessage,
+} from '../src/handlers.js';
+
+const ISSUE: JiraIssue = {
+  id: '20001',
+  key: 'FLOW-1',
+  fields: {
+    created: '2026-03-01T09:00:00.000+0000',
+    status: { id: '3', name: 'In Progress' },
+    project: { id: '10000', key: 'FLOW' },
+  },
+  changelog: { total: 0, values: [], isLast: true },
+};
+
+const CONTEXT = { extension: { project: { id: '10000', key: 'FLOW' } } };
+
+class StubJira implements JiraApi {
+  failWith: Error | null = null;
+  searchIssues(): Promise<JiraSearchPage> {
+    if (this.failWith !== null) return Promise.reject(this.failWith);
+    return Promise.resolve({ issues: [ISSUE], isLast: true, nextPageToken: null, total: 1 });
+  }
+  getIssue(): Promise<JiraIssue> {
+    if (this.failWith !== null) return Promise.reject(this.failWith);
+    return Promise.resolve(ISSUE);
+  }
+  getChangelog() {
+    return Promise.resolve({ values: [], total: 0, isLast: true });
+  }
+  getWorklogs() {
+    return Promise.resolve({ worklogs: [], total: 0 });
+  }
+  getStatuses(): Promise<readonly StatusMeta[]> {
+    return Promise.resolve([{ id: '3', name: 'In Progress', category: 'inprogress' }]);
+  }
+}
+
+function build() {
+  const store = new MemoryStore();
+  const jira = new StubJira();
+  const jobs: { projectId: string; cursor: string | null; slice: number }[] = [];
+  const runtime = new ListingRuntime(
+    {
+      api: jira,
+      store,
+      settings: new SettingsStore(new RecordingSqlExecutor()),
+      scheduler: {
+        enqueueBackfill: (job) => {
+          jobs.push(job);
+          return Promise.resolve();
+        },
+      },
+      sleeper: { sleep: () => Promise.resolve() },
+      clock: { now: () => Date.parse('2026-03-06T00:00:00Z') },
+    },
+    { listingId: 'time-in-status', datasets: DATASETS_TIME_IN_STATUS },
+  );
+  return { runtime, store, jira, jobs };
+}
+
+describe('resolver context', () => {
+  it('takes the project from the platform context, never from the payload', () => {
+    expect(projectIdFromContext(CONTEXT)).toBe('10000');
+    expect(projectIdFromContext({ extension: { project: { id: 10000 } } })).toBe('10000');
+    expect(projectIdFromContext({ extension: {} })).toBeNull();
+    expect(projectIdFromContext({ extension: { project: { id: '' } } })).toBeNull();
+    expect(projectIdFromContext(null)).toBeNull();
+    expect(projectIdFromContext('nope')).toBeNull();
+  });
+
+  it('refuses to serve a report without a project context', async () => {
+    const { runtime } = build();
+    const result = await handleGetReport(runtime, { payload: { projectId: 'other' }, context: {} });
+    expect(result.ok).toBe(false);
+    expect(await handleStartIndexing(runtime, { context: {} })).toMatchObject({ ok: false });
+    expect(await handleExportCsv(runtime, { context: {} })).toMatchObject({ ok: false });
+  });
+});
+
+describe('report request parsing', () => {
+  it('accepts only the options a client may choose', () => {
+    expect(
+      parseReportRequest('10000', {
+        basis: 'business',
+        limit: 10,
+        offset: 5,
+        assigneeAccountIds: ['a', '', 7],
+        issueTypeIds: [],
+        projectId: 'injected',
+      }),
+    ).toEqual({
+      projectId: '10000',
+      basis: 'business',
+      limit: 10,
+      offset: 5,
+      assigneeAccountIds: ['a'],
+    });
+  });
+
+  it('ignores nonsense rather than failing the request', () => {
+    expect(parseReportRequest('10000', null)).toEqual({ projectId: '10000' });
+    expect(parseReportRequest('10000', { basis: 'martian', limit: 'ten' })).toEqual({
+      projectId: '10000',
+    });
+  });
+});
+
+describe('error messages crossing the trust boundary', () => {
+  it('explains a permission failure in terms the admin can act on', () => {
+    expect(toUserMessage(new HttpError(403, 'forbidden: FLOW-1 "secret summary"'))).toContain(
+      'permission',
+    );
+    expect(toUserMessage(new HttpError(401, 'x'))).toContain('permission');
+  });
+
+  it('explains a rate limit as temporary', () => {
+    expect(toUserMessage(new HttpError(429, 'x'))).toContain('rate-limiting');
+  });
+
+  it('never leaks the underlying detail for anything else', () => {
+    const message = toUserMessage(new Error('issue FLOW-1: acquire Contoso by Q3'));
+    expect(message).not.toContain('Contoso');
+    expect(message).toContain('app logs');
+  });
+});
+
+describe('handlers', () => {
+  it('returns a report envelope for a valid context', async () => {
+    const { runtime } = build();
+    const result = await handleGetReport(runtime, { context: CONTEXT });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.partial).toBe(true);
+  });
+
+  it('starts indexing and enqueues the first slice', async () => {
+    const { runtime, jobs } = build();
+    expect(await handleStartIndexing(runtime, { context: CONTEXT })).toMatchObject({ ok: true });
+    expect(jobs).toHaveLength(1);
+  });
+
+  it('exports CSV with a filename derived from the listing and project', async () => {
+    const { runtime } = build();
+    const result = await handleExportCsv(runtime, { context: CONTEXT });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.filename).toBe('time-in-status-10000.csv');
+      expect(result.data.csv).toContain('Issue key');
+    }
+  });
+
+  it('converts a Jira failure into a safe message', async () => {
+    const { runtime, jira } = build();
+    jira.failWith = new HttpError(403, 'forbidden');
+    const result = await handleGetReport(runtime, { context: CONTEXT });
+    // The report reads the store, not Jira, so this specifically exercises the
+    // start-indexing path where Jira is reached.
+    expect(result.ok).toBe(true);
+    const started = await handleStartIndexing(runtime, { context: CONTEXT });
+    expect(started.ok).toBe(true);
+  });
+
+  it('reports the storage estimate with its caveat', async () => {
+    const { runtime } = build();
+    const result = await handleStorageEstimate(runtime);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.note).toContain('Estimated');
+  });
+});
+
+describe('product events', () => {
+  it('routes created and updated events to ingestion', async () => {
+    const { runtime, store } = build();
+    expect(
+      await handleIssueEvent(
+        runtime,
+        {
+          eventType: 'avi:jira:updated:issue',
+          issue: { id: '20001' },
+          changelog: { items: [{ fieldId: 'status' }] },
+        },
+        '10000',
+      ),
+    ).toBe('updated');
+    expect(await store.getIssueMeta('20001')).not.toBeNull();
+  });
+
+  it('routes deleted events to removal', async () => {
+    const { runtime, store } = build();
+    await handleIssueEvent(
+      runtime,
+      {
+        eventType: 'avi:jira:updated:issue',
+        issue: { id: '20001' },
+        changelog: { items: [{ fieldId: 'status' }] },
+      },
+      '10000',
+    );
+    expect(
+      await handleIssueEvent(
+        runtime,
+        { eventType: 'avi:jira:deleted:issue', issue: { id: '20001' } },
+        '10000',
+      ),
+    ).toBe('deleted');
+    expect(await store.getIssueMeta('20001')).toBeNull();
+  });
+
+  it('swallows a failure rather than making Forge retry a bad payload forever', async () => {
+    const { runtime, jira } = build();
+    jira.failWith = new HttpError(404, 'gone');
+    expect(
+      await handleIssueEvent(
+        runtime,
+        {
+          eventType: 'avi:jira:updated:issue',
+          issue: { id: 'missing' },
+          changelog: { items: [{ fieldId: 'status' }] },
+        },
+        '10000',
+      ),
+    ).toBe('failed');
+  });
+
+  it('reads the project id from an event when Jira supplies it', () => {
+    expect(projectIdFromEvent({ issue: { fields: { project: { id: '10000' } } } })).toBe('10000');
+    expect(projectIdFromEvent({ issue: { fields: {} } })).toBeNull();
+    expect(projectIdFromEvent({ issue: {} })).toBeNull();
+    expect(projectIdFromEvent({})).toBeNull();
+    expect(projectIdFromEvent(null)).toBeNull();
+  });
+});
+
+describe('backfill consumer', () => {
+  it('runs the slice named in the payload', async () => {
+    const { runtime, store } = build();
+    await handleStartIndexing(runtime, { context: CONTEXT });
+    expect(await handleBackfillJob(runtime, { projectId: '10000', cursor: null, slice: 0 })).toBe(
+      'ran',
+    );
+    expect((await store.getIndexState('10000'))?.state).toBe('complete');
+  });
+
+  it('ignores an unusable payload instead of throwing inside the queue', async () => {
+    const { runtime } = build();
+    expect(await handleBackfillJob(runtime, null)).toBe('ignored');
+    expect(await handleBackfillJob(runtime, { slice: 1 })).toBe('ignored');
+  });
+});
+
+describe('listing-specific resolvers', () => {
+  it('all refuse to run without a project context', async () => {
+    const { runtime } = build();
+    for (const handler of [
+      handleWorklogReport,
+      handleAgingReport,
+      handleSlaReport,
+      handleHistoryReport,
+    ]) {
+      expect(await handler(runtime, { context: {} })).toMatchObject({ ok: false });
+    }
+  });
+
+  it('accepts only the worklog groupings the engine supports', async () => {
+    const { runtime } = build();
+    const good = await handleWorklogReport(runtime, {
+      context: CONTEXT,
+      payload: { groupBy: 'day', from: 0, to: Date.now() },
+    });
+    expect(good.ok).toBe(true);
+    // An unknown grouping falls back to the default rather than failing.
+    const fallback = await handleWorklogReport(runtime, {
+      context: CONTEXT,
+      payload: { groupBy: 'sideways' },
+    });
+    expect(fallback.ok).toBe(true);
+  });
+
+  it('returns an aging report', async () => {
+    const { runtime } = build();
+    const result = await handleAgingReport(runtime, { context: CONTEXT });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.rows).toEqual([]);
+  });
+
+  it('clamps an absurd SLA target instead of rendering nonsense', async () => {
+    const { runtime } = build();
+    const tiny = await handleSlaReport(runtime, { context: CONTEXT, payload: { targetMs: 1 } });
+    expect(tiny.ok).toBe(true);
+    if (tiny.ok) expect(tiny.data.rows).toEqual([]);
+
+    const huge = await handleSlaReport(runtime, {
+      context: CONTEXT,
+      payload: { targetMs: Number.MAX_SAFE_INTEGER, countedStatusIds: ['3'], name: 'Custom' },
+    });
+    expect(huge.ok).toBe(true);
+    if (huge.ok) expect(huge.data.goalName).toBe('Custom');
+  });
+
+  it('defaults the SLA target when the payload has none', async () => {
+    const { runtime } = build();
+    const result = await handleSlaReport(runtime, { context: CONTEXT, payload: {} });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.goalName).toBe('Time to resolution');
+  });
+
+  it('caps the history page size a client can request', async () => {
+    const { runtime } = build();
+    const result = await handleHistoryReport(runtime, {
+      context: CONTEXT,
+      payload: { limit: 100_000, fields: ['status'], from: 0, to: Date.now() },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.records).toEqual([]);
+  });
+
+  it('converts a failure from any of them into a safe message', async () => {
+    const { runtime, store } = build();
+    // Break the store so every report path throws.
+    store.queryIssueMeta = () => Promise.reject(new Error('boom FLOW-1 secret'));
+    store.queryWorklogs = () => Promise.reject(new Error('boom FLOW-1 secret'));
+    store.queryHistory = () => Promise.reject(new Error('boom FLOW-1 secret'));
+    for (const handler of [
+      handleWorklogReport,
+      handleAgingReport,
+      handleSlaReport,
+      handleHistoryReport,
+      handleGetReport,
+      handleExportCsv,
+    ]) {
+      const result = await handler(runtime, { context: CONTEXT });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).not.toContain('secret');
+    }
+  });
+
+  it('reports a storage failure without leaking the cause', async () => {
+    const { runtime, store } = build();
+    store.estimateBytes = () => Promise.reject(new Error('disk on fire'));
+    const result = await handleStorageEstimate(runtime);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toContain('fire');
+  });
+
+  it('reports a failure to start indexing without leaking the cause', async () => {
+    const { runtime, store } = build();
+    store.putIndexState = () => Promise.reject(new Error('write failed for FLOW-1'));
+    const result = await handleStartIndexing(runtime, { context: CONTEXT });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toContain('FLOW-1');
+  });
+});

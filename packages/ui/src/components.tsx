@@ -14,6 +14,7 @@ import {
   Text,
 } from '@forge/react';
 import type { ProgressBanner, ReportTableModel, SummaryTile } from './view-model.js';
+import type { SimpleTable } from './listing-models.js';
 
 /**
  * Shared Forge UI Kit components.
@@ -48,7 +49,7 @@ export function ErrorSurface({
   onRetry,
 }: {
   message: string;
-  onRetry?: () => void;
+  onRetry?: (() => void) | undefined;
 }): React.JSX.Element {
   return (
     <SectionMessage title="Could not load this report" appearance="error">
@@ -66,8 +67,8 @@ export function EmptySurface({
 }: {
   title: string;
   body: string;
-  actionLabel?: string;
-  onAction?: () => void;
+  actionLabel?: string | undefined;
+  onAction?: (() => void) | undefined;
 }): React.JSX.Element {
   return (
     <EmptyState
@@ -89,7 +90,7 @@ export function IndexingBanner({
   onStart,
 }: {
   banner: ProgressBanner | null;
-  onStart?: () => void;
+  onStart?: (() => void) | undefined;
 }): React.JSX.Element | null {
   if (banner === null) return null;
   return (
@@ -185,7 +186,7 @@ export function PageHeader({
 }: {
   title: string;
   subtitle: string;
-  actions?: React.ReactNode;
+  actions?: React.ReactNode | undefined;
 }): React.JSX.Element {
   return (
     <Stack space="space.100">
@@ -194,6 +195,34 @@ export function PageHeader({
         <Text>{subtitle}</Text>
         {actions}
       </Inline>
+    </Stack>
+  );
+}
+
+/** A plain table for the listings whose data is a flat list of rows. */
+export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.Element {
+  const head = {
+    cells: model.headers.map((header, index) => ({
+      key: `h-${index}`,
+      content: header,
+      isSortable: index === 0,
+    })),
+  };
+  const rows = model.rows.map((row, rowIndex) => ({
+    key: `r-${rowIndex}`,
+    cells: row.map((value, index) => ({
+      key: `c-${index}`,
+      content: index === 0 ? <Strong>{value}</Strong> : <Text>{value}</Text>,
+    })),
+  }));
+  return (
+    <Stack space="space.150">
+      <DynamicTable head={head} rows={rows} rowsPerPage={25} />
+      {model.footnotes.map((note) => (
+        <Text key={note} size="small">
+          {note}
+        </Text>
+      ))}
     </Stack>
   );
 }

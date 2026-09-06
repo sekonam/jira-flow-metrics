@@ -33,7 +33,13 @@ import {
   toText,
   worklogFromRow,
 } from '../src/sql/rows.js';
-import { JiraRestClient, redact, type JiraResponseLike } from '../src/jira/client.js';
+import {
+  JiraRestClient,
+  asTemplateStrings,
+  forgeJiraFetch,
+  redact,
+  type JiraResponseLike,
+} from '../src/jira/client.js';
 import { QueueScheduler, jobFromPayload } from '../src/scheduler.js';
 import { SettingsStore, defaultSettings, parseSettings } from '../src/settings.js';
 import { ListingRuntime } from '../src/runtime.js';
@@ -1006,5 +1012,42 @@ describe('SqlMetricsStore read and write paths not covered above', () => {
     expect(await store.queryIssueMeta('10000', 10, 0)).toHaveLength(1);
     expect(await store.queryStatusDurations({ projectId: '10000' })).toHaveLength(1);
     expect(await store.getStatusMeta()).toHaveLength(0);
+  });
+});
+
+describe('forgeJiraFetch', () => {
+  it('hands the path to route as a zero-interpolation tagged template', async () => {
+    const seen: unknown[] = [];
+    const fakeRoute = (strings: TemplateStringsArray, ...values: unknown[]): string => {
+      seen.push({ strings: [...strings], raw: [...strings.raw], values });
+      return strings.join('');
+    };
+    const fakeApi = {
+      asApp: () => ({
+        requestJira: (routed: unknown) => {
+          seen.push(routed);
+          return Promise.resolve({
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve(''),
+            json: () => Promise.resolve({}),
+          });
+        },
+      }),
+    };
+    const fetch = forgeJiraFetch(fakeApi, fakeRoute);
+    await fetch('/rest/api/3/status');
+    expect(seen[0]).toEqual({
+      strings: ['/rest/api/3/status'],
+      raw: ['/rest/api/3/status'],
+      values: [],
+    });
+    expect(seen[1]).toBe('/rest/api/3/status');
+  });
+
+  it('builds a template strings array that carries raw', () => {
+    const strings = asTemplateStrings('/x');
+    expect(strings.raw).toEqual(['/x']);
+    expect([...strings]).toEqual(['/x']);
   });
 });

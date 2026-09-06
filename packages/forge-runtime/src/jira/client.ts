@@ -62,12 +62,23 @@ export interface ForgeApiLike {
  */
 export function forgeJiraFetch(
   api: ForgeApiLike,
-  route: (strings: TemplateStringsArray, ...values: unknown[]) => unknown,
+  // Declared with no rest parameter so that Forge's own `route`, whose values
+  // are narrowly typed, remains assignable. Nothing is ever interpolated.
+  route: (strings: TemplateStringsArray) => unknown,
 ): JiraFetch {
   return (path, init) =>
-    // The path is built entirely from values this codebase encodes; nothing
-    // user-supplied is interpolated without `encodeURIComponent`.
-    api.asApp().requestJira(route([path] as unknown as TemplateStringsArray), init);
+    // `route` is a tagged template in the Forge SDK and rejects plain strings,
+    // so the path is handed to it as a zero-interpolation template. There is
+    // nothing to interpolate: every dynamic segment was already encoded by
+    // `JiraRestClient` with `encodeURIComponent`/`URLSearchParams`.
+    api.asApp().requestJira(route(asTemplateStrings(path)), init);
+}
+
+/** Build a real `TemplateStringsArray` (it must carry a `raw` array). */
+export function asTemplateStrings(literal: string): TemplateStringsArray {
+  const strings: string[] & { raw?: readonly string[] } = [literal];
+  strings.raw = [literal];
+  return strings as unknown as TemplateStringsArray;
 }
 
 export interface JiraClientOptions {

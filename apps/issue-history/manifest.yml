@@ -1,0 +1,71 @@
+# ⚠️ UNVALIDATED. This manifest has never been checked by `forge lint` or
+# accepted by `forge deploy` — no Atlassian credentials exist in this
+# repository. It is written against Atlassian's published module reference.
+# Validating it is step 1 of docs/RUNBOOK.md.
+
+modules:
+  jira:projectPage:
+    - key: issue-history-page
+      resource: main
+      render: native
+      resolver:
+        function: resolver
+      title: Issue History
+
+  jira:dashboardGadget:
+    - key: issue-history-gadget
+      resource: gadget
+      render: native
+      resolver:
+        function: resolver
+      title: Field changes
+      description: Filterable, exportable field-change history across every issue in a project.
+
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: issue-event-handler
+      handler: index.onIssueEvent
+    - key: backfill-consumer
+      handler: index.backfillHandler
+
+  trigger:
+    - key: issue-events
+      function: issue-event-handler
+      events:
+        # Incremental ingestion only. There is deliberately NO scheduled
+        # trigger anywhere in this app: Forge is consumption-priced, so a
+        # periodic re-index would make the marginal cost of an install grow
+        # with the customer's instance size while the price stays flat.
+        - avi:jira:created:issue
+        - avi:jira:updated:issue
+        - avi:jira:deleted:issue
+
+  consumer:
+    - key: backfill-queue-consumer
+      queue: backfill
+      resolver:
+        function: backfill-consumer
+        method: run-slice
+
+resources:
+  - key: main
+    path: src/frontend/index.tsx
+  - key: gadget
+    path: src/frontend/gadget.tsx
+
+app:
+  runtime:
+    name: nodejs22.x
+  # `forge register` writes the real id here on first run.
+  id: ari:cloud:ecosystem::app/REPLACE-WITH-forge-register-OUTPUT
+
+permissions:
+  scopes:
+    # Least privilege; the app never writes to Jira.
+    # read:jira-work — issues, changelogs and worklogs
+    # read:jira-user — display names shown on reports
+    # storage:app    — Forge SQL tables and app settings
+    - read:jira-work
+    - read:jira-user
+    - storage:app

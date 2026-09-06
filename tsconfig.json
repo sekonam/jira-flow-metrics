@@ -1,8 +1,29 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/engine" },
-    { "path": "./packages/forge-runtime" },
-    { "path": "./packages/ui" }
+    {
+      "path": "./packages/engine"
+    },
+    {
+      "path": "./packages/forge-runtime"
+    },
+    {
+      "path": "./packages/ui"
+    },
+    {
+      "path": "./apps/time-in-status"
+    },
+    {
+      "path": "./apps/worklog-reports"
+    },
+    {
+      "path": "./apps/wip-aging"
+    },
+    {
+      "path": "./apps/sla-breach"
+    },
+    {
+      "path": "./apps/issue-history"
+    }
   ]
 }

@@ -7,6 +7,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["packages/*/test/**/*.ts", "apps/*/test/**/*.ts", "*.config.mts"],
+  "include": ["packages/*/test/**/*.ts", "apps/*/test/**/*.ts", "test/**/*.ts", "*.config.mts"],
   "exclude": ["**/node_modules", "**/dist"]
 }
