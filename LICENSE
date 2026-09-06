@@ -1,0 +1,33 @@
+Copyright (c) 2026 Sergei Prykhozhai. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL
+
+This software and its source code, documentation, tests, configuration and all
+other material in this repository (together, the "Software") are the exclusive
+property of the copyright holder.
+
+No licence, express or implied, is granted to any person or entity. Without the
+prior written permission of the copyright holder you may not:
+
+  a. copy, reproduce, publish or distribute the Software, in source or compiled
+     form, in whole or in part;
+  b. modify, adapt, translate or create derivative works of the Software;
+  c. sell, rent, lease, sublicense, lend or otherwise transfer the Software;
+  d. reverse engineer, decompile or disassemble any compiled form;
+  e. remove or alter any copyright, trademark or other proprietary notice.
+
+Access to this repository does not transfer any ownership interest.
+
+Distribution of compiled builds of the Software to end users occurs solely
+through the Atlassian Marketplace, under the end-user terms published on the
+relevant Marketplace listing. Nothing in this file grants Marketplace customers
+any right to the source code.
+
+Third-party dependencies remain subject to their own licences.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
