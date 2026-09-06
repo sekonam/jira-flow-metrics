@@ -1,5 +1,5 @@
 import type { JiraChangelogEntry, JiraIssue } from '../jira/types.js';
-import { compareChangelogOrder, parseJiraTimestamp } from '../jira/parse.js';
+import { changelogItemToValue, compareChangelogOrder, parseJiraTimestamp } from '../jira/parse.js';
 import { EngineError, type IssueTimeline, type Millis, type StatusInterval } from '../types.js';
 
 /**
@@ -79,7 +79,7 @@ export function extractStatusTransitions(
         fromId: nullableString(item.from),
         fromName: nullableString(item.fromString),
         toId: nullableString(item.to),
-        toName: nullableString(item.toString),
+        toName: nullableString(changelogItemToValue(item)),
       });
     }
   });

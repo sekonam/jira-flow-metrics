@@ -27,15 +27,32 @@ export interface PricingTier {
   readonly usdPerUserMonth: number;
 }
 
+/**
+ * Where a listing sits in its niche's measured price field.
+ *
+ * Both ends are recorded, because "we undercut the leader" and "we are the
+ * cheapest" are different claims and only the first one is true everywhere.
+ * In the worklog niche in particular the two largest apps are *cheaper* than
+ * this portfolio's price, and the docs say so rather than implying otherwise.
+ */
+export interface Positioning {
+  /** The incumbent this listing is priced against. */
+  readonly againstName: string;
+  readonly againstAt50Usd: number;
+  /** The cheapest paid competitor measured in the niche. */
+  readonly cheapestPaidName: string;
+  readonly cheapestPaidAt50Usd: number;
+  /** A free competitor big enough that every buyer will see it first. */
+  readonly notableFreeCompetitor: string | null;
+}
+
 export interface ListingPricing {
   readonly listingId: string;
   readonly listingName: string;
   /** At or below this user count the app is free. Mandatory in this niche. */
   readonly freeUpToUsers: number;
   readonly tiers: readonly PricingTier[];
-  /** What the closest dedicated competitor charges at 50 users, for reference. */
-  readonly competitorAt50Usd: number | null;
-  readonly competitorName: string | null;
+  readonly positioning: Positioning;
 }
 
 /** Monthly USD for an instance of `users` seats. */
@@ -76,8 +93,13 @@ export const TIME_IN_STATUS_PRICING: ListingPricing = {
     { upToUsers: 500, usdPerUserMonth: 3.25 },
     { upToUsers: null, usdPerUserMonth: 1.6 },
   ],
-  competitorAt50Usd: 575,
-  competitorName: 'SaaSJet Time in Status',
+  positioning: {
+    againstName: 'SaaSJet Time in Status',
+    againstAt50Usd: 575,
+    cheapestPaidName: 'votazz Time in Status Reports',
+    cheapestPaidAt50Usd: 150,
+    notableFreeCompetitor: 'Bloompeak Status Time Reports FREE (10,579 installs)',
+  },
 };
 
 /** Listing 2 — Worklog reporting. $5.00/user gives **$250 at 50 users**. */
@@ -90,8 +112,16 @@ export const WORKLOG_PRICING: ListingPricing = {
     { upToUsers: 500, usdPerUserMonth: 2.5 },
     { upToUsers: null, usdPerUserMonth: 1.25 },
   ],
-  competitorAt50Usd: 200,
-  competitorName: 'HeroCoders Clockwork Lite',
+  positioning: {
+    againstName: 'Decadis sumUp for Jira',
+    againstAt50Usd: 375,
+    // Honest note: this listing is NOT the cheapest in its niche. The two
+    // largest worklog apps (HeroCoders Clockwork Lite 7,030 installs and
+    // SolDevelo Worklogs 5,390) both sell at $200/50 users, below this price.
+    cheapestPaidName: 'votazz Worklog Time Tracking',
+    cheapestPaidAt50Usd: 175,
+    notableFreeCompetitor: null,
+  },
 };
 
 /** Listing 3 — WIP aging / run charts. $5.50/user gives **$275 at 50 users**. */
@@ -104,8 +134,13 @@ export const WIP_AGING_PRICING: ListingPricing = {
     { upToUsers: 500, usdPerUserMonth: 2.75 },
     { upToUsers: null, usdPerUserMonth: 1.4 },
   ],
-  competitorAt50Usd: 275,
-  competitorName: 'Broken Build WIP Aging & Run Charts',
+  positioning: {
+    againstName: 'Broken Build WIP Aging & Run Charts',
+    againstAt50Usd: 275,
+    cheapestPaidName: 'Broken Build WIP Aging & Run Charts',
+    cheapestPaidAt50Usd: 275,
+    notableFreeCompetitor: null,
+  },
 };
 
 /** Listing 4 — SLA / due-date breach. $7.00/user gives **$350 at 50 users**. */
@@ -118,8 +153,13 @@ export const SLA_BREACH_PRICING: ListingPricing = {
     { upToUsers: 500, usdPerUserMonth: 3.5 },
     { upToUsers: null, usdPerUserMonth: 1.75 },
   ],
-  competitorAt50Usd: 450,
-  competitorName: 'Almarise SLA PowerBox',
+  positioning: {
+    againstName: 'Almarise SLA PowerBox',
+    againstAt50Usd: 450,
+    cheapestPaidName: 'Almarise SLA PowerBox',
+    cheapestPaidAt50Usd: 450,
+    notableFreeCompetitor: null,
+  },
 };
 
 /** Listing 5 — Issue history / audit log. $7.50/user gives **$375 at 50 users**. */
@@ -132,8 +172,13 @@ export const ISSUE_HISTORY_PRICING: ListingPricing = {
     { upToUsers: 500, usdPerUserMonth: 3.75 },
     { upToUsers: null, usdPerUserMonth: 1.9 },
   ],
-  competitorAt50Usd: 750,
-  competitorName: 'SaaSJet Issue History',
+  positioning: {
+    againstName: 'SaaSJet Issue History',
+    againstAt50Usd: 750,
+    cheapestPaidName: 'SaaSJet Issue History',
+    cheapestPaidAt50Usd: 750,
+    notableFreeCompetitor: null,
+  },
 };
 
 export const ALL_PRICING: readonly ListingPricing[] = [

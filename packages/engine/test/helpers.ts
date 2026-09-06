@@ -77,8 +77,8 @@ export interface FakeJiraOptions {
   readonly worklogs?: Readonly<Record<string, JiraWorklogPage>>;
   readonly issues?: Readonly<Record<string, JiraIssue>>;
   readonly statuses?: readonly StatusMeta[];
-  /** Throw this on the nth call to `searchIssues` (1-based), then stop. */
-  readonly failSearchOnCall?: { call: number; error: Error };
+  /** Throw this from the nth call to `searchIssues` onwards (1-based). */
+  readonly failSearchFromCall?: { call: number; error: Error };
   /** Page size Jira actually honours for changelog pages. */
   readonly changelogPageSize?: number;
 }
@@ -94,8 +94,8 @@ export class FakeJiraApi implements JiraApi {
 
   searchIssues(params: SearchParams): Promise<JiraSearchPage> {
     this.searchCalls.push(params);
-    const fail = this.options.failSearchOnCall;
-    if (fail !== undefined && this.searchCalls.length === fail.call) {
+    const fail = this.options.failSearchFromCall;
+    if (fail !== undefined && this.searchCalls.length >= fail.call) {
       return Promise.reject(fail.error);
     }
     const pages = this.options.pages ?? [];

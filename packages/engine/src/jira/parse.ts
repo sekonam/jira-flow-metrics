@@ -1,4 +1,5 @@
 import { EngineError, type Millis, type StatusCategory } from '../types.js';
+import type { JiraChangelogItem } from './types.js';
 
 /**
  * Parsing helpers for Jira's string encodings.
@@ -88,4 +89,15 @@ export function compareChangelogOrder(
   const bn = Number(b.id);
   if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
   return a.id.localeCompare(b.id);
+}
+
+/**
+ * Read a changelog item's new value.
+ *
+ * Jira calls this field `toString`, so the raw property can hold the inherited
+ * `Object.prototype.toString` method rather than a value (see the note on
+ * `JiraChangelogItem`). Reading it anywhere else in the codebase is a bug.
+ */
+export function changelogItemToValue(item: JiraChangelogItem): string | null {
+  return typeof item.toString === 'string' ? item.toString : null;
 }

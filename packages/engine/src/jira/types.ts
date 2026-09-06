@@ -16,7 +16,16 @@ export interface JiraChangelogItem {
   readonly from?: string | null;
   readonly fromString?: string | null;
   readonly to?: string | null;
-  readonly toString?: string | null;
+  /**
+   * Jira names this field `toString`, which collides with
+   * `Object.prototype.toString`. Declaring it as `string | null` alone would
+   * make every object literal that omits it unassignable to this interface —
+   * including perfectly valid partial fixtures — because the inherited
+   * `() => string` is not a `string`. Widening the union to admit the inherited
+   * method keeps literals assignable; read the value through
+   * `changelogItemToValue` in `jira/parse.ts`, never directly.
+   */
+  readonly toString?: string | null | (() => string);
 }
 
 export interface JiraChangelogEntry {
