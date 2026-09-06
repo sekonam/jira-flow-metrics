@@ -376,3 +376,33 @@ describe('listing-specific resolvers', () => {
     if (!result.ok) expect(result.error).not.toContain('FLOW-1');
   });
 });
+
+describe('per-invocation cache hygiene', () => {
+  /**
+   * The apps memoise the runtime at module scope, so a warm Forge container
+   * reuses it. Without an explicit reset the settings cache would outlive the
+   * invocation and a customer who changed their working calendar would keep
+   * seeing the old numbers — a silently-wrong report.
+   */
+  it('re-reads settings on every entry point rather than serving a warm cache', async () => {
+    const store = new MemoryStore();
+    const sql = new RecordingSqlExecutor();
+    const runtime = new ListingRuntime(
+      {
+        api: new StubJira(),
+        store,
+        settings: new SettingsStore(sql),
+        scheduler: { enqueueBackfill: () => Promise.resolve() },
+        sleeper: { sleep: () => Promise.resolve() },
+        clock: { now: () => Date.parse('2026-03-06T00:00:00Z') },
+      },
+      { listingId: 'time-in-status', datasets: DATASETS_TIME_IN_STATUS },
+    );
+
+    await handleGetReport(runtime, { context: CONTEXT });
+    const afterFirst = sql.statements.filter((s) => s.statement.includes('app_settings')).length;
+    await handleGetReport(runtime, { context: CONTEXT });
+    const afterSecond = sql.statements.filter((s) => s.statement.includes('app_settings')).length;
+    expect(afterSecond).toBeGreaterThan(afterFirst);
+  });
+});

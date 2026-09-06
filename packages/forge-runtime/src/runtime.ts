@@ -100,6 +100,21 @@ export class ListingRuntime {
     this.clock = deps.clock ?? systemClock;
   }
 
+  /**
+   * Drop per-invocation caches.
+   *
+   * The apps memoise their `ListingRuntime` at module scope so a warm Forge
+   * container does not rebuild it on every event. That memoisation would
+   * otherwise make `SettingsStore`'s cache outlive the invocation, so a
+   * customer who changes their working calendar would keep seeing the old
+   * numbers until the container recycled — a silently-wrong report, which is
+   * the failure mode this codebase exists to avoid. Every entry point calls
+   * this first.
+   */
+  beginInvocation(): void {
+    this.deps.settings.clearCache();
+  }
+
   /** Build the ingest config for one project, using its stored calendar. */
   async ingestConfig(projectId: string): Promise<IngestConfig> {
     const settings = await this.deps.settings.get(projectId);

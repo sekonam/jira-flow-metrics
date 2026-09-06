@@ -110,6 +110,7 @@ export async function handleGetReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<ReportEnvelope>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
@@ -128,6 +129,7 @@ export async function handleExportCsv(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<{ filename: string; csv: string }>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
@@ -147,6 +149,7 @@ export async function handleStartIndexing(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<{ started: true }>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'Indexing can only be started from inside a Jira project.' };
@@ -162,6 +165,7 @@ export async function handleStartIndexing(
 export async function handleStorageEstimate(
   runtime: ListingRuntime,
 ): Promise<HandlerResult<{ bytes: number; note: string }>> {
+  runtime.beginInvocation();
   try {
     return { ok: true, data: await runtime.storageEstimate() };
   } catch (error: unknown) {
@@ -185,6 +189,7 @@ export async function handleIssueEvent(
   const record =
     typeof event === 'object' && event !== null ? (event as Record<string, unknown>) : {};
   const eventType = typeof record['eventType'] === 'string' ? record['eventType'] : '';
+  runtime.beginInvocation();
   try {
     if (eventType.includes('deleted')) {
       await runtime.onIssueDeleted(record, projectIdHint);
@@ -205,6 +210,7 @@ export async function handleBackfillJob(
   runtime: ListingRuntime,
   payload: unknown,
 ): Promise<'ran' | 'ignored'> {
+  runtime.beginInvocation();
   const job = jobFromPayload(payload);
   if (job === null) {
     console.error(JSON.stringify({ message: 'backfill job payload unusable' }));
@@ -240,6 +246,7 @@ export async function handleWorklogReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<WorklogAggregateResult>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
@@ -271,6 +278,7 @@ export async function handleAgingReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<AgingReport>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
@@ -294,6 +302,7 @@ export async function handleSlaReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<SlaReport>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
@@ -328,6 +337,7 @@ export async function handleHistoryReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
 ): Promise<HandlerResult<HistoryReport>> {
+  runtime.beginInvocation();
   const projectId = projectIdFromContext(invocation.context);
   if (projectId === null) {
     return { ok: false, error: 'This report can only be opened from inside a Jira project.' };
