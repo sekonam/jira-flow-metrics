@@ -164,8 +164,15 @@ second listing off one engine works.
 
 - Age of every **unfinished** issue in its current status, oldest first.
 - Age buckets (0-1d, 1-3d, 3-7d, 7-14d, 14-30d, 30d+) as a histogram.
+  ⚠️ **Not built.** The buckets are computed and the chart series is built by
+  `toAgingChartData`, but no component renders them — rendering every screen showed there is no
+  histogram anywhere. It is the same class of gap as the CSV export below, and § 4 of this
+  document already defers "charting beyond the gadget tiles" to v1.1; this bullet is the
+  contradiction. See TECHNICAL-SPEC § 11.
 - Total age since creation; count of work older than 14 days.
-- CSV export; dashboard gadget.
+- CSV export ⚠️ **implemented but unreachable** — the resolver and the engine exist, no frontend
+  calls them, so there is no export button. TECHNICAL-SPEC § 11, ROADMAP 1.3a.
+- Dashboard gadget.
 
 **Stated limitation, shown in the UI:** age-in-status is elapsed time. The stored working-hours
 figure covers the _completed_ portion of the current visit, so it is displayed separately rather

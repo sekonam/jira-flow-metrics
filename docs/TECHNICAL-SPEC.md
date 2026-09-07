@@ -429,7 +429,12 @@ the real `invoke`, its payload validation and its rate limiter all run.
    frontend invokes it.** There is no export button on any screen. Found by rendering every screen
    and looking at them; pinned by `test/resolver-wiring.test.ts` so it cannot be forgotten again.
    Closing it needs a UI Kit 2 file-download decision that cannot be validated without a tenant.
-8. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
+8. **★ The WIP aging histogram is not built either.** `AgingReport.buckets` is computed and
+   `toAgingChartData` turns it into a chart series, both tested — and no component renders it.
+   `docs/PRODUCT-SPEC.md` § 6 lists the histogram in scope for listing 3 while § 4 defers charting
+   to v1.1; the second is what the code does. Found the same way as the CSV gap: by rendering every
+   screen and noticing what was not on them.
+9. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
    instance-wide row counts and has no project scope, so no app registers it as a resolver. It
    stays as an internal method until there is an admin surface that can authorise it properly.
 
