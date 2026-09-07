@@ -14,6 +14,22 @@ pnpm run verify        # format · lint · typecheck · coverage · build
 **Nothing is done until `verify` is green and the work is pushed.** CI runs the same steps plus
 `pnpm audit --audit-level high`.
 
+`verify` typechecks _before_ it lints, and the order matters: `tsc --build` is what emits the
+`.d.ts` files for the workspace packages, and ESLint's type-aware rules resolve `@jfm/*` through
+them. Lint first on a clean checkout and every cross-package import is an unresolved `any`.
+
+### Looking at the UI
+
+```bash
+pnpm run ui:screens                                       # 60 PNGs + an index page, each axe-audited
+pnpm --filter @jfm/ui-harness exec playwright install chromium   # once, if the browser is missing
+open packages/ui-harness/screens/index.html
+```
+
+Not part of `verify` — it needs a browser download. Run it whenever you change anything a user
+sees, and **look at the output**. Five defects in this repository were found that way and by no
+other means.
+
 ---
 
 ## Per-step protocol
@@ -48,13 +64,14 @@ workaround is how a portfolio turns into five products.
 
 ## Testing
 
-| Rule                                              | Why                                                                                                             |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **No live network calls, ever**                   | Determinism in CI. Use the fixtures in `packages/engine/test/fixtures/` and `FakeJiraApi`.                      |
-| **Every bug gets a failing test first**           | A metrics product that regresses silently loses the only thing it sells.                                        |
-| **80% coverage floor on `packages/**`**           | Enforced by vitest thresholds; CI fails below it.                                                               |
-| **Assert request counts, not just results**       | In ingestion tests, the number of Jira calls is what decides whether a real backfill trips a rate limit.        |
-| **`MemoryStore` is the reference implementation** | The SQL adapter is expected to match its observable behaviour row for row. Resolve any ambiguity by reading it. |
+| Rule                                                                 | Why                                                                                                                                                                                      |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No live network calls, ever**                                      | Determinism in CI. Use the fixtures in `packages/engine/test/fixtures/` and `FakeJiraApi`.                                                                                               |
+| **Every bug gets a failing test first**                              | A metrics product that regresses silently loses the only thing it sells.                                                                                                                 |
+| **80% coverage floor on `packages/**` and `apps/*/src/frontend/**`** | Enforced by vitest thresholds; CI fails below it. `.tsx` is in the include globs — it was not, and every component file reported no coverage _and no gap_.                               |
+| **UI is tested by rendering it**                                     | `@forge/react` UI Kit 2 exports are bridge sentinels; `packages/ui-harness` supplies a stand-in host renderer so components and app frontends can be rendered, asserted and axe-audited. |
+| **Assert request counts, not just results**                          | In ingestion tests, the number of Jira calls is what decides whether a real backfill trips a rate limit.                                                                                 |
+| **`MemoryStore` is the reference implementation**                    | The SQL adapter is expected to match its observable behaviour row for row. Resolve any ambiguity by reading it.                                                                          |
 
 ### ★ The golden file
 
@@ -79,9 +96,11 @@ These are engineering standards here, not style preferences. The product sells n
 a number is presented as more certain than it is, the product is worth less than nothing.
 
 1. **Never claim a capability that has not been executed.** Anything unverified says so, in the
-   code and in the docs. `forgeSqlExecutor`, `forgeJiraFetch`, the manifests and every UI Kit
-   component are currently marked UNVERIFIED, and they stay marked until a tunnel session says
-   otherwise.
+   code and in the docs. `forgeSqlExecutor`, `forgeJiraFetch` and the manifests are marked
+   UNVERIFIED and stay marked until a tunnel session says otherwise. The UI is rendered and
+   audited in CI, but through a **stand-in** for the Forge host renderer — so "the screen renders
+   correctly" is a claim about our tree, never about Forge's rendering of it. Do not let a
+   screenshot become evidence of a deploy.
 2. **Estimates are labelled as estimates.** Storage size and Forge cost are modelled from row
    counts and published rates; the word "estimated" appears next to the number in the UI.
 3. **Modelled revenue is never presented as measured.** Every such figure rests on an assumed 25%
