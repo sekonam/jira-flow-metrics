@@ -25,12 +25,21 @@ import type { SimpleTable } from './listing-models.js';
  * as untrustworthy, and this product's only asset is being trusted with
  * numbers.
  *
- * ⚠️ **These components have not been rendered.** UI Kit components only run
- * inside the Forge runtime, and `forge tunnel` cannot be run in this
- * environment. The *logic* they display is in `view-model.ts` and is fully
- * tested; the markup below is written against the UI Kit component API and
- * needs a visual pass on first deploy. That check is item 1 in
- * `docs/RUNBOOK.md` § "First tunnel session".
+ * ## How these are tested
+ *
+ * UI Kit 2 components are string sentinels reconciled into a ForgeDoc and sent
+ * over the bridge; the code that turns that document into Atlassian Design
+ * System markup ships inside Jira and is not installable. `test/components.test.tsx`
+ * therefore renders these against a stand-in host renderer
+ * (`packages/ui-harness/src/forge-host.tsx`) which maps each sentinel onto the
+ * ADS component the Forge host is documented to render it as.
+ *
+ * ⚠️ That proves the tree is coherent, the states are chosen correctly, the
+ * numbers reach the DOM and the markup passes an axe WCAG 2.1 AA audit. It
+ * does **not** prove Forge renders it identically or accepts these props —
+ * only `forge tunnel` against a real tenant can, and no Atlassian credentials
+ * exist in this repository. That check is still item 1 in `docs/RUNBOOK.md`
+ * § "First tunnel session".
  */
 
 export function LoadingSurface({ label }: { label: string }): React.JSX.Element {

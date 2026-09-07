@@ -146,6 +146,43 @@ describe('report table model', () => {
     expect(toReportTable(report({ basis: 'business' })).basisLabel).toBe('Working hours');
   });
 
+  /**
+   * Found by rendering the report and reading it as a Jira user would.
+   *
+   * `44h` of *elapsed* time is unambiguously "1d 20h" — a day is a day. `27h`
+   * of *working* time is not: Jira's own duration format uses the instance's
+   * working hours per day (8 by default), so "1d 3h" in a working-hours column
+   * reads as 11 hours to the person it is shown to, not 27. Rolling working
+   * time into days is therefore off by a factor of three in the reader's head,
+   * which is exactly the quiet wrongness this product is sold against.
+   */
+  it('★ never rolls working time up into days, because a working day is not 24h', () => {
+    const base = report();
+    const long = report({
+      basis: 'business',
+      rows: [
+        {
+          ...base.rows[0]!,
+          byStatus: { '10000': 15 * HOUR, '3': 44 * HOUR },
+          totalMs: 59 * HOUR,
+        },
+      ],
+    });
+    const row = toReportTable(long).rows[0]!;
+    expect(row.cells[1]?.text).toBe('44h');
+    expect(row.total).toBe('59h');
+  });
+
+  it('does roll elapsed time up into days, where a day means a day', () => {
+    const base = report();
+    const long = report({
+      rows: [{ ...base.rows[0]!, byStatus: { '10000': HOUR, '3': 44 * HOUR }, totalMs: 45 * HOUR }],
+    });
+    const row = toReportTable(long).rows[0]!;
+    expect(row.cells[1]?.text).toBe('1d 20h');
+    expect(row.total).toBe('1d 21h');
+  });
+
   it('handles a row whose current status is unknown', () => {
     const base = report();
     const table = toReportTable(report({ rows: [{ ...base.rows[0]!, currentStatusId: null }] }));
@@ -160,6 +197,27 @@ describe('report table model', () => {
 });
 
 describe('summary tiles', () => {
+  it('★ reports working-hours medians in hours, matching the table', () => {
+    const tiles = toSummaryTiles(
+      report({
+        basis: 'business',
+        summaryByStatus: {
+          '3': {
+            count: 2,
+            meanMs: 30 * HOUR,
+            medianMs: 30 * HOUR,
+            p85Ms: 40 * HOUR,
+            p95Ms: 44 * HOUR,
+            minMs: 20 * HOUR,
+            maxMs: 44 * HOUR,
+          },
+        },
+      }),
+    );
+    expect(tiles[1]?.value).toBe('30h');
+    expect(tiles[1]?.hint).toContain('85th percentile 40h');
+  });
+
   it('leads with the issue count and reports median plus 85th percentile', () => {
     const tiles = toSummaryTiles(report());
     expect(tiles[0]).toMatchObject({ label: 'Issues', value: '1' });

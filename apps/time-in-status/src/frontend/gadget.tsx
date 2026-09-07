@@ -19,12 +19,13 @@ import {
  * gets seen by people who did not install the app, which is the only organic
  * distribution a Marketplace app gets inside a customer.
  *
- * ⚠️ Never rendered; see `docs/RUNBOOK.md`.
+ * ⚠️ Rendered in tests only against the harness's stand-in host renderer, never
+ * on Forge; see `docs/RUNBOOK.md`.
  */
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const Gadget = (): React.JSX.Element => {
+export const Gadget = (): React.JSX.Element => {
   const [envelope, setEnvelope] = useState<ReportEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

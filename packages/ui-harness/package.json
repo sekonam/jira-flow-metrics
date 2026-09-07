@@ -1,0 +1,54 @@
+{
+  "name": "@jfm/ui-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev-only harness that renders the Forge UI Kit surfaces in a DOM so they can be tested, screenshotted and audited. Never shipped in an app bundle.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./forge-host": {
+      "types": "./dist/forge-host.d.ts",
+      "default": "./dist/forge-host.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "default": "./dist/bridge.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@atlaskit/button": "^25.3.2",
+    "@atlaskit/dynamic-table": "^19.3.2",
+    "@atlaskit/heading": "^7.2.0",
+    "@atlaskit/lozenge": "^15.4.1",
+    "@atlaskit/platform-feature-flags": "^2.2.0",
+    "@atlaskit/primitives": "^22.5.0",
+    "@atlaskit/section-message": "^10.2.1",
+    "@atlaskit/spinner": "^20.4.0",
+    "@atlaskit/tokens": "^1.61.0",
+    "@forge/bridge": "^6.3.1",
+    "@forge/react": "^12.1.3",
+    "@jfm/engine": "workspace:*",
+    "@jfm/forge-runtime": "workspace:*",
+    "axe-core": "^4.10.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "1.54.2",
+    "vite": "^7.1.14"
+  }
+}

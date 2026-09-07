@@ -24,6 +24,9 @@
     },
     {
       "path": "./apps/issue-history"
+    },
+    {
+      "path": "./packages/ui-harness"
     }
   ]
 }

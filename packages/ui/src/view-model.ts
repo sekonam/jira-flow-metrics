@@ -13,11 +13,11 @@ import {
 /**
  * View models for the report surfaces.
  *
- * All presentation *logic* lives here as pure functions so it can be tested,
- * leaving the Forge UI Kit components in `components.tsx` as declarative
- * markup. That split matters because Forge UI components cannot be rendered in
- * a plain Node test process, and untested formatting is how a metrics product
- * ends up displaying "0m" for a missing value.
+ * All presentation *logic* lives here as pure functions so it can be tested
+ * directly, leaving the Forge UI Kit components in `components.tsx` as
+ * declarative markup. Untested formatting is how a metrics product ends up
+ * displaying "0m" for a missing value; the components are covered separately
+ * by `test/components.test.tsx`, which renders them.
  */
 
 /** The four states any data surface can be in. Designed explicitly, per the
@@ -36,15 +36,38 @@ export function surfaceStateOf(input: {
 }
 
 /**
+ * How a duration longer than a day should read.
+ *
+ * ★ This is not cosmetic. Rolling a duration up into days is correct for
+ * *elapsed* time — a day is a day — and wrong for *working* time. Jira's own
+ * duration format uses the instance's working hours per day (8 by default), so
+ * "1d 3h" in a working-hours column reads as **11 hours** to the person it is
+ * shown to, while the value behind it is 27. Reporting working time in plain
+ * hours removes the ambiguity entirely and costs nothing but width.
+ */
+export interface DurationFormat {
+  /** Default `true`. Pass `false` for any duration measured in working time. */
+  readonly rollUpToDays?: boolean;
+}
+
+const ELAPSED: DurationFormat = { rollUpToDays: true };
+export const WORKING_TIME: DurationFormat = { rollUpToDays: false };
+
+/** The right format for a report's basis. */
+export function formatFor(basis: StatusReport['basis']): DurationFormat {
+  return basis === 'business' ? WORKING_TIME : ELAPSED;
+}
+
+/**
  * Human duration for a table cell.
  *
  * Distinguishes "no time recorded" from "the issue was never in this status":
  * the first is `0m`, the second is an em dash. Conflating them is the sort of
  * quiet wrongness that makes a report untrustworthy.
  */
-export function formatCell(ms: Millis | undefined): string {
+export function formatCell(ms: Millis | undefined, format: DurationFormat = ELAPSED): string {
   if (ms === undefined) return '—';
-  return formatDurationForHumans(ms);
+  return formatDurationForHumans(ms, format);
 }
 
 /**
@@ -53,12 +76,12 @@ export function formatCell(ms: Millis | undefined): string {
  * Under a minute reads as `<1m`, because "0m" for a real 12-second interval is
  * misleading in the other direction.
  */
-export function formatDurationForHumans(ms: Millis): string {
+export function formatDurationForHumans(ms: Millis, format: DurationFormat = ELAPSED): string {
   if (!Number.isFinite(ms)) return '—';
   if (ms <= 0) return '0m';
   if (ms < MINUTE_MS) return '<1m';
   if (ms < HOUR_MS) return `${Math.round(ms / MINUTE_MS)}m`;
-  if (ms < DAY_MS) {
+  if (ms < DAY_MS || format.rollUpToDays === false) {
     const hours = Math.floor(ms / HOUR_MS);
     const minutes = Math.round((ms % HOUR_MS) / MINUTE_MS);
     return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
@@ -114,7 +137,8 @@ export interface ReportTableModel {
 
 export function toReportTable(report: StatusReport): ReportTableModel {
   const nameOf = new Map(report.columns.map((c) => [c.statusId, c.name]));
-  const rows = report.rows.map((row) => toReportTableRow(row, report, nameOf));
+  const format = formatFor(report.basis);
+  const rows = report.rows.map((row) => toReportTableRow(row, report, nameOf, format));
   const footnotes: string[] = [];
   if (report.rows.some((r) => r.truncated)) {
     footnotes.push(
@@ -148,6 +172,7 @@ function toReportTableRow(
   row: StatusReportRow,
   report: StatusReport,
   nameOf: ReadonlyMap<string, string>,
+  format: DurationFormat,
 ): ReportTableRow {
   return {
     issueKey: row.issueKey,
@@ -158,12 +183,12 @@ function toReportTableRow(
     cells: report.columns.map((column) => {
       const entries = row.entriesByStatus[column.statusId] ?? null;
       return {
-        text: formatCell(row.byStatus[column.statusId]),
+        text: formatCell(row.byStatus[column.statusId], format),
         entries,
         reentered: entries !== null && entries > 1,
       };
     }),
-    total: formatDurationForHumans(row.totalMs),
+    total: formatDurationForHumans(row.totalMs, format),
     truncated: row.truncated,
   };
 }
@@ -177,6 +202,7 @@ export interface SummaryTile {
 /** The tiles above the table. Median and 85th percentile, never the mean alone —
  * cycle-time distributions are right-skewed and a mean misleads. */
 export function toSummaryTiles(report: StatusReport): SummaryTile[] {
+  const format = formatFor(report.basis);
   const tiles: SummaryTile[] = [
     {
       label: 'Issues',
@@ -189,11 +215,11 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
     if (summary === undefined || summary.count === 0) continue;
     tiles.push({
       label: `${column.name} · median`,
-      value: summary.medianMs === null ? '—' : formatDurationForHumans(summary.medianMs),
+      value: summary.medianMs === null ? '—' : formatDurationForHumans(summary.medianMs, format),
       hint:
         summary.p85Ms === null
           ? `Across ${summary.count} issues.`
-          : `85th percentile ${formatDurationForHumans(summary.p85Ms)}, across ${summary.count} issues.`,
+          : `85th percentile ${formatDurationForHumans(summary.p85Ms, format)}, across ${summary.count} issues.`,
     });
   }
   return tiles;

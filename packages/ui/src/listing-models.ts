@@ -1,6 +1,11 @@
 import type { WorklogAggregateResult } from '@jfm/engine';
 import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
-import { formatDate, formatDurationForHumans, type SummaryTile } from './view-model.js';
+import {
+  WORKING_TIME,
+  formatDate,
+  formatDurationForHumans,
+  type SummaryTile,
+} from './view-model.js';
 
 /**
  * View models for listings 2-5.
@@ -108,15 +113,17 @@ export function toAgingChartData(report: AgingReport): { label: string; value: n
 // ------------------------------------------------------ listing 4: SLA ---
 
 export function toSlaTable(report: SlaReport): SimpleTable {
+  // Every duration in this table is working time, so none of them may be
+  // rolled up into days — see `DurationFormat` in view-model.ts.
   return {
     headers: ['Issue', 'Working time used', 'Target', 'Remaining', 'Status', 'Due date'],
     rows: report.rows.map((row) => [
       row.issueKey,
-      formatDurationForHumans(row.consumedMs),
-      formatDurationForHumans(row.targetMs),
+      formatDurationForHumans(row.consumedMs, WORKING_TIME),
+      formatDurationForHumans(row.targetMs, WORKING_TIME),
       row.remainingMs < 0
-        ? `over by ${formatDurationForHumans(-row.remainingMs)}`
-        : formatDurationForHumans(row.remainingMs),
+        ? `over by ${formatDurationForHumans(-row.remainingMs, WORKING_TIME)}`
+        : formatDurationForHumans(row.remainingMs, WORKING_TIME),
       row.breached ? 'Breached' : 'Within target',
       describeDueDate(row.dueDate),
     ]),

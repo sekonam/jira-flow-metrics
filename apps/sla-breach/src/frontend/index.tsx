@@ -24,13 +24,20 @@ import type { ReportEnvelope } from '@jfm/forge-runtime';
  * states, render a shared component. The listing-specific part is one view
  * model, which lives in `@jfm/ui` and is unit-tested.
  *
- * ⚠️ Never rendered. UI Kit runs only inside Forge; the first `forge tunnel`
- * session is this file's acceptance test (`docs/RUNBOOK.md`).
+ * `App` is exported so it can be rendered outside Forge. UI Kit 2 components
+ * are sentinels serialised over the bridge, so rendering them needs a stand-in
+ * for the half of the renderer that lives inside Jira — see
+ * `packages/ui-harness/src/forge-host.tsx`. `test/frontend.test.tsx` and the
+ * screenshot harness both mount this component that way.
+ *
+ * ⚠️ That is **not** platform verification. Nothing in this repository has run
+ * on Forge, and the first `forge tunnel` session is still this file's real
+ * acceptance test (`docs/RUNBOOK.md`).
  */
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const App = (): React.JSX.Element => {
+export const App = (): React.JSX.Element => {
   const [report, setReport] = useState<SlaReport | null>(null);
   const [progress, setProgress] = useState<ReportEnvelope['progress']>(null);
   const [error, setError] = useState<string | null>(null);

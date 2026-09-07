@@ -5,8 +5,19 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["packages/*/test/**/*.ts", "apps/*/test/**/*.ts", "test/**/*.ts", "*.config.mts"],
+  "include": [
+    "packages/*/test/**/*.ts",
+    "packages/*/test/**/*.tsx",
+    "apps/*/test/**/*.ts",
+    "apps/*/test/**/*.tsx",
+    "packages/ui-harness/harness/**/*.ts",
+    "packages/ui-harness/harness/**/*.tsx",
+    "test/**/*.ts",
+    "*.config.mts"
+  ],
   "exclude": ["**/node_modules", "**/dist"]
 }

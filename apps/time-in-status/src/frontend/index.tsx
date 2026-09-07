@@ -23,13 +23,20 @@ import {
  * `surfaceStateOf`, which is unit-tested. Nothing here decides anything except
  * which shared component to render.
  *
- * ⚠️ Never rendered. UI Kit runs only inside Forge; the first `forge tunnel`
- * session is this file's acceptance test (`docs/RUNBOOK.md`).
+ * `App` is exported so it can be rendered outside Forge. UI Kit 2 components
+ * are sentinels serialised over the bridge, so rendering them needs a stand-in
+ * for the half of the renderer that lives inside Jira — see
+ * `packages/ui-harness/src/forge-host.tsx`. `test/frontend.test.tsx` and the
+ * screenshot harness both mount this component that way.
+ *
+ * ⚠️ That is **not** platform verification. Nothing in this repository has run
+ * on Forge, and the first `forge tunnel` session is still this file's real
+ * acceptance test (`docs/RUNBOOK.md`).
  */
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const App = (): React.JSX.Element => {
+export const App = (): React.JSX.Element => {
   const [envelope, setEnvelope] = useState<ReportEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
