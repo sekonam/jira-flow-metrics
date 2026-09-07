@@ -58,20 +58,28 @@ export const PIPELINE_CONTEXT = { extension: { project: { id: PIPELINE_PROJECT_I
  * absolute path inside the repository. The UI suites run under jsdom and read
  * these same fixtures, so the lookup has to work in both environments.
  */
-function workspaceRoot(): string {
+const FIXTURE_PATH = ['packages', 'engine', 'test', 'fixtures'];
+
+function fixtureDir(): string {
   let dir = process.cwd();
   for (let hop = 0; hop < 10; hop += 1) {
-    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
+    // Anchored on the fixtures themselves rather than on `pnpm-workspace.yaml`.
+    // A checkout nested inside another pnpm workspace would match the outer
+    // marker and then fail with an opaque ENOENT at module scope.
+    const candidate = join(dir, ...FIXTURE_PATH);
+    if (existsSync(candidate)) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  throw new Error(`could not find the workspace root above ${process.cwd()}`);
+  throw new Error(
+    `could not find ${FIXTURE_PATH.join('/')} at or above ${process.cwd()}; ` +
+      'this module must be run from inside the jira-flow-metrics workspace.',
+  );
 }
 
 function fixture<T>(name: string): T {
-  const path = join(workspaceRoot(), 'packages', 'engine', 'test', 'fixtures', name);
-  return JSON.parse(readFileSync(path, 'utf8')) as T;
+  return JSON.parse(readFileSync(join(fixtureDir(), name), 'utf8')) as T;
 }
 
 export const CHANGELOG_FIXTURE = fixture<JiraChangelogPage>('changelog-reentry.json');

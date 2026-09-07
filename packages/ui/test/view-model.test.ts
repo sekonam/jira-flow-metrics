@@ -86,6 +86,16 @@ describe('duration formatting', () => {
     expect(formatDurationForHumans(-5)).toBe('0m');
   });
 
+  it('★ never renders sixty minutes as "60m"', () => {
+    // 44h 59m 40s of working time. Rounding the remainder gives 60 minutes,
+    // and "44h 60m" is not a duration. Reachable only on the no-day-roll-up
+    // path, which is every working-hours column.
+    const ms = 44 * HOUR + 59 * 60_000 + 40_000;
+    expect(formatDurationForHumans(ms, { rollUpToDays: false })).toBe('45h');
+    // The same rounding under an hour must still read as an hour, not "0h 60m".
+    expect(formatDurationForHumans(59.6 * 60_000, { rollUpToDays: false })).toBe('1h');
+  });
+
   it('formats a timestamp to the minute for logs, where the day is not enough', () => {
     expect(formatDateTime(Date.parse('2026-03-09T12:00:00Z'))).toBe('9 Mar 2026 12:00');
     expect(formatDateTime(Date.parse('2026-03-09T07:05:00Z'))).toBe('9 Mar 2026 07:05');

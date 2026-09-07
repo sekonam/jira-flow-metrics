@@ -51,7 +51,7 @@ import AdsDynamicTable from '@atlaskit/dynamic-table';
  * tenant can show that, and no Atlassian credentials exist in this repository.
  * `docs/RUNBOOK.md` § "First tunnel session" is still the acceptance test.
  *
- * The mapping is pinned to reality by `forge-host.contract.test.tsx`, which
+ * The mapping is pinned to reality by `packages/ui/test/forge-host.contract.test.ts`, which
  * asserts against the *real* `@forge/react` module that every name we stand in
  * for exists and still carries the sentinel value we expect.
  */

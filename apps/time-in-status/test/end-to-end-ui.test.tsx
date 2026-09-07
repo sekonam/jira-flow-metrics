@@ -37,8 +37,6 @@ vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 
 const { App } = await import('../src/frontend/index.js');
 
-const HOUR = 3_600_000;
-
 /** The resolver, wired to a runtime that has really ingested the fixtures. */
 function wireResolvers(runtime: ListingRuntime): void {
   setBridgeResolvers({
@@ -69,10 +67,6 @@ describe('end to end: recorded Jira payloads to pixels', () => {
     wireResolvers(runtime);
     render(<App />);
     await screen.findByText(EXPECTED.issueKey);
-
-    // The resolver's numbers, restated so a reader can check the two agree.
-    expect(EXPECTED.elapsedByStatus['3']).toBe(12 * HOUR);
-    expect(EXPECTED.elapsedTotal).toBe(76 * HOUR);
 
     const cells = cellsOf(EXPECTED.issueKey);
     // Columns: Issue · Status · Created · Resolved · Blocked · To Do ·
@@ -117,7 +111,6 @@ describe('end to end: recorded Jira payloads to pixels', () => {
       expect(screen.getByText('Showing working hours.')).toBeDefined();
     });
 
-    expect(EXPECTED.businessTotal).toBe(27 * HOUR);
     const cells = cellsOf(EXPECTED.issueKey);
     expect(cells[6]).toBe('12hx2'); // both visits fall inside 09:00-17:00
     expect(cells[9]).toBe('27h');
@@ -136,11 +129,15 @@ describe('end to end: recorded Jira payloads to pixels', () => {
       'Status',
       'Created',
       'Resolved',
-      ...EXPECTED.columnOrder,
+      // "Blocked" before "To Do" is workflow order, not alphabetical.
+      'Blocked',
+      'To Do',
+      'In Progress',
+      'In Review',
+      'Done',
       'Total',
     ]);
-    // "Blocked" before "To Do" is workflow order, not alphabetical order.
-    expect(EXPECTED.columnOrder[0]).toBe('Blocked');
+    expect(EXPECTED.columnOrder).toEqual(['Blocked', 'To Do', 'In Progress', 'In Review', 'Done']);
   });
 
   it('drops the indexing banner once the real backfill has completed', async () => {
@@ -166,5 +163,70 @@ describe('end to end: recorded Jira payloads to pixels', () => {
     render(<App />);
     await screen.findByText(EXPECTED.issueKey);
     expect(describeFindings(await auditA11y(document.body))).toBe('no violations');
+  });
+});
+
+/**
+ * ★ The dashboard gadget's context, and an unresolved risk.
+ *
+ * Every project-scoped resolver takes its project from the platform context,
+ * never from the payload — `projectIdFromContext` reads `extension.project.id`
+ * and `authoriseProject` refuses without it. That is a deliberate security
+ * boundary: taking the project from the payload would let any user read any
+ * project.
+ *
+ * A `jira:projectPage` context carries `extension.project`. **A
+ * `jira:dashboardGadget` context is not known to.** A Jira dashboard is not
+ * project-scoped, and Atlassian's documented gadget context describes
+ * `gadgetConfiguration`, `dashboard` and `gadget` — no project. If that is
+ * right, every gadget in this repository refuses on a real tenant and shows
+ * the message below instead of a report.
+ *
+ * It cannot be settled from here: no Forge tenant, no way to print a real
+ * context. So the behaviour is pinned rather than guessed at. This test is the
+ * evidence for `docs/RUNBOOK.md` § 3 item 2a and TECHNICAL-SPEC § 11, and it
+ * fails the moment someone makes the gadget resolve a project some other way —
+ * which is the fix, not this assertion.
+ */
+describe('★ a gadget context without a project', () => {
+  const DASHBOARD_CONTEXT = {
+    extension: {
+      type: 'jira:dashboardGadget',
+      gadgetConfiguration: {},
+      dashboard: { id: '10100' },
+      gadget: { id: '10200' },
+    },
+  };
+
+  it('is refused, and the gadget says so instead of showing numbers', async () => {
+    const { runtime } = await runPipeline();
+    setBridgeResolvers({
+      getReport: (payload) => handleGetReport(runtime, { context: DASHBOARD_CONTEXT, payload }),
+    });
+    const { Gadget } = await import('../src/frontend/gadget.js');
+    render(<Gadget />);
+
+    expect(
+      await screen.findByText('This report can only be opened from inside a Jira project.'),
+    ).toBeDefined();
+    // And emphatically not the report it would show on a project page.
+    expect(screen.queryByText(/In Progress · median/)).toBeNull();
+  });
+
+  it('is only about the missing project, not about the gadget surface itself', async () => {
+    const { runtime } = await runPipeline();
+    setBridgeResolvers({
+      getReport: (payload) =>
+        handleGetReport(runtime, {
+          // The same gadget, given a context that does carry a project, works.
+          // So the fix is a project id on the gadget — a configuration field,
+          // or a different module — not a change to the gadget's code.
+          context: { extension: { type: 'jira:dashboardGadget', project: { id: '10000' } } },
+          payload,
+        }),
+    });
+    const { Gadget } = await import('../src/frontend/gadget.js');
+    render(<Gadget />);
+    expect(await screen.findByText(/In Progress · median/)).toBeDefined();
   });
 });

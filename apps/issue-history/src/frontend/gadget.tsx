@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import ForgeReconciler, { Heading, Stack, Text } from '@forge/react';
 import { invoke } from '@forge/bridge';
-import type { HistoryReport, ReportEnvelope } from '@jfm/forge-runtime';
+import type { HistoryReport } from '@jfm/forge-runtime';
+import type { BackfillProgress } from '@jfm/engine';
 import {
   ErrorSurface,
   LoadingSurface,
   SummaryTiles,
+  isIndexIncomplete,
   surfaceStateOf,
   toHistoryTiles,
 } from '@jfm/ui';
@@ -40,11 +42,18 @@ export const Gadget = (): React.JSX.Element => {
 
         // A dashboard gadget is often the only surface someone ever sees, so
         // it must not present numbers built from half an instance without
-        // saying so — `ReportEnvelope.partial` exists precisely for this. The
-        // index state lives on the status-report envelope, which is why this
-        // second call is here; the project pages already do the same.
-        const envelope = (await invoke('getReport', { limit: 1 })) as Result<ReportEnvelope>;
-        if (!cancelled && envelope.ok) setPartial(envelope.data.partial);
+        // saying so.
+        //
+        // Its own try/catch on purpose: the report above has already loaded,
+        // and losing the index state is not a reason to replace a working
+        // gadget with an error. The banner just goes quiet.
+        try {
+          const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
+          if (!cancelled && state.ok) setPartial(isIndexIncomplete(state.data));
+        } catch {
+          // Leave `partial` false: saying nothing is better than saying
+          // something wrong about the index.
+        }
       } catch {
         if (!cancelled) setError('Could not load this gadget.');
       } finally {

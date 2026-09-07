@@ -248,6 +248,27 @@ export class ListingRuntime {
     };
   }
 
+  /**
+   * The index state, and nothing else.
+   *
+   * Split out from `statusReport` because four of the five listings need only
+   * this: their pages and gadgets show the indexing banner beside a report
+   * they fetched from a different resolver. Reading it through
+   * `statusReport({ limit: 1 })` worked, but ran `migrate`, a settings read
+   * and a whole `buildStatusReport` aggregation to return one enum — on a
+   * consumption-priced platform, on a dashboard gadget, which is the surface
+   * that renders most often.
+   *
+   * It is also *correct* where the paged report was not: `ReportEnvelope.partial`
+   * folds in `anyTruncated`, which is computed over the returned page, so a
+   * one-row page could only ever see one row's truncation.
+   */
+  async indexProgress(projectId: string): Promise<BackfillProgress | null> {
+    await this.deps.store.migrate();
+    const state = await this.deps.store.getIndexState(projectId);
+    return state === null ? null : toProgress(state);
+  }
+
   /** CSV of the same report, for the export button. */
   async statusReportCsv(request: StatusReportRequest): Promise<string> {
     const envelope = await this.statusReport({ ...request, limit: request.limit ?? 500 });

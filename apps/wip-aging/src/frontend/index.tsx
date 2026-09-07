@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import ForgeReconciler, { Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
 import type { AgingReport } from '@jfm/forge-runtime';
+import type { BackfillProgress } from '@jfm/engine';
 import {
   EmptySurface,
   ErrorSurface,
@@ -15,7 +16,6 @@ import {
   toAgingTable,
   toAgingTiles,
 } from '@jfm/ui';
-import type { ReportEnvelope } from '@jfm/forge-runtime';
 
 /**
  * Project page for the WIP Aging listing.
@@ -39,7 +39,7 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export const App = (): React.JSX.Element => {
   const [report, setReport] = useState<AgingReport | null>(null);
-  const [progress, setProgress] = useState<ReportEnvelope['progress']>(null);
+  const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,10 +50,12 @@ export const App = (): React.JSX.Element => {
       const result = (await invoke('getAgingReport', {})) as Result<AgingReport>;
       if (result.ok) setReport(result.data);
       else setError(result.error);
-      // The indexing banner is shared across all five listings, so the state
-      // comes from the same envelope the status report uses.
-      const envelope = (await invoke('getReport', { limit: 1 })) as Result<ReportEnvelope>;
-      if (envelope.ok) setProgress(envelope.data.progress);
+      // The indexing banner is shared across all five listings. It reads the
+      // index state from its own resolver rather than from `getReport`: that
+      // call ran a whole report aggregation to return one enum, and Forge is
+      // consumption-priced.
+      const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
+      if (state.ok) setProgress(state.data);
     } catch {
       setError('The report could not be loaded. Try again in a moment.');
     } finally {
@@ -81,12 +83,12 @@ export const App = (): React.JSX.Element => {
       />
 
       {/*
-        The banner only speaks when it has something true to say.
-        `toProgressBanner(null)` means "not indexed yet", and `progress` is
-        null both before the first answer arrives and when the call failed.
-        Rendering it regardless told users of a fully-indexed project that it
-        had never been indexed — under a loading spinner in one case, and
-        directly above "you do not have permission" in the other.
+        Withheld while loading and while refused. `toProgressBanner(null)`
+        reads as "not indexed yet", and `progress` is still null in both of
+        those states, so rendering it regardless told users of a fully-indexed
+        project that it had never been indexed — under a loading spinner in
+        one case, and directly above "you do not have permission" in the
+        other.
       */}
       {state === 'loading' || state === 'error' ? null : (
         <IndexingBanner banner={toProgressBanner(progress)} />

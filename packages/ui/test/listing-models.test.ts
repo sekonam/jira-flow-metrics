@@ -203,6 +203,29 @@ describe('SLA view model', () => {
   });
 });
 
+describe('★ logged time is working time', () => {
+  /**
+   * Jira renders "time spent" using the instance's working hours per day (8 by
+   * default), so 30 logged hours reads as "3d 6h" there. Rolling it into
+   * 24-hour days here would print "1d 6h" beside it — the same factor-of-three
+   * misreading the status table was fixed for.
+   */
+  const long: WorklogAggregateResult = {
+    groups: [{ key: 'anna', label: 'Anna', timeSpentMs: 30 * HOUR, entries: 9, issueCount: 4 }],
+    totalMs: 30 * HOUR,
+    entries: 9,
+    windowFrom: null,
+    windowTo: null,
+  };
+
+  it('reports totals in hours, never in days', () => {
+    expect(toWorklogTable(long, 'Person').rows[0]?.[1]).toBe('30h');
+    expect(toWorklogTable(long, 'Person').footnotes[0]).toContain('30h logged');
+    expect(toWorklogTiles(long)[0]?.value).toBe('30h');
+    expect(toWorklogTiles(long)[1]?.hint).toBe('30h');
+  });
+});
+
 describe('history view model', () => {
   it('renders a change per row with em dashes for absent values', () => {
     const table = toHistoryTable(history);

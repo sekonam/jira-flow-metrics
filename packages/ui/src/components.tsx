@@ -35,7 +35,10 @@ import type { SimpleTable } from './listing-models.js';
  * ADS component the Forge host is documented to render it as.
  *
  * ⚠️ That proves the tree is coherent, the states are chosen correctly, the
- * numbers reach the DOM and the markup passes an axe WCAG 2.1 AA audit. It
+ * numbers reach the DOM, and the markup passes the **structural** half of an
+ * axe WCAG 2.1 AA audit — jsdom has no layout, so `color-contrast` is disabled
+ * there and is checked instead by `pnpm run ui:screens` in real Chromium,
+ * which CI does not run. It
  * does **not** prove Forge renders it identically or accepts these props —
  * only `forge tunnel` against a real tenant can, and no Atlassian credentials
  * exist in this repository. That check is still item 1 in `docs/RUNBOOK.md`
@@ -223,12 +226,16 @@ export function PageHeader({
 
 /** A plain table for the listings whose data is a flat list of rows. */
 export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.Element {
-  const emphasis = model.emphasisColumn ?? 0;
+  // Clamped: an out-of-range index would silently emphasise nothing.
+  const emphasis = Math.min(Math.max(model.emphasisColumn ?? 0, 0), model.headers.length - 1);
   const head = {
     cells: model.headers.map((header, index) => ({
       key: `h-${index}`,
       content: header,
-      isSortable: index === 0,
+      // Sort on the identity column, which is not always the first. The
+      // history table leads with a formatted timestamp, and sorting
+      // "9 Mar 2026 12:00" as a string is alphabetical, not chronological.
+      isSortable: index === emphasis,
     })),
   };
   const rows = model.rows.map((row, rowIndex) => ({

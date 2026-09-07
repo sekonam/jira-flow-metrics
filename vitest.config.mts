@@ -46,6 +46,10 @@ export default defineConfig({
       ],
       exclude: [
         '**/index.ts',
+        // Fixture-driven test support. It lives in a production package's src
+        // so two packages can share one end-to-end scenario, but counting it
+        // as production code would flatter the number the README quotes.
+        'packages/forge-runtime/src/testing/**',
         // Pure type declarations, no executable statements to cover.
         'packages/engine/src/jira/types.ts',
         'packages/engine/src/store/types.ts',

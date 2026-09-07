@@ -6,6 +6,7 @@ import {
   ErrorSurface,
   LoadingSurface,
   SummaryTiles,
+  isIndexIncomplete,
   surfaceStateOf,
   toSummaryTiles,
 } from '@jfm/ui';
@@ -61,7 +62,15 @@ export const Gadget = (): React.JSX.Element => {
     <Stack space="space.150">
       <Heading as="h3">Time in Status</Heading>
       <SummaryTiles tiles={toSummaryTiles(envelope.report).slice(0, 4)} />
-      {envelope.partial ? <Text size="small">Indexing is still in progress.</Text> : null}
+      {/*
+        Read from `progress`, not from `envelope.partial`. `partial` also folds
+        in per-row changelog truncation across the *returned page*, so what it
+        answers depends on the page size it was asked for. The gadget's claim
+        is about indexing, so it asks about indexing.
+      */}
+      {isIndexIncomplete(envelope.progress) ? (
+        <Text size="small">Indexing is still in progress.</Text>
+      ) : null}
     </Stack>
   );
 };

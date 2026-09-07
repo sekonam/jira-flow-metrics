@@ -7,7 +7,7 @@ import type {
   SlaReport,
   WorklogReportRequest,
 } from './reports.js';
-import type { WorklogAggregateResult } from '@jfm/engine';
+import type { BackfillProgress, WorklogAggregateResult } from '@jfm/engine';
 
 /**
  * Handler bodies, shared by all five listings.
@@ -204,6 +204,27 @@ export async function handleStartIndexing(
   try {
     await runtime.startBackfill(projectId);
     return { ok: true, data: { started: true } };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
+ * Index progress alone, for the banner.
+ *
+ * Authorised exactly like every other project-scoped resolver: the index state
+ * tells a caller how much of a project has been read, which is information
+ * about a project they may not be allowed to see.
+ */
+export async function handleIndexProgress(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<BackfillProgress | null>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  try {
+    return { ok: true, data: await runtime.indexProgress(auth.projectId) };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }

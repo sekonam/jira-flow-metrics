@@ -108,7 +108,8 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
 
     it('renders the populated report', async () => {
       mount('populated');
-      expect(await screen.findAllByText(spec.populatedText)).not.toHaveLength(0);
+      // `findAllByText` rejects on no match, so reaching the next line is the assertion.
+      await screen.findAllByText(spec.populatedText);
       expectNoUnregisteredResolvers();
     });
 
@@ -128,7 +129,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
 
     it('shows the empty state when the project has been indexed and has nothing', async () => {
       mount('empty');
-      expect(await screen.findAllByText(spec.emptyText)).not.toHaveLength(0);
+      await screen.findAllByText(spec.emptyText);
       expectNoUnregisteredResolvers();
       await expectNoA11yViolations();
     });
@@ -162,14 +163,15 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
     it('★ shows partial data together with the warning that it is partial', async () => {
       mount('partial');
       // Rows are shown...
-      expect(await screen.findAllByText(spec.populatedText)).not.toHaveLength(0);
+      // `findAllByText` rejects on no match, so reaching the next line is the assertion.
+      await screen.findAllByText(spec.populatedText);
       // ...and the user is told they are built from an incomplete index. A
       // metrics product that reports half an instance silently is the failure
       // mode this repository exists to avoid.
       const partialNotice =
         spec.surface === 'page'
           ? /Numbers below cover only the issues indexed so far/
-          : /Indexing is still in progress|issues indexed/;
+          : /Indexing is still in progress/;
       expect(await screen.findByText(partialNotice)).toBeDefined();
       expectNoUnregisteredResolvers();
       await expectNoA11yViolations();

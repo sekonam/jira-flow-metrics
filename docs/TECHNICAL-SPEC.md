@@ -359,28 +359,28 @@ time-in-status listing's installs.
 
 ## 10. Testing strategy
 
-| Layer                    | Approach                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Time arithmetic          | **Hand-computed golden file**, plus an inverse-property check across DST boundaries                                                                    |
-| Changelog reconstruction | Recorded Jira fixtures with a deliberate re-entry, plus synthetic cases for skew, gaps, renames and chained transitions                                |
-| Ingestion                | Fixture-backed `FakeJiraApi` that records every call, so tests assert _request counts_ — the number that decides whether a backfill trips a rate limit |
-| Store                    | `MemoryStore` is the reference implementation of the contract; `SqlMetricsStore` is asserted at the level of exact statement text and bound parameters |
-| Handlers                 | Tested against a real `ListingRuntime` over `MemoryStore`                                                                                              |
-| View models              | Pure functions, fully tested                                                                                                                           |
-| UI components            | **Rendered** with `@testing-library/react` against a stand-in host renderer; every state asserted, axe WCAG 2.1 AA on each                             |
-| App frontends            | All ten surfaces (five pages, five gadgets) rendered in loading, empty, error, refused, partial and populated states                                   |
-| Pipeline → pixels        | `apps/time-in-status/test/end-to-end-ui.test.tsx` asserts the engine's numbers **in the DOM**, from the same fixture the resolver end-to-end test uses |
-| Screens a human can see  | `pnpm run ui:screens` — 60 PNGs plus an index page, and a second axe pass in real Chromium where `color-contrast` is meaningful                        |
-| Manifests                | Parsed and asserted: no scheduled trigger, read-only scopes, handlers and resources exist                                                              |
-| Resolver wiring          | Every key a frontend `invoke()`s is `resolver.define()`d by the same app — a static scan, since neither end's suite can see the join                   |
+| Layer                    | Approach                                                                                                                                                                                                                    |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Time arithmetic          | **Hand-computed golden file**, plus an inverse-property check across DST boundaries                                                                                                                                         |
+| Changelog reconstruction | Recorded Jira fixtures with a deliberate re-entry, plus synthetic cases for skew, gaps, renames and chained transitions                                                                                                     |
+| Ingestion                | Fixture-backed `FakeJiraApi` that records every call, so tests assert _request counts_ — the number that decides whether a backfill trips a rate limit                                                                      |
+| Store                    | `MemoryStore` is the reference implementation of the contract; `SqlMetricsStore` is asserted at the level of exact statement text and bound parameters                                                                      |
+| Handlers                 | Tested against a real `ListingRuntime` over `MemoryStore`                                                                                                                                                                   |
+| View models              | Pure functions, fully tested                                                                                                                                                                                                |
+| UI components            | **Rendered** with `@testing-library/react` against a stand-in host renderer; every state asserted, and the structural half of an axe WCAG 2.1 AA audit on each — jsdom has no layout, so `color-contrast` is disabled there |
+| App frontends            | All ten surfaces (five pages, five gadgets) rendered in loading, empty, error, refused, partial and populated states                                                                                                        |
+| Pipeline → pixels        | `apps/time-in-status/test/end-to-end-ui.test.tsx` asserts the engine's numbers **in the DOM**, from the same fixture the resolver end-to-end test uses                                                                      |
+| Screens a human can see  | `pnpm run ui:screens` — 60 PNGs plus an index page, and the **only** pass that checks `color-contrast`, since it has real layout. Not run in CI: it needs a browser download                                                |
+| Manifests                | Parsed and asserted: no scheduled trigger, read-only scopes, handlers and resources exist                                                                                                                                   |
+| Resolver wiring          | Every key a frontend `invoke()`s is `resolver.define()`d by the same app — a static scan, since neither end's suite can see the join                                                                                        |
 
 **No test in this repository performs a live network call.** That is what makes the suite
 deterministic in CI, and it is a hard rule.
 
 Coverage floor is **80%** and CI fails below it. It now covers the app frontends as well as the
 shared packages; before that the include globs matched `.ts` only, so every `.tsx` file reported no
-coverage _and no gap_. Current: **98.9% statements, 91.2% branches** overall —
-`packages/ui` 99.0/95.1, `apps/*/src/frontend` 100/94.3.
+coverage _and no gap_. Fixture-driven test support (`src/testing/`) is excluded, so the number is
+about shipped code. Current: **98.6% statements, 91.4% branches** overall.
 
 ### ⚠️ What rendering does and does not establish
 
@@ -423,20 +423,31 @@ the real `invoke`, its payload validation and its rate limiter all run.
    viewer, because doing so would mean an as-user query on every report render, which the
    consumption-priced platform makes prohibitive. **This must be stated in the Marketplace privacy
    statement rather than left for a reviewer to find.**
-7. **★ CSV export is implemented but unreachable.** `exportCsv` is defined by all five resolvers,
+7. **★★ The dashboard gadgets probably refuse on a real tenant.** Every project-scoped resolver
+   takes its project from `extension.project.id` in the platform context and fails closed without
+   it — deliberately, because taking it from the payload would let any user read any project. A
+   `jira:projectPage` context carries `extension.project`; a **`jira:dashboardGadget` context is
+   not known to**, because a Jira dashboard is not project-scoped. If that is right, all five
+   gadgets show "This report can only be opened from inside a Jira project." instead of a report.
+   This cannot be settled without a tenant, so the behaviour is pinned by a test rather than
+   guessed at (`apps/time-in-status/test/end-to-end-ui.test.tsx`), and it is item 2a of the tunnel
+   checklist. The likely fix is a project id on the gadget — a configuration field — not a change
+   to the gadget components, which the same test demonstrates by giving the same gadget a context
+   that does carry a project.
+8. **★ CSV export is implemented but unreachable.** `exportCsv` is defined by all five resolvers,
    implemented in `packages/engine/src/export/csv.ts`, defused against formula injection, covered
    by tests, and listed as a v1 feature of every listing in `docs/PRODUCT-SPEC.md` — and **no
    frontend invokes it.** There is no export button on any screen. Found by rendering every screen
    and looking at them; pinned by `test/resolver-wiring.test.ts` so it cannot be forgotten again.
    Closing it needs a UI Kit 2 file-download decision that cannot be validated without a tenant.
-8. **★ The WIP aging histogram is not built either.** `AgingReport.buckets` is computed and
+9. **★ The WIP aging histogram is not built either.** `AgingReport.buckets` is computed and
    `toAgingChartData` turns it into a chart series, both tested — and no component renders it.
    `docs/PRODUCT-SPEC.md` § 6 lists the histogram in scope for listing 3 while § 4 defers charting
    to v1.1; the second is what the code does. Found the same way as the CSV gap: by rendering every
    screen and noticing what was not on them.
-9. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
-   instance-wide row counts and has no project scope, so no app registers it as a resolver. It
-   stays as an internal method until there is an admin surface that can authorise it properly.
+10. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
+    instance-wide row counts and has no project scope, so no app registers it as a resolver. It
+    stays as an internal method until there is an admin surface that can authorise it properly.
 
 ---
 
@@ -450,6 +461,7 @@ Everything a first `forge tunnel` session must confirm, in order of risk:
 | `forgeSqlExecutor` call shape                                         | `packages/forge-runtime/src/sql/executor.ts`          | No persistence at all; fix is one function                                                                                                                            |
 | `forgeJiraFetch` / `route` tagging                                    | `packages/forge-runtime/src/jira/client.ts`           | No Jira access; fix is one function                                                                                                                                   |
 | Forge SQL dialect acceptance of the DDL and `ON DUPLICATE KEY UPDATE` | `packages/engine/src/store/schema.ts`, `sql-store.ts` | Schema or upserts rejected; would need a dialect pass                                                                                                                 |
+| **Dashboard gadget context: does it carry `extension.project`?**      | `packages/forge-runtime/src/handlers.ts`              | **All five gadgets refuse and show no data.** Highest-risk item on this list; see § 11.7                                                                              |
 | `@forge/react` component props **as Forge accepts them**              | `packages/ui/src/components.tsx`                      | Page does not render; fix is per-component. The tree, the states and the copy are verified against a stand-in renderer; the platform's acceptance of the props is not |
 | Async Events queue name and consumer method                           | `apps/*/manifest.yml`, `scheduler.ts`                 | Backfill never continues past slice 0                                                                                                                                 |
 | Invocation time limit vs `timeBudgetMs`                               | `packages/engine/src/ingest/backfill.ts`              | Slices time out mid-page; harmless (re-processed) but slow                                                                                                            |

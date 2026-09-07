@@ -1,6 +1,5 @@
 import {
   DAY_MS,
-  HOUR_MS,
   MINUTE_MS,
   formatJiraDuration,
   type BackfillProgress,
@@ -80,10 +79,14 @@ export function formatDurationForHumans(ms: Millis, format: DurationFormat = ELA
   if (!Number.isFinite(ms)) return '—';
   if (ms <= 0) return '0m';
   if (ms < MINUTE_MS) return '<1m';
-  if (ms < HOUR_MS) return `${Math.round(ms / MINUTE_MS)}m`;
+  // Rounding up from 59m30s produces 60 minutes, and neither "60m" nor
+  // "44h 60m" is a duration anyone writes. The carry is applied once, before
+  // either branch decides how to render the result.
+  const wholeMinutes = Math.round(ms / MINUTE_MS);
+  if (wholeMinutes < 60) return `${wholeMinutes}m`;
   if (ms < DAY_MS || format.rollUpToDays === false) {
-    const hours = Math.floor(ms / HOUR_MS);
-    const minutes = Math.round((ms % HOUR_MS) / MINUTE_MS);
+    const hours = Math.floor(wholeMinutes / 60);
+    const minutes = wholeMinutes % 60;
     return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
   }
   return formatJiraDuration(ms, { hoursPerDay: 24, daysPerWeek: 7 });
@@ -242,6 +245,18 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
     });
   }
   return tiles;
+}
+
+/**
+ * Is the project's index incomplete?
+ *
+ * `null` means it has never been indexed, which is also incomplete. Named here
+ * rather than repeated in five gadgets, because the alternative each of them
+ * used — `ReportEnvelope.partial` — folds in per-page row truncation and so
+ * answers a different question depending on the page size it was asked for.
+ */
+export function isIndexIncomplete(progress: BackfillProgress | null): boolean {
+  return progress === null || progress.state !== 'complete';
 }
 
 export interface ProgressBanner {

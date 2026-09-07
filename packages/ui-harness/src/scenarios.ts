@@ -1,6 +1,7 @@
 import {
   handleAgingReport,
   handleGetReport,
+  handleIndexProgress,
   handleHistoryReport,
   handleSlaReport,
   handleWorklogReport,
@@ -32,6 +33,7 @@ import {
 
 export type ResolverKey =
   | 'getReport'
+  | 'getIndexProgress'
   | 'getWorklogReport'
   | 'getAgingReport'
   | 'getSlaReport'
@@ -109,6 +111,7 @@ const INVOCATION = { context: PIPELINE_CONTEXT };
 async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
   return {
     getReport: await handleGetReport(runtime, INVOCATION),
+    getIndexProgress: await handleIndexProgress(runtime, INVOCATION),
     getWorklogReport: await handleWorklogReport(runtime, INVOCATION),
     getAgingReport: await handleAgingReport(runtime, INVOCATION),
     getSlaReport: await handleSlaReport(runtime, {
@@ -180,6 +183,7 @@ export function rejectingResolvers(keys: readonly string[]): Record<string, () =
 /** Every resolver key any of the five frontends can invoke. */
 export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getReport',
+  'getIndexProgress',
   'getWorklogReport',
   'getAgingReport',
   'getSlaReport',

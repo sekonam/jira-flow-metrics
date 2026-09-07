@@ -33,13 +33,22 @@ export interface SimpleTable {
 
 // ------------------------------------------------- listing 2: worklog ---
 
+/**
+ * Logged time is **working** time and must never roll up into days.
+ *
+ * It is the most working-time-shaped number in the product: it is what a
+ * person typed into Jira's own "time spent" field, and Jira renders that with
+ * the instance's working hours per day. Showing 30 logged hours as "1d 6h"
+ * against Jira's own "3d 6h" is the same factor-of-three misreading the status
+ * table was fixed for. See `DurationFormat` in view-model.ts.
+ */
 export function toWorklogTable(result: WorklogAggregateResult, groupLabel: string): SimpleTable {
   const total = result.totalMs;
   return {
     headers: [groupLabel, 'Time logged', 'Share', 'Entries', 'Issues'],
     rows: result.groups.map((group) => [
       group.label,
-      formatDurationForHumans(group.timeSpentMs),
+      formatDurationForHumans(group.timeSpentMs, WORKING_TIME),
       total === 0 ? '—' : `${Math.round((group.timeSpentMs / total) * 100)}%`,
       String(group.entries),
       String(group.issueCount),
@@ -48,7 +57,7 @@ export function toWorklogTable(result: WorklogAggregateResult, groupLabel: strin
       result.entries === 0
         ? ['No worklogs were found in this range.']
         : [
-            `${formatDurationForHumans(total)} logged across ${result.entries} entries. ` +
+            `${formatDurationForHumans(total, WORKING_TIME)} logged across ${result.entries} entries. ` +
               'Totals are the durations people entered in Jira, not durations derived from timestamps.',
           ],
   };
@@ -59,13 +68,16 @@ export function toWorklogTiles(result: WorklogAggregateResult): SummaryTile[] {
   return [
     {
       label: 'Total logged',
-      value: formatDurationForHumans(result.totalMs),
+      value: formatDurationForHumans(result.totalMs, WORKING_TIME),
       hint: `${result.entries} worklog entries.`,
     },
     {
       label: 'Largest contributor',
       value: top === undefined ? '—' : top.label,
-      hint: top === undefined ? 'No worklogs in range.' : formatDurationForHumans(top.timeSpentMs),
+      hint:
+        top === undefined
+          ? 'No worklogs in range.'
+          : formatDurationForHumans(top.timeSpentMs, WORKING_TIME),
     },
   ];
 }
@@ -124,8 +136,10 @@ export function toAgingChartData(report: AgingReport): { label: string; value: n
 // ------------------------------------------------------ listing 4: SLA ---
 
 export function toSlaTable(report: SlaReport): SimpleTable {
-  // Every duration in this table is working time, so none of them may be
-  // rolled up into days — see `DurationFormat` in view-model.ts.
+  // Every duration in the SLA *columns* is working time, so none of them may
+  // be rolled up into days — see `DurationFormat` in view-model.ts. The due
+  // date column is the exception and keeps the roll-up on purpose: lateness
+  // against a calendar date is elapsed time, where a day does mean a day.
   return {
     headers: ['Issue', 'Working time used', 'Target', 'Remaining', 'Status', 'Due date'],
     rows: report.rows.map((row) => [

@@ -95,12 +95,12 @@ export const App = (): React.JSX.Element => {
       />
 
       {/*
-        The banner only speaks when it has something true to say.
-        `toProgressBanner(null)` means "not indexed yet", and `progress` is
-        null both before the first answer arrives and when the call failed.
-        Rendering it regardless told users of a fully-indexed project that it
-        had never been indexed — under a loading spinner in one case, and
-        directly above "you do not have permission" in the other.
+        Withheld while loading and while refused. `toProgressBanner(null)`
+        reads as "not indexed yet", and `progress` is still null in both of
+        those states, so rendering it regardless told users of a fully-indexed
+        project that it had never been indexed — under a loading spinner in
+        one case, and directly above "you do not have permission" in the
+        other.
       */}
       {state === 'loading' || state === 'error' ? null : (
         <IndexingBanner banner={toProgressBanner(envelope?.progress ?? null)} />
