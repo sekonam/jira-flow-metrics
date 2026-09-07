@@ -107,12 +107,20 @@ export interface StackProps {
   readonly children?: React.ReactNode;
   readonly space?: string;
   readonly alignBlock?: string;
+  /** Cross-axis alignment. Without it a Stack stretches its children. */
+  readonly alignInline?: string;
 }
 
-export const Stack = ({ children, space: gap, alignBlock }: StackProps): React.JSX.Element => (
+export const Stack = ({
+  children,
+  space: gap,
+  alignBlock,
+  alignInline,
+}: StackProps): React.JSX.Element => (
   <AdsStack
     {...(gap === undefined ? {} : { space: space(gap) as never })}
     {...(alignBlock === undefined ? {} : { alignBlock: alignBlock as never })}
+    {...(alignInline === undefined ? {} : { alignInline: alignInline as never })}
   >
     {children}
   </AdsStack>

@@ -54,6 +54,21 @@ export default tseslint.config(
   {
     files: ['**/*.js', '**/*.mjs'],
     ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      // Spread first: `disableTypeChecked` turns the type-aware parser off
+      // through `languageOptions.parserOptions`, and replacing the whole
+      // object would turn it back on.
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: {
+        // Node build scripts, plus the browser globals that appear inside
+        // Playwright `page.evaluate` callbacks — those run in the page, not in
+        // Node, so ESLint sees them in a Node file and would otherwise object.
+        process: 'readonly',
+        console: 'readonly',
+        window: 'readonly',
+        document: 'readonly',
+      },
+    },
   },
   prettier,
 );

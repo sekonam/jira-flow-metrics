@@ -58,7 +58,8 @@ be reachable only from inside Forge. With it, the only code that cannot be teste
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `packages/engine`        | Interval algebra, IANA/DST arithmetic, working calendars, changelog reconstruction, all metrics, ingestion pipeline, backfill, store contract, CSV, pricing, cost model | Yes — this is where the coverage floor applies                           |
 | `packages/forge-runtime` | Forge SQL store, Jira REST client, async-events scheduler, settings, per-listing runtime, resolver handlers, listing 2-5 reports                                        | Yes, against a recording SQL executor and fixture-backed Jira            |
-| `packages/ui`            | View models (pure, tested) and `@forge/react` components (⚠️ never rendered)                                                                                            | View models yes; components no                                           |
+| `packages/ui`            | View models (pure) and `@forge/react` components                                                                                                                        | Yes — the components are rendered and audited, see § 10                  |
+| `packages/ui-harness`    | **Dev only, never bundled.** Stand-in Forge host renderer, Custom UI bridge stand-in, scenario builder, axe helpers, Playwright screenshot driver                       | It is the test instrument                                                |
 | `apps/*`                 | Manifest, composition root, resolver wiring, UI Kit pages                                                                                                               | Manifests asserted by a test suite; the SDK wiring cannot be tested here |
 
 ---
@@ -366,14 +367,35 @@ time-in-status listing's installs.
 | Store                    | `MemoryStore` is the reference implementation of the contract; `SqlMetricsStore` is asserted at the level of exact statement text and bound parameters |
 | Handlers                 | Tested against a real `ListingRuntime` over `MemoryStore`                                                                                              |
 | View models              | Pure functions, fully tested                                                                                                                           |
-| UI components            | **Not tested.** UI Kit renders only inside Forge.                                                                                                      |
+| UI components            | **Rendered** with `@testing-library/react` against a stand-in host renderer; every state asserted, axe WCAG 2.1 AA on each                             |
+| App frontends            | All ten surfaces (five pages, five gadgets) rendered in loading, empty, error, refused, partial and populated states                                   |
+| Pipeline → pixels        | `apps/time-in-status/test/end-to-end-ui.test.tsx` asserts the engine's numbers **in the DOM**, from the same fixture the resolver end-to-end test uses |
+| Screens a human can see  | `pnpm run ui:screens` — 60 PNGs plus an index page, and a second axe pass in real Chromium where `color-contrast` is meaningful                        |
 | Manifests                | Parsed and asserted: no scheduled trigger, read-only scopes, handlers and resources exist                                                              |
 
 **No test in this repository performs a live network call.** That is what makes the suite
 deterministic in CI, and it is a hard rule.
 
-Coverage floor is **80%** on `packages/**` and CI fails below it. Current: **98.8% statements,
-90.8% branches** across engine, forge-runtime and ui.
+Coverage floor is **80%** and CI fails below it. It now covers the app frontends as well as the
+shared packages; before that the include globs matched `.ts` only, so every `.tsx` file reported no
+coverage _and no gap_. Current: **98.9% statements, 91.2% branches** overall —
+`packages/ui` 99.0/95.1, `apps/*/src/frontend` 100/94.3.
+
+### ⚠️ What rendering does and does not establish
+
+`@forge/react`'s UI Kit 2 exports are **string sentinels** (`exports.Box = 'Box'`), reconciled into
+a ForgeDoc and posted over the bridge; the renderer that turns that document into Atlassian Design
+System markup ships inside Jira and is not published. `packages/ui-harness/src/forge-host.tsx` is a
+stand-in for it, mapping each sentinel onto the ADS component Forge is documented to render it as,
+and `packages/ui/test/forge-host.contract.test.ts` pins that mapping to the real module.
+
+So the suites establish that the tree is coherent, that the designed state is chosen, that the
+numbers and column order reach the DOM, and that the markup is accessible. They do **not** establish
+that Forge renders it identically or accepts these props. That is still `forge tunnel`'s job.
+
+`@forge/bridge` is not mocked: it throws at _import_ time outside a Jira page because `invoke.js`
+calls `getCallBridge()` at module scope. The harness installs a `globalThis.__bridge` instead, so
+the real `invoke`, its payload validation and its rate limiter all run.
 
 ---
 
@@ -389,8 +411,9 @@ Coverage floor is **80%** on `packages/**` and CI fails below it. Current: **98.
    See PRODUCT-SPEC §7.
 4. **Backfill defaults to 12 months of history.** Older issues are absent until "extend history"
    is run.
-5. **Nothing has run on Forge.** The SQL executor, the Jira fetch adapter, every manifest and every
-   UI Kit component are unverified against the platform.
+5. **Nothing has run on Forge.** The SQL executor, the Jira fetch adapter and every manifest are
+   unverified against the platform, as is Forge's own rendering of the UI Kit tree — the components
+   are rendered in CI, but through a stand-in host renderer, not by Forge.
 6. **★ Residual issue-visibility risk, stated plainly.** The `BROWSE_PROJECTS` check establishes
    that a viewer may see the _project_. Within a project, Jira can restrict individual issues by
    issue security level — those are excluded at ingest — but Jira can also restrict visibility in
@@ -409,12 +432,12 @@ Coverage floor is **80%** on `packages/**` and CI fails below it. Current: **98.
 
 Everything a first `forge tunnel` session must confirm, in order of risk:
 
-| Item                                                                  | File                                                  | Risk if wrong                                              |
-| --------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
-| Manifest module schema                                                | `apps/*/manifest.yml`                                 | `forge lint` fails; fix is minutes                         |
-| `forgeSqlExecutor` call shape                                         | `packages/forge-runtime/src/sql/executor.ts`          | No persistence at all; fix is one function                 |
-| `forgeJiraFetch` / `route` tagging                                    | `packages/forge-runtime/src/jira/client.ts`           | No Jira access; fix is one function                        |
-| Forge SQL dialect acceptance of the DDL and `ON DUPLICATE KEY UPDATE` | `packages/engine/src/store/schema.ts`, `sql-store.ts` | Schema or upserts rejected; would need a dialect pass      |
-| `@forge/react` component props                                        | `packages/ui/src/components.tsx`                      | Page does not render; fix is per-component                 |
-| Async Events queue name and consumer method                           | `apps/*/manifest.yml`, `scheduler.ts`                 | Backfill never continues past slice 0                      |
-| Invocation time limit vs `timeBudgetMs`                               | `packages/engine/src/ingest/backfill.ts`              | Slices time out mid-page; harmless (re-processed) but slow |
+| Item                                                                  | File                                                  | Risk if wrong                                                                                                                                                         |
+| --------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manifest module schema                                                | `apps/*/manifest.yml`                                 | `forge lint` fails; fix is minutes                                                                                                                                    |
+| `forgeSqlExecutor` call shape                                         | `packages/forge-runtime/src/sql/executor.ts`          | No persistence at all; fix is one function                                                                                                                            |
+| `forgeJiraFetch` / `route` tagging                                    | `packages/forge-runtime/src/jira/client.ts`           | No Jira access; fix is one function                                                                                                                                   |
+| Forge SQL dialect acceptance of the DDL and `ON DUPLICATE KEY UPDATE` | `packages/engine/src/store/schema.ts`, `sql-store.ts` | Schema or upserts rejected; would need a dialect pass                                                                                                                 |
+| `@forge/react` component props **as Forge accepts them**              | `packages/ui/src/components.tsx`                      | Page does not render; fix is per-component. The tree, the states and the copy are verified against a stand-in renderer; the platform's acceptance of the props is not |
+| Async Events queue name and consumer method                           | `apps/*/manifest.yml`, `scheduler.ts`                 | Backfill never continues past slice 0                                                                                                                                 |
+| Invocation time limit vs `timeBudgetMs`                               | `packages/engine/src/ingest/backfill.ts`              | Slices time out mid-page; harmless (re-processed) but slow                                                                                                            |

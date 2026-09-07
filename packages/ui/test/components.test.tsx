@@ -209,12 +209,16 @@ describe('IndexingBanner', () => {
     await expectNoA11yViolations();
   });
 
-  it('offers the start button only when nothing has been indexed', async () => {
-    const onStart = vi.fn();
-    render(<IndexingBanner banner={toProgressBanner(null)} onStart={onStart} />);
+  /**
+   * The banner carries no action. On a project with no index there are no
+   * rows, so the empty state is on screen at the same time offering the very
+   * same button — which is what the rendered screen showed.
+   */
+  it('★ states that nothing is indexed without duplicating the empty state action', async () => {
+    render(<IndexingBanner banner={toProgressBanner(null)} />);
     expect(screen.getByText('Not indexed yet')).toBeDefined();
-    screen.getByRole('button', { name: 'Start indexing' }).click();
-    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Start indexing to build the report for this project.')).toBeDefined();
+    expect(screen.queryByRole('button')).toBeNull();
     await expectNoA11yViolations();
   });
 
@@ -366,5 +370,20 @@ describe('SimpleReportTable', () => {
   it('renders an empty table without throwing', () => {
     render(<SimpleReportTable model={{ headers: ['A'], rows: [], footnotes: [] }} />);
     expect(screen.getByRole('table')).toBeDefined();
+  });
+
+  it('★ emphasises the column the model nominates, not always the first', () => {
+    render(
+      <SimpleReportTable
+        model={{
+          headers: ['When (UTC)', 'Issue'],
+          rows: [['9 Mar 2026 12:00', 'FLOW-1']],
+          footnotes: [],
+          emphasisColumn: 1,
+        }}
+      />,
+    );
+    expect(screen.getByText('FLOW-1').tagName).toBe('STRONG');
+    expect(screen.getByText('9 Mar 2026 12:00').tagName).not.toBe('STRONG');
   });
 });

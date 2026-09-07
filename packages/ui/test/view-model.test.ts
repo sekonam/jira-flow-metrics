@@ -4,6 +4,7 @@ import {
   formatBytes,
   formatCell,
   formatDate,
+  formatDateTime,
   formatDurationForHumans,
   surfaceStateOf,
   toProgressBanner,
@@ -83,6 +84,13 @@ describe('duration formatting', () => {
     expect(formatDurationForHumans(26 * HOUR)).toBe('1d 2h');
     expect(formatDurationForHumans(Number.NaN)).toBe('—');
     expect(formatDurationForHumans(-5)).toBe('0m');
+  });
+
+  it('formats a timestamp to the minute for logs, where the day is not enough', () => {
+    expect(formatDateTime(Date.parse('2026-03-09T12:00:00Z'))).toBe('9 Mar 2026 12:00');
+    expect(formatDateTime(Date.parse('2026-03-09T07:05:00Z'))).toBe('9 Mar 2026 07:05');
+    expect(formatDateTime(null)).toBe('—');
+    expect(formatDateTime(Number.NaN)).toBe('—');
   });
 
   it('formats dates unambiguously and locale-independently', () => {

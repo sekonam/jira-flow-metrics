@@ -53,7 +53,7 @@ describe('wip-aging: the listing-specific behaviour', () => {
     // The canonical issue is resolved, so it is not ageing.
     expect(screen.queryByText('FLOW-3')).toBeNull();
     expect(
-      screen.getByText(/1 finished issues are excluded; ageing only applies to work in flight/),
+      screen.getByText(/1 finished issue is excluded; ageing only applies to work in flight/),
     ).toBeDefined();
     cleanup();
   });

@@ -79,10 +79,23 @@ pnpm exec forge tunnel
 Then walk this checklist **in order**. Each item is something that cannot be verified from a test
 suite, listed by how much depends on it.
 
+**Before you start, look at what it is supposed to look like.**
+
+```bash
+pnpm run ui:screens
+open packages/ui-harness/screens/index.html
+```
+
+That renders all ten surfaces in six states each and audits every one with axe. It uses a stand-in
+for the Forge host renderer, so it is a reference for _structure, copy, state and numbers_ — items
+1, 2 and 8 below are then a comparison rather than a discovery. If the tunnel shows something the
+screenshots do not, the difference is Forge's renderer, and that is exactly the gap this session
+exists to close.
+
 | #   | Check                                                                                                                                                                              | If it fails                                                                      |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 1   | The project page renders at all                                                                                                                                                    | UI Kit component props differ — fix `packages/ui/src/components.tsx`             |
-| 2   | The four states appear: loading, error, empty, ready                                                                                                                               | Same file                                                                        |
+| 1   | The project page renders at all, and looks like `packages/ui-harness/screens/*-page--populated.png`                                                                                | UI Kit component props differ — fix `packages/ui/src/components.tsx`             |
+| 2   | The four states appear: loading, error, empty, ready — compare against the matching screenshots                                                                                    | Same file                                                                        |
 | 3   | "Start indexing" writes `index_state`                                                                                                                                              | `forgeSqlExecutor` shape is wrong — `packages/forge-runtime/src/sql/executor.ts` |
 | 4   | The Forge SQL DDL is accepted                                                                                                                                                      | Dialect differences in `packages/engine/src/store/schema.ts`                     |
 | 5   | A Jira search returns issues                                                                                                                                                       | `forgeJiraFetch` / `route` tagging — `packages/forge-runtime/src/jira/client.ts` |

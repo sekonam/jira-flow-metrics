@@ -152,6 +152,10 @@ describe('aging view model', () => {
     expect(table.rows[0]?.[0]).toBe('FLOW-2');
     expect(table.rows[0]?.[2]).toBe('5w 5d');
     expect(table.footnotes[0]).toContain('5 finished issues are excluded');
+    // "1 finished issues are excluded" was on screen until someone looked.
+    expect(toAgingTable({ ...aging, excludedDone: 1 }).footnotes[0]).toContain(
+      '1 finished issue is excluded',
+    );
     expect(table.footnotes[1]).toContain('shown separately rather than blended in');
   });
 
@@ -202,8 +206,26 @@ describe('SLA view model', () => {
 describe('history view model', () => {
   it('renders a change per row with em dashes for absent values', () => {
     const table = toHistoryTable(history);
-    expect(table.rows[0]).toEqual(['9 Mar 2026', 'FLOW-1', 'status', '—', 'Done', 'Anna']);
+    expect(table.rows[0]).toEqual(['9 Mar 2026 12:00', 'FLOW-1', 'status', '—', 'Done', 'Anna']);
     expect(table.footnotes[0]).toContain('cross-issue, filterable and exportable');
+  });
+
+  /**
+   * Found by rendering the page: several changes to the same issue on the same
+   * day were indistinguishable, and the column that a reader scans — the issue
+   * key — was the one *not* emphasised. Both matter for the listing whose
+   * entire pitch is a readable cross-issue change log.
+   */
+  it('★ times each change to the minute, and labels the zone it used', () => {
+    const table = toHistoryTable(history);
+    expect(table.headers[0]).toBe('When (UTC)');
+    expect(table.rows[0]?.[0]).toBe('9 Mar 2026 12:00');
+  });
+
+  it('★ emphasises the issue key rather than the timestamp', () => {
+    expect(toHistoryTable(history).emphasisColumn).toBe(1);
+    // Every other listing does lead with the issue, so it keeps the default.
+    expect(toAgingTable(aging).emphasisColumn).toBeUndefined();
   });
 
   it('names the busiest field', () => {

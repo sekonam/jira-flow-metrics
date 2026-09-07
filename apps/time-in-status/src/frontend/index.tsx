@@ -95,22 +95,15 @@ export const App = (): React.JSX.Element => {
       />
 
       {/*
-        Rendered only once a response has arrived. `toProgressBanner(null)`
-        means "not indexed yet", and showing that while the first request is
-        still in flight told every user of a fully-indexed project that their
-        project had never been indexed — underneath a loading spinner.
+        The banner only speaks when it has something true to say.
+        `toProgressBanner(null)` means "not indexed yet", and `progress` is
+        null both before the first answer arrives and when the call failed.
+        Rendering it regardless told users of a fully-indexed project that it
+        had never been indexed — under a loading spinner in one case, and
+        directly above "you do not have permission" in the other.
       */}
-      {state === 'loading' ? null : (
-        <IndexingBanner
-          banner={toProgressBanner(envelope?.progress ?? null)}
-          onStart={
-            envelope?.progress === null
-              ? () => {
-                  void startIndexing();
-                }
-              : undefined
-          }
-        />
+      {state === 'loading' || state === 'error' ? null : (
+        <IndexingBanner banner={toProgressBanner(envelope?.progress ?? null)} />
       )}
 
       {state === 'loading' ? <LoadingSurface label="Loading report" /> : null}

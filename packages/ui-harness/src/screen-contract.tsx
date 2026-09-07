@@ -127,6 +127,11 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
       expect(
         await screen.findByText(/You do not have permission to browse this project in Jira/),
       ).toBeDefined();
+      // ★ And says nothing else. A refused call leaves `progress` null, which
+      // the banner used to read as "not indexed yet" — so a user with no
+      // permission was told, in a cheerful blue box directly above the
+      // refusal, to start indexing a project they cannot see.
+      expect(screen.queryByText('Not indexed yet')).toBeNull();
       expectCleanRender();
       await expectNoA11yViolations();
     });
@@ -160,18 +165,20 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
     });
 
     if (spec.surface === 'page') {
-      it('offers indexing on a project that has never been indexed', async () => {
+      it('★ offers indexing exactly once on a project that has never been indexed', async () => {
         mount('not-indexed');
         expect(await screen.findByText('Not indexed yet')).toBeDefined();
+        // Exactly one. The banner used to carry its own copy of this button,
+        // which meant every unindexed project showed it twice.
         const buttons = await screen.findAllByRole('button', { name: 'Start indexing' });
-        expect(buttons.length).toBeGreaterThan(0);
+        expect(buttons).toHaveLength(1);
         await expectNoA11yViolations();
       });
 
       it('actually calls startIndexing when the button is pressed', async () => {
         mount('not-indexed');
-        const [button] = await screen.findAllByRole('button', { name: 'Start indexing' });
-        button!.click();
+        const button = await screen.findByRole('button', { name: 'Start indexing' });
+        button.click();
         await waitFor(() => {
           expect(invokedResolvers()).toContain('startIndexing');
         });
@@ -189,10 +196,10 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
         expectCleanRender();
       });
 
-      it('starts indexing from the empty state as well as from the banner', async () => {
+      it('starts indexing from the empty state', async () => {
         mount('empty');
-        const [button] = await screen.findAllByRole('button', { name: 'Start indexing' });
-        button!.click();
+        const button = await screen.findByRole('button', { name: 'Start indexing' });
+        button.click();
         await waitFor(() => {
           expect(invokedResolvers()).toContain('startIndexing');
         });

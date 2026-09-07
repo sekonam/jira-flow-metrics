@@ -12,15 +12,15 @@ and a half months building five.
 
 ## Stage 0 — done (this repository)
 
-| Delivered                                                                            | State                                                           |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Monorepo, TypeScript strict, ESLint + Prettier, CI with an 80% coverage floor        | Green                                                           |
-| Shared duration-analytics engine                                                     | 434 tests, 98.8% statements / 90.9% branches                    |
-| Working-calendar arithmetic with hand-computed golden tests                          | Green                                                           |
-| Incremental ingestion + chunked resumable backfill                                   | Green, against fixtures                                         |
-| Forge SQL store, Jira REST client, queue scheduler                                   | Statement- and request-level tests; **never executed on Forge** |
-| Five listing apps: manifests, composition roots, resolvers, UI Kit pages and gadgets | Manifests asserted by tests; **UI never rendered**              |
-| Product, technical, promotion, runbook and maintenance docs                          | This set                                                        |
+| Delivered                                                                            | State                                                                                                     |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Monorepo, TypeScript strict, ESLint + Prettier, CI with an 80% coverage floor        | Green                                                                                                     |
+| Shared duration-analytics engine                                                     | 434 tests, 98.8% statements / 90.9% branches                                                              |
+| Working-calendar arithmetic with hand-computed golden tests                          | Green                                                                                                     |
+| Incremental ingestion + chunked resumable backfill                                   | Green, against fixtures                                                                                   |
+| Forge SQL store, Jira REST client, queue scheduler                                   | Statement- and request-level tests; **never executed on Forge**                                           |
+| Five listing apps: manifests, composition roots, resolvers, UI Kit pages and gadgets | Manifests asserted by tests; **UI rendered and audited against a stand-in host renderer, never by Forge** |
+| Product, technical, promotion, runbook and maintenance docs                          | This set                                                                                                  |
 
 **Not delivered, and cannot be from here:** `forge login`, `forge register`, `forge lint`,
 `forge tunnel`, `forge deploy`, a vendor account, a Marketplace listing. See `RUNBOOK.md`.

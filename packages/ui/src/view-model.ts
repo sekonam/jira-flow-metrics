@@ -110,6 +110,25 @@ export function formatDate(ms: Millis | null): string {
   return `${d.getUTCDate()} ${months[d.getUTCMonth()] ?? '?'} ${d.getUTCFullYear()}`;
 }
 
+/**
+ * `9 Mar 2026 12:00` — the same date format with the time of day.
+ *
+ * Needed wherever rows are events rather than issues: a change log that only
+ * says "2 Mar 2026" against five changes to the same issue tells the reader
+ * nothing about their order, which was visible the moment the Issue History
+ * page was rendered.
+ *
+ * UTC, like `formatDate`. The caller must label the column as such — a
+ * timestamp shown in an unstated zone is exactly the sort of quiet ambiguity
+ * this product is sold against.
+ */
+export function formatDateTime(ms: Millis | null): string {
+  if (ms === null || !Number.isFinite(ms)) return '—';
+  const d = new Date(ms);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${formatDate(ms)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
 export interface ReportTableCell {
   readonly text: string;
   /** How many separate visits produced this figure. `null` where not applicable. */

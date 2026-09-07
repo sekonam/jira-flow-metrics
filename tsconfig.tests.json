@@ -20,6 +20,7 @@
     "apps/*/test/**/*.tsx",
     "packages/ui-harness/harness/**/*.ts",
     "packages/ui-harness/harness/**/*.tsx",
+    "packages/ui-harness/harness/**/*.mts",
     "test/**/*.ts",
     "*.config.mts"
   ],

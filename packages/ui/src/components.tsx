@@ -62,8 +62,15 @@ export function ErrorSurface({
 }): React.JSX.Element {
   return (
     <SectionMessage title="Could not load this report" appearance="error">
-      <Text>{message}</Text>
-      {onRetry !== undefined ? <Button onClick={onRetry}>Try again</Button> : null}
+      {/*
+        Stacked, not inline. Left as siblings the button sits hard against the
+        end of the sentence with no separation, which reads as part of the
+        text rather than as an action.
+      */}
+      <Stack space="space.150" alignInline="start">
+        <Text>{message}</Text>
+        {onRetry !== undefined ? <Button onClick={onRetry}>Try again</Button> : null}
+      </Stack>
     </SectionMessage>
   );
 }
@@ -94,12 +101,19 @@ export function EmptySurface({
   );
 }
 
+/**
+ * The indexing banner. Informational only, deliberately.
+ *
+ * It used to carry its own "Start indexing" button. Looking at the rendered
+ * screen showed why that was wrong: a project with no index has no rows, so
+ * the empty state is on screen at the same time — and the empty state's
+ * centred primary action is the same action. Every unindexed project showed
+ * the button twice. One action, one place.
+ */
 export function IndexingBanner({
   banner,
-  onStart,
 }: {
   banner: ProgressBanner | null;
-  onStart?: (() => void) | undefined;
 }): React.JSX.Element | null {
   if (banner === null) return null;
   return (
@@ -108,7 +122,6 @@ export function IndexingBanner({
         {banner.showSpinner ? <Spinner size="small" label="Indexing" /> : null}
         <Text>{banner.body}</Text>
       </Inline>
-      {onStart !== undefined ? <Button onClick={onStart}>Start indexing</Button> : null}
     </SectionMessage>
   );
 }
@@ -210,6 +223,7 @@ export function PageHeader({
 
 /** A plain table for the listings whose data is a flat list of rows. */
 export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.Element {
+  const emphasis = model.emphasisColumn ?? 0;
   const head = {
     cells: model.headers.map((header, index) => ({
       key: `h-${index}`,
@@ -221,7 +235,7 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
     key: `r-${rowIndex}`,
     cells: row.map((value, index) => ({
       key: `c-${index}`,
-      content: index === 0 ? <Strong>{value}</Strong> : <Text>{value}</Text>,
+      content: index === emphasis ? <Strong>{value}</Strong> : <Text>{value}</Text>,
     })),
   }));
   return (

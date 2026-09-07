@@ -23,6 +23,10 @@
     "./screen-contract": {
       "types": "./dist/screen-contract.d.ts",
       "default": "./dist/screen-contract.js"
+    },
+    "./scenarios": {
+      "types": "./dist/scenarios.d.ts",
+      "default": "./dist/scenarios.js"
     }
   },
   "scripts": {
@@ -52,7 +56,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "playwright": "1.54.2",
+    "playwright": "1.55.1",
     "vite": "^7.1.14",
     "vitest": "^3.2.7"
   }

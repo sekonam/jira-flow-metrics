@@ -6,7 +6,8 @@ Atlassian Marketplace listings**.
 ```
 packages/engine         all the arithmetic — no platform dependencies, no runtime dependencies
 packages/forge-runtime  Forge SQL store, Jira REST client, queue scheduler, per-listing wiring
-packages/ui             view models (tested) + Atlassian UI Kit components
+packages/ui             view models + Atlassian UI Kit components, both tested by rendering
+packages/ui-harness     dev only — stand-in Forge host renderer, screenshots, axe audit
 apps/time-in-status     ① the flagship listing
 apps/worklog-reports    ②
 apps/wip-aging          ③
@@ -31,13 +32,13 @@ Jira calls**. That reuse is the point: the multi-listing structure is the distri
 
 ## Status
 
-|                              |                                                       |
-| ---------------------------- | ----------------------------------------------------- |
-| Tests                        | **434 passing**                                       |
-| Coverage on `packages/**`    | **98.8% statements · 90.8% branches** (CI floor: 80%) |
-| Lint, typecheck, build       | Green                                                 |
-| Deployed to Forge            | **No**                                                |
-| Published to the Marketplace | **No**                                                |
+|                                           |                                                       |
+| ----------------------------------------- | ----------------------------------------------------- |
+| Tests                                     | **632 passing**                                       |
+| Coverage on `packages/**` + app frontends | **98.9% statements · 91.2% branches** (CI floor: 80%) |
+| Lint, typecheck, build                    | Green                                                 |
+| Deployed to Forge                         | **No**                                                |
+| Published to the Marketplace              | **No**                                                |
 
 ### ⚠️ What has never been verified
 
@@ -48,7 +49,11 @@ be run. Specifically unverified:
 - the five `manifest.yml` files (written against Atlassian's published module reference);
 - `forgeSqlExecutor` and `forgeJiraFetch` — the two adapter functions that touch the Forge SDKs;
 - whether Forge SQL accepts the DDL and the `ON DUPLICATE KEY UPDATE` upserts;
-- every `@forge/react` component, because UI Kit renders only inside Forge.
+- **how Forge itself renders the UI.** Every screen is rendered and audited in CI, but through a
+  stand-in host renderer (`packages/ui-harness`): `@forge/react`'s UI Kit 2 exports are string
+  sentinels serialised over the bridge, and the code that turns them into Atlassian Design System
+  markup ships inside Jira and is not on npm. Structure, copy, state and numbers are verified;
+  Forge's own rendering and its acceptance of these props are not.
 
 Everything else — the arithmetic, the ingestion pipeline, the backfill state machine, the store
 contract, the request URLs, the SQL statement text and its bound parameters — is covered by tests
@@ -68,6 +73,7 @@ pnpm run verify        # format · lint · typecheck · coverage · build — th
 Useful:
 
 ```bash
+pnpm run ui:screens    # render every screen in every state to a PNG, and audit it with axe
 pnpm test              # vitest, no coverage gate
 pnpm run coverage      # with the 80% floor enforced
 pnpm run typecheck     # project references + the test project

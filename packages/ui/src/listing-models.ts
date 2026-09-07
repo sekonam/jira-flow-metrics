@@ -3,6 +3,7 @@ import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
 import {
   WORKING_TIME,
   formatDate,
+  formatDateTime,
   formatDurationForHumans,
   type SummaryTile,
 } from './view-model.js';
@@ -19,6 +20,15 @@ export interface SimpleTable {
   readonly headers: readonly string[];
   readonly rows: readonly (readonly string[])[];
   readonly footnotes: readonly string[];
+  /**
+   * Which column carries the row's identity and is rendered in bold.
+   *
+   * Defaults to the first, which is right for every listing that leads with an
+   * issue key or a person. The history table leads with a timestamp, and
+   * bolding the timestamp while leaving the issue key plain puts the emphasis
+   * on the one column a reader does not scan for.
+   */
+  readonly emphasisColumn?: number;
 }
 
 // ------------------------------------------------- listing 2: worklog ---
@@ -73,7 +83,8 @@ export function toAgingTable(report: AgingReport): SimpleTable {
       formatDate(row.enteredStatusAt),
     ]),
     footnotes: [
-      `${report.excludedDone} finished issues are excluded; ageing only applies to work in flight.`,
+      `${report.excludedDone} finished ${report.excludedDone === 1 ? 'issue is' : 'issues are'} ` +
+        'excluded; ageing only applies to work in flight.',
       'Age in status is elapsed time. Working-hours ageing covers the completed part of the ' +
         'current visit only, so it is shown separately rather than blended in.',
     ],
@@ -168,9 +179,13 @@ export function toSlaTiles(report: SlaReport): SummaryTile[] {
 
 export function toHistoryTable(report: HistoryReport): SimpleTable {
   return {
-    headers: ['When', 'Issue', 'Field', 'From', 'To', 'By'],
+    // The zone is named in the header because the timestamps are UTC and the
+    // reader's Jira may not be.
+    headers: ['When (UTC)', 'Issue', 'Field', 'From', 'To', 'By'],
+    // The issue key, not the timestamp, is what a reader scans for.
+    emphasisColumn: 1,
     rows: report.records.map((record) => [
-      formatDate(record.at),
+      formatDateTime(record.at),
       record.issueKey,
       record.fieldLabel,
       record.fromValue ?? '—',
