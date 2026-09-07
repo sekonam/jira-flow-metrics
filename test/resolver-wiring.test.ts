@@ -82,3 +82,33 @@ describe('every listing wires its own frontends to its own resolver', () => {
     expect(invokedKeys(app)).not.toContain('exportCsv');
   });
 });
+
+describe('test-support code cannot reach a Forge bundle', () => {
+  /**
+   * `packages/forge-runtime/src/testing/pipeline.ts` is fixture-driven test
+   * support living inside a production package's `src`, because two packages
+   * need the identical end-to-end scenario and duplicating it would let the
+   * two drift. It reads fixture JSON with `node:fs`, which does not exist in
+   * the Forge sandbox, so it must stay unreachable from the package index —
+   * the only entry point an app's bundler follows.
+   */
+  it('the forge-runtime index does not re-export the testing module', () => {
+    const index = readFileSync(
+      join(process.cwd(), 'packages', 'forge-runtime', 'src', 'index.ts'),
+      'utf8',
+    );
+    expect(index).not.toMatch(/testing/);
+  });
+
+  it('no app source imports it', () => {
+    for (const app of APPS) {
+      const dir = join(APPS_DIR, app, 'src');
+      const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) =>
+        /\.tsx?$/.test(f),
+      );
+      for (const file of files) {
+        expect(readFileSync(join(dir, file), 'utf8')).not.toContain('@jfm/forge-runtime/testing');
+      }
+    }
+  });
+});
