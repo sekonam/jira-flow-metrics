@@ -35,7 +35,7 @@ Jira calls**. That reuse is the point: the multi-listing structure is the distri
 |                                           |                                                       |
 | ----------------------------------------- | ----------------------------------------------------- |
 | Tests                                     | **632 passing**                                       |
-| Coverage on `packages/**` + app frontends | **98.6% statements · 91.4% branches** (CI floor: 80%) |
+| Coverage on `packages/**` + app frontends | **98.6% statements · 91.5% branches** (CI floor: 80%) |
 | Lint, typecheck, build                    | Green                                                 |
 | Deployed to Forge                         | **No**                                                |
 | Published to the Marketplace              | **No**                                                |

@@ -380,7 +380,7 @@ deterministic in CI, and it is a hard rule.
 Coverage floor is **80%** and CI fails below it. It now covers the app frontends as well as the
 shared packages; before that the include globs matched `.ts` only, so every `.tsx` file reported no
 coverage _and no gap_. Fixture-driven test support (`src/testing/`) is excluded, so the number is
-about shipped code. Current: **98.6% statements, 91.4% branches** overall.
+about shipped code. Current: **98.6% statements, 91.5% branches** overall.
 
 ### ⚠️ What rendering does and does not establish
 

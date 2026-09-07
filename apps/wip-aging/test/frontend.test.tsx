@@ -46,6 +46,27 @@ describeScreen(
 );
 
 describe('wip-aging: the listing-specific behaviour', () => {
+  /**
+   * ★ The gadget's second call is isolated on purpose.
+   *
+   * The report has already loaded by the time the index state is fetched.
+   * Losing that second call is not a reason to replace a working gadget with
+   * "could not load this gadget" — the banner simply goes quiet.
+   */
+  it('keeps a loaded gadget when only the index-state call fails', async () => {
+    setBridgeResolvers({
+      getAgingReport: () => scenarios.populated.responses.getAgingReport,
+      getIndexProgress: () => {
+        throw new Error('index state unavailable');
+      },
+    });
+    render(<Gadget />);
+    expect(await screen.findByText('In flight')).toBeDefined();
+    expect(screen.queryByText('Could not load this gadget.')).toBeNull();
+    expect(screen.queryByText('Indexing is still in progress.')).toBeNull();
+    cleanup();
+  });
+
   it('excludes finished issues and says how many it excluded', async () => {
     setBridgeResolvers(resolversFor(scenarios.populated.responses));
     render(<App />);

@@ -6,6 +6,7 @@ import {
   formatDate,
   formatDateTime,
   formatDurationForHumans,
+  isIndexIncomplete,
   surfaceStateOf,
   toProgressBanner,
   toReportTable,
@@ -124,6 +125,16 @@ describe('surface state', () => {
     expect(surfaceStateOf({ loading: false, error: 'x', rowCount: 5 })).toBe('error');
     expect(surfaceStateOf({ loading: false, error: null, rowCount: 0 })).toBe('empty');
     expect(surfaceStateOf({ loading: false, error: null, rowCount: 5 })).toBe('ready');
+  });
+});
+
+describe('index completeness', () => {
+  it('★ treats "never indexed" as incomplete, and only "complete" as complete', () => {
+    expect(isIndexIncomplete(null)).toBe(true);
+    expect(isIndexIncomplete(progress({ state: 'complete' }))).toBe(false);
+    for (const state of ['not_started', 'running', 'paused', 'failed'] as const) {
+      expect(isIndexIncomplete(progress({ state }))).toBe(true);
+    }
   });
 });
 
