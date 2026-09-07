@@ -40,7 +40,7 @@ describeScreen(
     surface: 'gadget',
     resolverKeys: ['getReport'],
     invokedOnLoad: ['getReport'],
-    heading: 'Time in status',
+    heading: 'Time in Status',
     emptyText: /No indexed issues in this project yet/,
     populatedText: /In Progress · median/,
   },

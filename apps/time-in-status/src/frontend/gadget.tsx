@@ -59,7 +59,7 @@ export const Gadget = (): React.JSX.Element => {
 
   return (
     <Stack space="space.150">
-      <Heading as="h3">Time in status</Heading>
+      <Heading as="h3">Time in Status</Heading>
       <SummaryTiles tiles={toSummaryTiles(envelope.report).slice(0, 4)} />
       {envelope.partial ? <Text size="small">Indexing is still in progress.</Text> : null}
     </Stack>
