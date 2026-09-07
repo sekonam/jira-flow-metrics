@@ -6,7 +6,6 @@ import { createRoot } from 'react-dom/client';
 import { setGlobalTheme } from '@atlaskit/tokens';
 import { setBridgeResolvers } from '../src/bridge';
 import { SCREENS } from './screens';
-import scenarios from './generated/scenarios.json';
 
 /**
  * The visual harness entry point.
@@ -18,7 +17,9 @@ import scenarios from './generated/scenarios.json';
  * The data is not invented. `generated/scenarios.json` is written by
  * `scripts/build-scenarios.mjs`, which runs the real ingestion pipeline over
  * the recorded Jira fixtures and calls the real resolver handlers — the same
- * function the test suites use.
+ * function the test suites use. It is **fetched at runtime rather than
+ * imported**: the file is a build product and is gitignored, and a static
+ * import would make `pnpm run typecheck` fail on a fresh clone.
  *
  * ⚠️ What is on screen is the Atlassian Design System rendering of the tree
  * these components build, produced by the stand-in host renderer in
@@ -27,11 +28,16 @@ import scenarios from './generated/scenarios.json';
  * as a screenshot of the deployed app.
  */
 
-type ScenarioId = keyof typeof scenarios;
+interface Scenario {
+  readonly id: string;
+  readonly label: string;
+  readonly note: string;
+  readonly responses: Readonly<Record<string, unknown>>;
+}
 
 const params = new URLSearchParams(window.location.search);
 const screenId = params.get('screen');
-const scenarioId = (params.get('scenario') ?? 'populated') as ScenarioId | 'loading';
+const scenarioId = params.get('scenario') ?? 'populated';
 
 const RESOLVER_KEYS = [
   'getReport',
@@ -42,16 +48,35 @@ const RESOLVER_KEYS = [
   'startIndexing',
 ] as const;
 
-function wireBridge(): void {
+async function loadScenarios(): Promise<Readonly<Record<string, Scenario>>> {
+  const response = await fetch('/generated/scenarios.json');
+  if (!response.ok) {
+    throw new Error(
+      'generated/scenarios.json is missing. Run `node packages/ui-harness/scripts/build-scenarios.mjs`, ' +
+        'or just `pnpm run ui:screens`, which does it first.',
+    );
+  }
+  return (await response.json()) as Readonly<Record<string, Scenario>>;
+}
+
+async function wireBridge(): Promise<void> {
   if (scenarioId === 'loading') {
     setBridgeResolvers(
       Object.fromEntries(RESOLVER_KEYS.map((key) => [key, () => new Promise<never>(() => {})])),
     );
     return;
   }
-  const responses = scenarios[scenarioId].responses as Record<string, unknown>;
+  const scenarios = await loadScenarios();
+  const scenario = scenarios[scenarioId];
+  if (scenario === undefined) {
+    throw new Error(
+      `no scenario "${scenarioId}". Known: ${Object.keys(scenarios).join(', ')}, loading.`,
+    );
+  }
   setBridgeResolvers(
-    Object.fromEntries(Object.entries(responses).map(([key, value]) => [key, () => value])),
+    Object.fromEntries(
+      Object.entries(scenario.responses).map(([key, value]) => [key, () => value]),
+    ),
   );
 }
 
@@ -91,7 +116,7 @@ function Frame({ children }: { children: React.ReactNode }): React.JSX.Element {
 
 async function main(): Promise<void> {
   await setGlobalTheme({ colorMode: 'light', light: 'light', spacing: 'spacing' });
-  wireBridge();
+  await wireBridge();
 
   const screen = SCREENS.find((s) => s.id === screenId);
   const root = createRoot(document.getElementById('root')!);

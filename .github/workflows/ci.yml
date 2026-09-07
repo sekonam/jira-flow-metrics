@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   verify:
-    name: format · lint · typecheck · test · build
+    name: format · typecheck · lint · test · build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -37,11 +37,17 @@ jobs:
       - name: Prettier
         run: pnpm run format:check
 
-      - name: ESLint
-        run: pnpm run lint
-
+      # Typecheck before lint, not after. `tsc --build` is what emits the
+      # `.d.ts` files for the workspace packages, and ESLint's type-aware rules
+      # resolve `@jfm/*` through those files. Run the other way round on a
+      # clean checkout — which is exactly what CI is — every cross-package
+      # import is an unresolved `any` and ESLint reports about a thousand
+      # `no-unsafe-*` errors that say nothing about the code.
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: ESLint
+        run: pnpm run lint
 
       # Coverage thresholds are configured in vitest.config.ts (80% on
       # packages/engine). Vitest exits non-zero when a threshold is missed, so

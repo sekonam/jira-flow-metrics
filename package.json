@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "ui:screens": "node packages/ui-harness/scripts/build-scenarios.mjs && node packages/ui-harness/scripts/screens.mjs",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run coverage && pnpm run build"
+    "verify": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run coverage && pnpm run build"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
