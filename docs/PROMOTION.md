@@ -189,7 +189,80 @@ why the plan was staged this way.
 
 ---
 
-## 8. Things deliberately not attempted
+## 8. The launch calendar — day −7 to day 90
+
+Written as dates because the failure mode is not doing the wrong thing, it is doing nothing for
+six weeks and then reading a counter that measures silence.
+
+| When             | Do                                                                                                                                                                                                                    | Time    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **Day −7 to −1** | Produce every asset in § 9 from the tunnel session's real data. Buy the domain, put the docs site up, draft the explainer. Re-check competitor titles and prices.                                                     | 1 week  |
+| **Day 0**        | Submit. Then stop touching the listing — resubmitting mid-review restarts it.                                                                                                                                         | 1 hour  |
+| **Day 0 to +10** | Review wait. Publish the docs site and the explainer, set up wherever support mail lands, write the review-request and the four support replies in advance.                                                           | 2 days  |
+| **Publish day**  | Install the published listing on a clean site exactly as a buyer would. Search the Marketplace for each § 1.5 keyword and record where you rank. Check pricing renders, links resolve, screenshots are not stretched. | 2 hours |
+| **Week 1**       | Publish the explainer. Answer one community thread. Reply to support within one working day, every time.                                                                                                              | 3 hours |
+| **Weeks 2–4**    | The weekly cadence in § 10. At day 14 after each install, ask that installer for a review — by name, once.                                                                                                            | 1 h/wk  |
+| **Day 30**       | Checkpoint: 8–15 installs is healthy, under 5 is a warning. **Change nothing yet.** One month of data cannot distinguish a bad listing from a slow index.                                                             | 30 min  |
+| **Days 30–60**   | Second explainer if the first earned any traffic. Push reviews toward 5 by day 60.                                                                                                                                    | 1 h/wk  |
+| **Days 60–90**   | **Add no new tactics.** The gate measures the plan as executed; changing the plan inside the measurement window destroys the measurement.                                                                             | 1 h/wk  |
+| **Day 90**       | Read the counter. `ROADMAP.md` stage 3 decides.                                                                                                                                                                       | 1 hour  |
+
+**Keep one file — `promotion-log.md`, outside this repo — with a dated line per week:** installs,
+reviews, support tickets, keyword ranks, and anything you changed. At day 90 the counter alone
+cannot tell you _why_; the log can, and it is thirty seconds a week.
+
+---
+
+## 9. Listing asset production checklist
+
+Produce all of it before submitting. A listing that is edited three times in its first fortnight
+looks exactly like an app that shipped unfinished.
+
+```
+[ ] Title           — § 1.1, under the list-view truncation length
+[ ] Tagline         — § 1.2, one checkable factual claim
+[ ] Description     — § 1.3 structure, including the "what it does not do" list
+[ ] Highlights      — the console's short bullets; nouns, not adjectives
+[ ] Categories      — pick where buyers browse, not where the app is most novel
+[ ] 5–6 screenshots — § 1.4 order, real data, alt text on every one
+[ ] Vendor profile  — name, logo, support contact, stated response time you can actually keep
+[ ] Documentation URL — live before submission; reviewers open it
+[ ] Privacy statement  — read-only, data stays in the tenant, no telemetry
+[ ] Security statement — including the residual in TECHNICAL-SPEC § 11.6, stated first
+[ ] Pricing         — free ≤ 10 users; $6.50/user to 100, $3.25 to 500, $1.60 beyond
+[ ] Version notes   — what v1.0 is; the changelog page starts here
+```
+
+**Read the vendor console's own current asset specifications** — image dimensions, character
+limits and required fields move, and a remembered number is worth nothing against the form in
+front of you.
+
+**Producing the screenshots.** Use the developer site seeded with realistic issue history, with a
+project name that is plausible rather than `TEST`. One idea per image; the caption carries the
+keyword, not the image. No personal names, no real customer data, no browser chrome with your own
+bookmarks in it. `pnpm run ui:screens` renders the same surfaces in the harness — useful for
+choosing states and copy, but the shipped screenshots must come from Forge, because a reviewer can
+tell and because a stand-in renderer is not what the buyer will see.
+
+---
+
+## 10. The weekly promotion cadence after launch
+
+Half an hour, three fixed slots. The point is that it is small enough to survive a bad week.
+
+| Slot          | Task                                                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Monday**    | Read the install counter and any new review. Reply to every review, including the good ones. Append the weekly line to `promotion-log.md`.                |
+| **Wednesday** | Answer **one** Atlassian Community thread completely and usefully, disclosing the affiliation if the app is mentioned at all. One thread, not five — § 4. |
+| **Friday**    | Support to zero. Then, for anyone whose problem was solved well this week and who has had the app two weeks, one personal review request.                 |
+
+**Monthly:** one release, however small — a dependency bump is a release — plus a changelog line.
+An app with no release in six months reads as abandoned, and that is precisely what buyers scan
+for (`MAINTENANCE.md` § 8).
+
+---
+
+## 11. Things deliberately not attempted
 
 | Not doing                                              | Reason                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -15,6 +15,10 @@ apps/sla-breach         ④
 apps/issue-history      ⑤
 ```
 
+**New here?** Everything is built and tested; nothing has ever run on Forge. What it takes to
+change that — accounts, costs, hours, and the order — is in
+[`docs/START-HERE.md`](docs/START-HERE.md).
+
 ---
 
 ## What it does
@@ -113,15 +117,16 @@ the untestable surface to about twenty lines.
 
 ## Documentation
 
-| Document                                           | What it answers                                                                       |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [`docs/PRODUCT-SPEC.md`](docs/PRODUCT-SPEC.md)     | What each listing does, what it deliberately does not, and the pricing ladder         |
-| [`docs/TECHNICAL-SPEC.md`](docs/TECHNICAL-SPEC.md) | Data model, ingestion, backfill algorithm, module map, cost model, unverified surface |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)               | Stages, and the day-90 install gate that decides whether listings 2-5 ship            |
-| [`docs/PROMOTION.md`](docs/PROMOTION.md)           | Listing craft, keywords, the first-ten-reviews plan. No cold email.                   |
-| [`docs/RUNBOOK.md`](docs/RUNBOOK.md)               | The exact human steps: login, register, tunnel checklist, vendor account, submission  |
-| [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md)       | Cadence, platform risk watch, support, cost monitoring                                |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)               | Standards, the per-step protocol, and the rules about the golden file                 |
+| Document                                           | What it answers                                                                                  |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [`docs/START-HERE.md`](docs/START-HERE.md)         | **Read first.** What you need to launch this — accounts, costs, time — and the order to do it in |
+| [`docs/PRODUCT-SPEC.md`](docs/PRODUCT-SPEC.md)     | What each listing does, what it deliberately does not, and the pricing ladder                    |
+| [`docs/TECHNICAL-SPEC.md`](docs/TECHNICAL-SPEC.md) | Data model, ingestion, backfill algorithm, module map, cost model, unverified surface            |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)               | Stages, and the day-90 install gate that decides whether listings 2-5 ship                       |
+| [`docs/PROMOTION.md`](docs/PROMOTION.md)           | Listing craft, keywords, the first-ten-reviews plan. No cold email.                              |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md)               | The exact human steps: login, register, tunnel checklist, vendor account, submission             |
+| [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md)       | Cadence, platform risk watch, support, cost monitoring                                           |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)               | Standards, the per-step protocol, and the rules about the golden file                            |
 
 ---
 

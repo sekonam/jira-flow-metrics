@@ -158,3 +158,105 @@ the next listing inherits.
 `packages/engine/src/changelog/` must be reviewed against the golden file's `why` fields by hand.
 Those two directories are where a silent wrongness would live, and a passing test suite is not by
 itself evidence that a change to them is correct.
+
+---
+
+## 10. Launch week — the operations that only exist once
+
+The first seventy-two hours after listing 1 is publicly available are the only period where
+production behaviour is unknown _and_ the sample is small enough to inspect by hand. Use it.
+
+| When                             | Do                                                                                                                                                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Twice a day, 72 h**            | `pnpm exec forge logs -e production`. You are looking for three things: unhandled errors, 429s during a backfill, and resolver calls that return empty.                                                                                                |
+| **On the first install**         | Confirm end to end that the backfill reached `complete`, that no 429 storm occurred, and that the app's own consumption moved as the cost model predicts. One real instance calibrates every estimate in `TECHNICAL-SPEC.md`.                          |
+| **On the first support message** | Reply within one working day and answer the question before mentioning anything else. This is also the review funnel (§ 4).                                                                                                                            |
+| **On the first paying instance** | Check the tier that was actually applied against the ladder in `packages/engine/src/config/pricing.ts`, and confirm tax and bank details are complete — payouts release 30 days after a month accruing $500+, and missing details silently defer that. |
+| **On the first one-star review** | Treat as an emergency: in month one it is 100% of the visible signal. Fix the cause that day, reply publicly with what changed.                                                                                                                        |
+
+**The first real backfill is the acceptance test for the cost model.** Record issues indexed,
+wall-clock time, slices consumed and the consumption delta, and put those four numbers in the
+maintenance log. Every "~55 installs fit in the free allowance" claim in this repo is an estimate
+until that line exists.
+
+---
+
+## 11. Incident response
+
+**Reproduce against fixtures, never debug against a customer's tenant.** The engine is
+deterministic and fixture-driven precisely so that a production report can be turned into a test
+case. A bug that cannot be reproduced from a recorded changelog is not understood yet.
+
+| Severity                                          | Example                                         | Response                                                                                                                                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S1 — the numbers are wrong**                    | A duration disagrees with the changelog         | Stop other work. Golden-file case first, then the fix, then deploy **all five** listings. Tell the affected customer what was wrong and for how long. A metrics product that is silently wrong has nothing left to sell. |
+| **S2 — the app is down or refuses**               | Resolver throws, page never leaves loading      | Roll forward if the fix is obvious and tested within the hour; otherwise redeploy the previous tag (§ below).                                                                                                            |
+| **S3 — a surface is wrong but the data is right** | A label, a state, a broken export               | Normal queue. Failing test, fix, next release.                                                                                                                                                                           |
+| **S4 — platform notice**                          | Runtime deprecation, API sunset, pricing change | `§ 5` decides. A deprecation date is a hard deadline, not a backlog item.                                                                                                                                                |
+
+**Rolling back.** Forge has no one-click rollback, so it is a redeploy of an older commit:
+
+```bash
+git checkout <previous-tag>
+pnpm run verify
+pnpm exec forge deploy -e production
+```
+
+⚠️ **Code rolls back; the database does not.** `MetricsStore.migrate()` runs `CREATE TABLE IF NOT
+EXISTS` at every entry point, so schema changes must stay **additive** — a new column or table an
+older build simply ignores. A migration that renames or drops anything makes rollback impossible,
+which means it is not an option in this codebase.
+
+**Tag every production deploy** (`git tag -a v1.0.3 -m ...`) at the moment you deploy. Without
+tags, "the previous version" is a guess made under pressure.
+
+---
+
+## 12. The recurring checklists
+
+Copy these into whatever you actually read. They are the § 2 cadence in a form you can tick.
+
+**Weekly (20 min)**
+
+```
+[ ] Install counter read and logged
+[ ] Every new review answered
+[ ] Support inbox at zero
+[ ] forge logs skimmed for errors and 429s
+```
+
+**Monthly (1 h)**
+
+```
+[ ] pnpm update --interactive --latest  (reviewed, not blanket-accepted)
+[ ] pnpm audit --audit-level high       (clean, or an issue opened)
+[ ] pnpm run verify                     green
+[ ] Forge consumption checked against the free allowance — look at 75%, not 100%
+[ ] One release cut, however small, and the changelog page updated
+```
+
+**Quarterly (2 h)**
+
+```
+[ ] Has Atlassian shipped this natively?      (Jira Cloud changelog — § 6.1)
+[ ] Has a free app appeared at the top of the niche?  (Marketplace API by installs — § 6.2)
+[ ] Competitor prices re-read; our ladder still defensible
+[ ] Platform-risk table (§ 5) re-read against the quarter's announcements
+[ ] Golden-file `why` fields re-read if anything in engine/time or engine/changelog changed
+```
+
+---
+
+## 13. The records worth keeping
+
+Keep one file outside this repository. It costs a minute a week and it is the only thing that can
+answer _why_ at the day-90 gate, when the counter can only answer _how many_.
+
+| Record                                       | Why it matters later                                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Weekly installs, reviews, support count      | The gate in `ROADMAP.md` stage 3 is read against a trend, not a single number                          |
+| **Paying share**, once any instance converts | Every revenue figure in this project rests on an assumed 25%. This is the first real data point on it. |
+| Support hours per week                       | If 40 installs generate an hour a day, the portfolio does not scale regardless of revenue              |
+| Consumption per install                      | Turns the cost model from an estimate into a measurement                                               |
+| Incident log: date, severity, cause, fix     | Three entries with the same cause is a design problem, not three bugs                                  |
+| Feature requests, verbatim                   | Three independent requests for the same thing is a signal; one is not                                  |
