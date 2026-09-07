@@ -59,6 +59,7 @@ export const HARNESS_CONTEXT = {
 
 let handlers: Record<string, ResolverHandler> = {};
 let calls: BridgeCall[] = [];
+let unregistered: string[] = [];
 
 export function setBridgeResolvers(next: Record<string, ResolverHandler>): void {
   handlers = { ...next };
@@ -67,6 +68,7 @@ export function setBridgeResolvers(next: Record<string, ResolverHandler>): void 
 export function resetBridge(): void {
   handlers = {};
   calls = [];
+  unregistered = [];
 }
 
 /** Every bridge command the frontend issued, in order. */
@@ -81,9 +83,17 @@ export function invokedResolvers(): readonly string[] {
     .map((call) => (call.data as { functionKey?: string }).functionKey ?? '');
 }
 
-/** Anything the reconciler reported as a render failure. Asserted on, not ignored. */
-export function bridgeRenderErrors(): readonly unknown[] {
-  return calls.filter((call) => call.cmd === 'onError').map((call) => call.data);
+/**
+ * Resolver keys the frontend asked for that nothing answers.
+ *
+ * Worth recording rather than only throwing: the frontends catch every
+ * `invoke` failure and turn it into "the report could not be loaded", so a
+ * component calling a key its manifest never wires up would otherwise be
+ * indistinguishable from an ordinary error state — and would look like a
+ * correctly-rendered error screen in a test.
+ */
+export function unregisteredResolvers(): readonly string[] {
+  return [...unregistered];
 }
 
 async function callBridge(cmd: string, data: unknown): Promise<unknown> {
@@ -92,12 +102,18 @@ async function callBridge(cmd: string, data: unknown): Promise<unknown> {
     case 'invoke': {
       const { functionKey, payload } = data as { functionKey: string; payload: unknown };
       const handler = handlers[functionKey];
-      if (handler === undefined) throw new UnregisteredResolverError(functionKey);
+      if (handler === undefined) {
+        unregistered.push(functionKey);
+        throw new UnregisteredResolverError(functionKey);
+      }
       return await handler(payload);
     }
     case 'getContext':
       return HARNESS_CONTEXT;
     default:
+      // `onError` and the other reconciler commands never arrive here: the
+      // suites render through the stand-in host renderer rather than through
+      // `ForgeReconciler`, so nothing drives them.
       return undefined;
   }
 }

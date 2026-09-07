@@ -1,7 +1,12 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { bridgeRenderErrors, invokedResolvers, resetBridge, setBridgeResolvers } from './bridge.js';
+import {
+  invokedResolvers,
+  resetBridge,
+  setBridgeResolvers,
+  unregisteredResolvers,
+} from './bridge.js';
 import { auditA11y, describeFindings } from './a11y.js';
 import {
   pendingResolvers,
@@ -49,9 +54,15 @@ async function expectNoA11yViolations(): Promise<void> {
   expect(describeFindings(findings)).toBe('no violations');
 }
 
-/** Nothing may reach the bridge's error channel during a render. */
-function expectCleanRender(): void {
-  expect(bridgeRenderErrors()).toEqual([]);
+/**
+ * The surface may not ask for a resolver nothing answers.
+ *
+ * Every frontend catches an `invoke` failure and renders "the report could not
+ * be loaded", so a call to a key the manifest does not wire up produces a
+ * perfectly plausible error screen. Without this the mistake is invisible.
+ */
+function expectNoUnregisteredResolvers(): void {
+  expect(unregisteredResolvers()).toEqual([]);
 }
 
 export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
@@ -74,7 +85,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
       setBridgeResolvers(pendingResolvers(spec.resolverKeys));
       render(<Component />);
       expect(await screen.findByRole('img', { name: /Loading/ })).toBeDefined();
-      expectCleanRender();
+      expectNoUnregisteredResolvers();
       await expectNoA11yViolations();
     });
 
@@ -98,7 +109,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
     it('renders the populated report', async () => {
       mount('populated');
       expect(await screen.findAllByText(spec.populatedText)).not.toHaveLength(0);
-      expectCleanRender();
+      expectNoUnregisteredResolvers();
     });
 
     it('invokes exactly the resolvers it needs on first render, and no others', async () => {
@@ -118,7 +129,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
     it('shows the empty state when the project has been indexed and has nothing', async () => {
       mount('empty');
       expect(await screen.findAllByText(spec.emptyText)).not.toHaveLength(0);
-      expectCleanRender();
+      expectNoUnregisteredResolvers();
       await expectNoA11yViolations();
     });
 
@@ -132,7 +143,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
       // permission was told, in a cheerful blue box directly above the
       // refusal, to start indexing a project they cannot see.
       expect(screen.queryByText('Not indexed yet')).toBeNull();
-      expectCleanRender();
+      expectNoUnregisteredResolvers();
       await expectNoA11yViolations();
     });
 
@@ -144,7 +155,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
           ? /The report could not be loaded\. Try again in a moment\./
           : /Could not load this gadget\./;
       expect(await screen.findByText(message)).toBeDefined();
-      expectCleanRender();
+      expectNoUnregisteredResolvers();
       await expectNoA11yViolations();
     });
 
@@ -160,7 +171,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
           ? /Numbers below cover only the issues indexed so far/
           : /Indexing is still in progress|issues indexed/;
       expect(await screen.findByText(partialNotice)).toBeDefined();
-      expectCleanRender();
+      expectNoUnregisteredResolvers();
       await expectNoA11yViolations();
     });
 
@@ -182,7 +193,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
         await waitFor(() => {
           expect(invokedResolvers()).toContain('startIndexing');
         });
-        expectCleanRender();
+        expectNoUnregisteredResolvers();
       });
 
       it('retries the failed call when the user presses Try again', async () => {
@@ -193,7 +204,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
         await waitFor(() => {
           expect(invokedResolvers().length).toBeGreaterThan(before);
         });
-        expectCleanRender();
+        expectNoUnregisteredResolvers();
       });
 
       it('starts indexing from the empty state', async () => {
@@ -203,7 +214,7 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
         await waitFor(() => {
           expect(invokedResolvers()).toContain('startIndexing');
         });
-        expectCleanRender();
+        expectNoUnregisteredResolvers();
       });
 
       it('renders the page heading as a level-1 heading', async () => {

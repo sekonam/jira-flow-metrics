@@ -372,6 +372,7 @@ time-in-status listing's installs.
 | Pipeline → pixels        | `apps/time-in-status/test/end-to-end-ui.test.tsx` asserts the engine's numbers **in the DOM**, from the same fixture the resolver end-to-end test uses |
 | Screens a human can see  | `pnpm run ui:screens` — 60 PNGs plus an index page, and a second axe pass in real Chromium where `color-contrast` is meaningful                        |
 | Manifests                | Parsed and asserted: no scheduled trigger, read-only scopes, handlers and resources exist                                                              |
+| Resolver wiring          | Every key a frontend `invoke()`s is `resolver.define()`d by the same app — a static scan, since neither end's suite can see the join                   |
 
 **No test in this repository performs a live network call.** That is what makes the suite
 deterministic in CI, and it is a hard rule.
@@ -422,7 +423,13 @@ the real `invoke`, its payload validation and its rate limiter all run.
    viewer, because doing so would mean an as-user query on every report render, which the
    consumption-priced platform makes prohibitive. **This must be stated in the Marketplace privacy
    statement rather than left for a reviewer to find.**
-7. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
+7. **★ CSV export is implemented but unreachable.** `exportCsv` is defined by all five resolvers,
+   implemented in `packages/engine/src/export/csv.ts`, defused against formula injection, covered
+   by tests, and listed as a v1 feature of every listing in `docs/PRODUCT-SPEC.md` — and **no
+   frontend invokes it.** There is no export button on any screen. Found by rendering every screen
+   and looking at them; pinned by `test/resolver-wiring.test.ts` so it cannot be forgotten again.
+   Closing it needs a UI Kit 2 file-download decision that cannot be validated without a tenant.
+8. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
    instance-wide row counts and has no project scope, so no app registers it as a resolver. It
    stays as an internal method until there is an admin surface that can authorise it properly.
 
