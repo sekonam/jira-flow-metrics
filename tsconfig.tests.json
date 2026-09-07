@@ -1,4 +1,5 @@
 {
+  "$comment": "Module settings mirror apps/*/tsconfig.json (ESNext + Bundler) rather than the base NodeNext, because the UI suites import the app frontends and Vitest resolves like a bundler. Under NodeNext a default import of the CommonJS @forge/react resolves to the namespace instead of ForgeReconciler, so the same source typechecks differently in the two projects.",
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": false,
@@ -7,7 +8,10 @@
     "noEmit": true,
     "types": ["node"],
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true
   },
   "include": [
     "packages/*/test/**/*.ts",

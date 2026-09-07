@@ -80,16 +80,24 @@ export const App = (): React.JSX.Element => {
         subtitle="How long each unfinished issue has been sitting where it is."
       />
 
-      <IndexingBanner
-        banner={toProgressBanner(progress)}
-        onStart={
-          progress === null
-            ? () => {
-                void startIndexing();
-              }
-            : undefined
-        }
-      />
+      {/*
+        Rendered only once a response has arrived. `toProgressBanner(null)`
+        means "not indexed yet", and showing that while the first request is
+        still in flight told every user of a fully-indexed project that their
+        project had never been indexed — underneath a loading spinner.
+      */}
+      {state === 'loading' ? null : (
+        <IndexingBanner
+          banner={toProgressBanner(progress)}
+          onStart={
+            progress === null
+              ? () => {
+                  void startIndexing();
+                }
+              : undefined
+          }
+        />
+      )}
 
       {state === 'loading' ? <LoadingSurface label="Loading report" /> : null}
       {state === 'error' ? (

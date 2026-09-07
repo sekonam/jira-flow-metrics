@@ -77,7 +77,11 @@ const SCENARIO_SETUP: Readonly<
     label: 'Backfill still running',
     note: 'Indexing stopped after one slice. Rows are shown together with a banner saying they cover only part of the history.',
     options: {
-      issues: [...IN_FLIGHT_ISSUES, CANONICAL_ISSUE],
+      // The canonical issue leads so that the half that gets indexed contains
+      // both a finished issue and work in flight — otherwise the WIP and
+      // worklog listings would have nothing to show and the screen would be
+      // indistinguishable from the empty state.
+      issues: [CANONICAL_ISSUE, ...IN_FLIGHT_ISSUES],
       pageSize: 2,
       issuesPerSlice: 2,
       maxSlices: 1,
@@ -182,3 +186,11 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getHistoryReport',
   'startIndexing',
 ];
+
+/** Build every scenario once, keyed by id, for a suite that needs all of them. */
+export async function loadScenarios(): Promise<Readonly<Record<ScenarioId, Scenario>>> {
+  const all = await buildAllScenarios();
+  return Object.fromEntries(all.map((scenario) => [scenario.id, scenario])) as Readonly<
+    Record<ScenarioId, Scenario>
+  >;
+}

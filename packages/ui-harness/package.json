@@ -19,6 +19,10 @@
     "./bridge": {
       "types": "./dist/bridge.d.ts",
       "default": "./dist/bridge.js"
+    },
+    "./screen-contract": {
+      "types": "./dist/screen-contract.d.ts",
+      "default": "./dist/screen-contract.js"
     }
   },
   "scripts": {
@@ -49,6 +53,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "playwright": "1.54.2",
-    "vite": "^7.1.14"
+    "vite": "^7.1.14",
+    "vitest": "^3.2.7"
   }
 }
