@@ -4,7 +4,7 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 656 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
+reviewed — 689 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
 ever run on Forge.** No Atlassian account exists, no app is registered, no listing is submitted.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
@@ -51,10 +51,32 @@ Work top to bottom. Nothing below the line is worth starting until everything ab
 [ ] Tax and bank details submitted
 ```
 
-**Seed the dev site properly.** A project with five freshly created issues proves nothing: the
-product's entire claim is about _re-entered_ statuses, so move a handful of issues back and forth
-between statuses over a few days, and leave some in flight. Steps 8 and 9 of the tunnel checklist
-are meaningless without that history.
+**Seed the dev site properly — and let the script do it.** A project with five freshly created
+issues proves nothing: the product's entire claim is about _re-entered_ statuses. `pnpm run
+seed:dev-site` creates ten issues that walk paths with real returns — blocked twice, sent back to
+the backlog, three review rounds — alongside four **controls** that never re-enter anything and so
+must agree with Jira exactly. It leaves some in flight, backdates worklogs, and spreads due dates
+either side of today.
+
+It then writes `tools/seed-report.md`: a per-status table of how many visits it drove and whether
+the app should therefore **agree with** or **read higher than** Jira's Control Chart — computed
+before the app is ever opened. That table is what makes tunnel-checklist item 9 a comparison
+against a stated prediction rather than a judgement call.
+
+⚠️ **One limit, and it shapes how you run it.** Jira stamps changelog entries with its own clock and
+REST cannot backdate one, so a path walked in a single run has the right _shape_ but durations in
+seconds. Item 9 is unaffected — the app and the Control Chart read the same changelog, and seconds
+compare as exactly as days. But WIP aging needs real elapsed time, so run `--phase 1`, wait a day
+or two, then `--phase 2`. Working-hours arithmetic is not exercised either way; that is what
+`packages/engine/test/calendar.golden.test.ts` is for.
+
+```bash
+cp .env.example .env                       # JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
+pnpm run seed:dev-site -- --dry-run        # print the plan, write nothing
+pnpm run seed:dev-site -- --phase 1
+# ...wait a day or two...
+pnpm run seed:dev-site -- --phase 2
+```
 
 ---
 

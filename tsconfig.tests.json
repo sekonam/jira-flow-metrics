@@ -1,5 +1,5 @@
 {
-  "$comment": "Module settings mirror apps/*/tsconfig.json (ESNext + Bundler) rather than the base NodeNext, because the UI suites import the app frontends and Vitest resolves like a bundler. Under NodeNext a default import of the CommonJS @forge/react resolves to the namespace instead of ForgeReconciler, so the same source typechecks differently in the two projects.",
+  "$comment": "Module settings mirror apps/*/tsconfig.json (ESNext + Bundler) rather than the base NodeNext, because the UI suites import the app frontends and Vitest resolves like a bundler. Under NodeNext a default import of the CommonJS @forge/react resolves to the namespace instead of ForgeReconciler, so the same source typechecks differently in the two projects. allowJs is on so this project can import the dev scripts in tools/*.mjs from a test; checkJs stays off, because those scripts follow the plain-ESM precedent of packages/ui-harness/scripts and are not typechecked.",
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": false,
@@ -11,7 +11,9 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "checkJs": false
   },
   "include": [
     "packages/*/test/**/*.ts",

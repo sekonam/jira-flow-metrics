@@ -23,3 +23,8 @@ Thumbs.db
 packages/ui-harness/screens/
 packages/ui-harness/harness/generated/
 packages/ui-harness/dist-harness/
+
+# Written by `pnpm run seed:dev-site`. Both name a specific Jira site and its
+# issues — working notes for one developer's dev site, not sources.
+tools/.seed-state.json
+tools/seed-report.md

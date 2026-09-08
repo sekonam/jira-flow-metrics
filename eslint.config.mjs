@@ -65,6 +65,12 @@ export default tseslint.config(
         // Node, so ESLint sees them in a Node file and would otherwise object.
         process: 'readonly',
         console: 'readonly',
+        // Node 22 globals used by tools/seed-dev-site.mjs. `fetch` in
+        // particular has no importable form, so it has to be declared here
+        // rather than pulled in from `node:` like the other two could be.
+        Buffer: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
         window: 'readonly',
         document: 'readonly',
       },

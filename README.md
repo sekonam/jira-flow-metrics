@@ -38,7 +38,7 @@ Jira calls**. That reuse is the point: the multi-listing structure is the distri
 
 |                                           |                                                       |
 | ----------------------------------------- | ----------------------------------------------------- |
-| Tests                                     | **632 passing**                                       |
+| Tests                                     | **689 passing**                                       |
 | Coverage on `packages/**` + app frontends | **98.6% statements · 91.5% branches** (CI floor: 80%) |
 | Lint, typecheck, build                    | Green                                                 |
 | Deployed to Forge                         | **No**                                                |
@@ -78,6 +78,7 @@ Useful:
 
 ```bash
 pnpm run ui:screens    # render every screen in every state to a PNG, and audit it with axe
+pnpm run seed:dev-site # seed a Jira dev site with re-entered statuses (needs .env)
 pnpm test              # vitest, no coverage gate
 pnpm run coverage      # with the 80% floor enforced
 pnpm run typecheck     # project references + the test project
