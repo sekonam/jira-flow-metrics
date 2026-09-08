@@ -235,6 +235,13 @@ export class FixtureJira implements JiraApi {
     /** Changelog page size. Small values force the pager to run. */
     private readonly changelogPageSize = 2,
     private readonly browseAllowed = true,
+    /**
+     * The status catalogue this Jira reports. Defaults to the canned one, so
+     * every existing suite is unaffected; a caller driving the pipeline with
+     * issues from a real site passes that site's catalogue instead, otherwise
+     * every status it does not recognise is rendered as its bare numeric id.
+     */
+    private readonly statuses: readonly StatusMeta[] = PIPELINE_STATUSES,
   ) {}
 
   canBrowseProject(): Promise<boolean> {
@@ -282,7 +289,7 @@ export class FixtureJira implements JiraApi {
 
   getStatuses(): Promise<readonly StatusMeta[]> {
     this.requests.push('status');
-    return Promise.resolve(PIPELINE_STATUSES);
+    return Promise.resolve(this.statuses);
   }
 
   private find(issueIdOrKey: string): FixtureIssue {
@@ -296,6 +303,8 @@ export class FixtureJira implements JiraApi {
 
 export interface PipelineOptions {
   readonly issues?: readonly FixtureIssue[];
+  /** The status catalogue Jira reports. Defaults to `PIPELINE_STATUSES`. */
+  readonly statuses?: readonly StatusMeta[];
   readonly now?: Millis;
   /** Issues per search page. */
   readonly pageSize?: number;
@@ -338,7 +347,7 @@ export interface PipelineResult {
 export async function runPipeline(options: PipelineOptions = {}): Promise<PipelineResult> {
   const issues = options.issues ?? [CANONICAL_ISSUE];
   const store = new MemoryStore();
-  const jira = new FixtureJira(issues, 2, options.browseAllowed ?? true);
+  const jira = new FixtureJira(issues, 2, options.browseAllowed ?? true, options.statuses);
   const sql = new RecordingSqlExecutor();
   const settings = new SettingsStore(sql);
   const queue: { projectId: string; slice: number }[] = [];

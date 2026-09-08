@@ -21,7 +21,8 @@
     "coverage": "vitest run --coverage",
     "ui:screens": "node packages/ui-harness/scripts/build-scenarios.mjs && node packages/ui-harness/scripts/screens.mjs",
     "verify": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run coverage && pnpm run build",
-    "seed:dev-site": "node tools/seed-dev-site.mjs"
+    "seed:dev-site": "node tools/seed-dev-site.mjs",
+    "e2e:live": "node packages/ui-harness/scripts/live-e2e.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
