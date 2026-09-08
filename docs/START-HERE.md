@@ -4,7 +4,7 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 704 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
+reviewed — 711 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
 ever run on Forge.** No Atlassian account exists, no app is registered, no listing is submitted.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
@@ -53,29 +53,37 @@ Work top to bottom. Nothing below the line is worth starting until everything ab
 
 **Seed the dev site properly — and let the script do it.** A project with five freshly created
 issues proves nothing: the product's entire claim is about _re-entered_ statuses. `pnpm run
-seed:dev-site` creates ten issues that walk paths with real returns — blocked twice, sent back to
-the backlog, three review rounds — alongside four **controls** that never re-enter anything and so
-must agree with Jira exactly. It leaves some in flight, backdates worklogs, and spreads due dates
-either side of today.
+seed:dev-site` walks paths with real returns — sent back to the backlog, reopened after Done, two
+review rounds, blocked and unblocked where the workflow has a Blocked status — alongside three
+**controls** that never re-enter anything and so must agree with Jira exactly. It leaves some in
+flight, backdates worklogs, and spreads due dates either side of today. A scenario the workflow
+cannot express is skipped outright rather than half-walked, so the issue count depends on the site.
 
 It then writes `tools/seed-report.md`: a per-status table of how many visits it drove and whether
 the app should therefore **agree with** or **read higher than** Jira's Control Chart — computed
 before the app is ever opened. That table is what makes tunnel-checklist item 9 a comparison
 against a stated prediction rather than a judgement call.
 
-⚠️ **One limit, and it shapes how you run it.** Jira stamps changelog entries with its own clock and
-REST cannot backdate one, so a path walked in a single run has the right _shape_ but durations in
-seconds. Item 9 is unaffected — the app and the Control Chart read the same changelog, and seconds
-compare as exactly as days. But WIP aging needs real elapsed time, so run `--phase 1`, wait a day
-or two, then `--phase 2`. Working-hours arithmetic is not exercised either way; that is what
+⚠️ **One limit, and it decides which rows are worth checking.** Jira stamps changelog entries with
+its own clock and REST cannot backdate one, so every transition walked inside a single run lands in
+the same second or two. The _shape_ is right — the visits and the returns are real — but a status
+re-entered twice within one run is one the app reads higher than the Control Chart by under a
+second. The claim is true and no screen will show it.
+
+So the report carries a **margin** column: the actual difference, measured from the changelog. Use
+the bolded rows for item 9 and ignore the ones marked `too small to see`. Only a visit that
+straddles the gap between `--phase 1` and `--phase 2` accumulates real time, which is why the two
+phases exist — and why `--dwell` is worth passing if you want more than a handful of checkable
+rows. Working-hours arithmetic is not exercised either way; that is what
 `packages/engine/test/calendar.golden.test.ts` is for.
 
 ```bash
 cp .env.example .env                       # JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 pnpm run seed:dev-site -- --dry-run        # print the plan, write nothing
-pnpm run seed:dev-site -- --phase 1
-# ...wait a day or two...
-pnpm run seed:dev-site -- --phase 2
+pnpm run seed:dev-site -- --phase 1 --dwell 120
+# ...wait a day or two — the longer the gap, the bigger the margins...
+pnpm run seed:dev-site -- --phase 2 --dwell 120
+pnpm run seed:dev-site -- --help           # every flag, including --reset
 ```
 
 ---

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { isoDaysFromNow, parseArgs } from '../tools/seed-dev-site.mjs';
 import {
   SCENARIOS,
+  VISIBLE_EXCESS_MS,
+  excessPerRole,
+  formatDuration,
+  visitDurations,
   countVisits,
   demonstratesReEntry,
   expectationsFor,
@@ -411,5 +415,97 @@ describe('parseArgs — rejecting a malformed command line', () => {
       reset: false,
       help: false,
     });
+  });
+});
+
+const SECOND = 1000;
+const HOUR = 3_600_000;
+
+describe('visitDurations', () => {
+  it('measures each visit from entry to the next transition', () => {
+    const durations = visitDurations(
+      [
+        { role: 'TODO', at: 0 },
+        { role: 'IN_PROGRESS', at: 2 * HOUR },
+        { role: 'DONE', at: 3 * HOUR },
+      ],
+      4 * HOUR,
+    );
+    expect(durations.get('TODO')).toEqual([2 * HOUR]);
+    expect(durations.get('IN_PROGRESS')).toEqual([HOUR]);
+    // The final visit is still running, so it is closed at `endedAt`.
+    expect(durations.get('DONE')).toEqual([HOUR]);
+  });
+
+  it('merges consecutive identical roles into one visit', () => {
+    // The runner can land twice on the same status when the workflow lacked
+    // the one in between. Jira records no transition there, so neither do we.
+    const durations = visitDurations(
+      [
+        { role: 'IN_PROGRESS', at: 0 },
+        { role: 'IN_PROGRESS', at: HOUR },
+      ],
+      2 * HOUR,
+    );
+    expect(durations.get('IN_PROGRESS')).toEqual([2 * HOUR]);
+  });
+
+  it('keeps re-entries as separate visits', () => {
+    const durations = visitDurations(
+      [
+        { role: 'TODO', at: 0 },
+        { role: 'IN_PROGRESS', at: HOUR },
+        { role: 'TODO', at: 2 * HOUR },
+      ],
+      5 * HOUR,
+    );
+    expect(durations.get('TODO')).toEqual([HOUR, 3 * HOUR]);
+  });
+});
+
+describe('excessPerRole', () => {
+  it('is the time in every visit but the last — what the app adds', () => {
+    // Jira's Control Chart shows the final visit; the product sums them all.
+    // The difference is the claim, and this is its size.
+    const excess = excessPerRole(
+      [
+        { role: 'TODO', at: 0 },
+        { role: 'IN_PROGRESS', at: 2 * HOUR },
+        { role: 'TODO', at: 3 * HOUR },
+      ],
+      4 * HOUR,
+    );
+    expect(excess.get('TODO')).toBe(2 * HOUR);
+  });
+
+  it('is zero for a status visited once, however long the visit', () => {
+    const excess = excessPerRole([{ role: 'IN_PROGRESS', at: 0 }], 99 * HOUR);
+    expect(excess.get('IN_PROGRESS')).toBe(0);
+  });
+
+  it('catches the trap: a real re-entry whose margin is invisible', () => {
+    // Both transitions inside one run, a second apart. The app genuinely reads
+    // higher and nobody could ever see it — the case the report must not
+    // describe as plain "app higher".
+    const excess = excessPerRole(
+      [
+        { role: 'TODO', at: 0 },
+        { role: 'IN_PROGRESS', at: SECOND },
+        { role: 'TODO', at: 2 * SECOND },
+      ],
+      20 * HOUR,
+    );
+    expect(excess.get('TODO')).toBeGreaterThan(0);
+    expect(excess.get('TODO')).toBeLessThan(VISIBLE_EXCESS_MS);
+  });
+});
+
+describe('formatDuration', () => {
+  it('scales the unit to the magnitude', () => {
+    expect(formatDuration(776)).toBe('776ms');
+    expect(formatDuration(2 * SECOND)).toBe('2s');
+    expect(formatDuration(5 * 60 * SECOND)).toBe('5m');
+    expect(formatDuration(15.5 * HOUR)).toBe('15.5h');
+    expect(formatDuration(48 * HOUR)).toBe('2.0d');
   });
 });

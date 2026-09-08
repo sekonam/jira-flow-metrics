@@ -328,3 +328,67 @@ export function expectationsFor(executedPath) {
 export function demonstratesReEntry(executedPath) {
   return [...countVisits(executedPath).values()].some((n) => n > 1);
 }
+
+/**
+ * Below this, the app and the Control Chart show a human the same thing.
+ *
+ * Transitions walked inside one run land in the same second or two, so a visit
+ * that does not straddle the phase-1/phase-2 gap contributes an excess no UI
+ * will render as a difference.
+ */
+export const VISIBLE_EXCESS_MS = 60_000;
+
+/**
+ * Collapse a status timeline into per-role visit durations.
+ *
+ * `timeline` is `{ role, at }` entries in ascending order — the moment the
+ * issue *entered* that role — and `endedAt` closes the final, still-running
+ * visit. Consecutive identical roles merge into one visit, exactly as
+ * `countVisits` counts them, because Jira records no transition there either.
+ */
+export function visitDurations(timeline, endedAt) {
+  const perRole = new Map();
+  for (let i = 0; i < timeline.length; i += 1) {
+    const { role, at } = timeline[i];
+    const until = i + 1 < timeline.length ? timeline[i + 1].at : endedAt;
+    const duration = Math.max(0, until - at);
+    if (i > 0 && role === timeline[i - 1].role) {
+      const durations = perRole.get(role);
+      durations[durations.length - 1] += duration;
+      continue;
+    }
+    if (!perRole.has(role)) perRole.set(role, []);
+    perRole.get(role).push(duration);
+  }
+  return perRole;
+}
+
+/**
+ * How much higher the app should read than a last-visit-only report, per role.
+ *
+ * The product sums every visit; the Control Chart shows the final one. The
+ * difference is therefore everything *before* the last visit — and that is the
+ * number the tunnel session can actually check. Saying "app higher" without it
+ * is the trap this whole file exists to avoid: on a path walked in one run the
+ * claim is true and the two figures still look identical on screen, which reads
+ * as a broken engine.
+ */
+export function excessPerRole(timeline, endedAt) {
+  const excess = new Map();
+  for (const [role, durations] of visitDurations(timeline, endedAt)) {
+    excess.set(
+      role,
+      durations.slice(0, -1).reduce((sum, duration) => sum + duration, 0),
+    );
+  }
+  return excess;
+}
+
+/** Coarse, human-readable duration — the report is read, not parsed. */
+export function formatDuration(ms) {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `${(ms / 3_600_000).toFixed(1)}h`;
+  return `${(ms / 86_400_000).toFixed(1)}d`;
+}

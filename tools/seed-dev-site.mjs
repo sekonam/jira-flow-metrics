@@ -47,6 +47,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   SCENARIOS,
+  VISIBLE_EXCESS_MS,
+  excessPerRole,
+  formatDuration,
   demonstratesReEntry,
   expectationsFor,
   matchRole,
@@ -436,11 +439,60 @@ async function reset(jira, state) {
   say('  · state file cleared');
 }
 
+/**
+ * Read an issue's real status history back out of Jira.
+ *
+ * The expectation table used to be built from the executed *path* alone, which
+ * can say how many visits a status had but not how long they lasted. That let
+ * it promise "app higher" on rows where the excess was under a second — true,
+ * unobservable, and indistinguishable from a broken engine to whoever is
+ * checking. Durations have to come from the changelog, so they are fetched.
+ */
+async function timelineFor(jira, issueKey) {
+  const issue = await jira.get(
+    `/rest/api/3/issue/${issueKey}?expand=changelog&fields=created,status`,
+  );
+  const changes = (issue.changelog?.histories ?? [])
+    .flatMap((history) =>
+      (history.items ?? [])
+        .filter((item) => item.field === 'status')
+        .map((item) => ({
+          at: Date.parse(history.created),
+          to: matchRole(item.toString),
+          from: matchRole(item.fromString),
+        })),
+    )
+    .sort((a, b) => a.at - b.at);
+
+  // The changelog records transitions, not the status the issue was created
+  // in; that one is the `from` of the first transition, or — for an issue that
+  // never moved — whatever it is sitting in now.
+  const first = changes[0]?.from ?? matchRole(issue.fields.status.name);
+  const timeline = [{ role: first, at: Date.parse(issue.fields.created) }];
+  for (const change of changes) timeline.push({ role: change.to, at: change.at });
+  return timeline.filter((entry) => entry.role !== null);
+}
+
+async function collectExcess(jira, state) {
+  const perIssue = new Map();
+  const now = Date.now();
+  for (const key of Object.keys(state.issues)) {
+    try {
+      perIssue.set(key, excessPerRole(await timelineFor(jira, key), now));
+    } catch (error) {
+      // A report without margins still beats no report; say so rather than
+      // failing the whole run over one unreadable changelog.
+      say(`  ⤳ could not read ${key}'s history for the margin column: ${error.message}`);
+    }
+  }
+  return perIssue;
+}
+
 // ---------------------------------------------------------------------------
 // The hand-check table — the actual deliverable
 // ---------------------------------------------------------------------------
 
-function writeReport(state, baseUrl) {
+function writeReport(state, baseUrl, excessByIssue = new Map()) {
   const lines = [
     '# Seeded data — the hand-check table for RUNBOOK item 9',
     '',
@@ -454,23 +506,59 @@ function writeReport(state, baseUrl) {
     '  engine is wrong, and RUNBOOK item 9 says stop everything.**',
     '- `app higher` — the status was re-entered. The app must show strictly more than Jira,',
     '  and the difference is the time spent in the earlier visits. This is the product.',
+    '- The **margin** column is that difference, measured from the real changelog. It is the',
+    '  number to check, not the word: a row marked `too small to see` is one where the claim',
+    '  is true but the two figures round to the same thing on screen. Those rows prove nothing',
+    '  by eye — skip them, or compare via the API.',
     '- `open` — the issue is still sitting in this status, so the figure grows between the',
     '  two readings. Compare loosely.',
     '',
     `Site: ${baseUrl}`,
     '',
-    '| Issue | Scenario | Status | Visits | Expected vs Control Chart |',
-    '| ----- | -------- | ------ | -----: | ------------------------- |',
+    '| Issue | Scenario | Status | Visits | Expected vs Control Chart | Margin |',
+    '| ----- | -------- | ------ | -----: | ------------------------- | ------ |',
   ];
 
+  let invisible = 0;
   for (const [key, record] of Object.entries(state.issues)) {
+    const excess = excessByIssue.get(key);
     for (const row of expectationsFor(record.executed)) {
       const name = record.statusNames?.[row.role] ?? row.role;
-      const verdict = row.expectation === 'agrees' ? 'agrees' : '**app higher**';
+      let verdict = row.expectation === 'agrees' ? 'agrees' : '**app higher**';
+      let margin = '—';
+      if (row.expectation === 'app-higher') {
+        const ms = excess?.get(row.role);
+        if (ms === undefined) margin = '_unread_';
+        else if (ms < VISIBLE_EXCESS_MS) {
+          margin = `${formatDuration(ms)} · too small to see`;
+          verdict = 'app higher, unobservably';
+          invisible += 1;
+        } else margin = `**${formatDuration(ms)}**`;
+      }
       lines.push(
-        `| ${key} | ${record.scenarioId} | ${name} | ${row.visits} | ${verdict}${row.open ? ' · open' : ''} |`,
+        `| ${key} | ${record.scenarioId} | ${name} | ${row.visits} | ${verdict}${row.open ? ' · open' : ''} | ${margin} |`,
       );
     }
+  }
+
+  if (invisible > 0) {
+    lines.push(
+      '',
+      '## Why some margins are too small to see',
+      '',
+      `${invisible} of the re-entered rows above have a margin under ${formatDuration(VISIBLE_EXCESS_MS)}.`,
+      'Jira stamps changelog entries with its own clock and REST cannot backdate one, so every',
+      'transition walked inside a single run lands in the same second or two. Only a visit that',
+      'straddles the gap between `--phase 1` and `--phase 2` accumulates real time.',
+      '',
+      'This is a limit of the *seed*, not a finding about the app. Those rows are still correct —',
+      'the app should read higher — but not by enough for anyone to see it, so they cannot settle',
+      'RUNBOOK item 9 either way. Use the bolded rows for that.',
+      '',
+      'To get more checkable rows next time: leave a longer gap between the two phases, and pass',
+      '`--dwell` so that consecutive transitions within a phase are separated too — for example',
+      '`pnpm run seed:dev-site -- --phase 2 --dwell 120`.',
+    );
   }
 
   const skipped = Object.values(state.issues).flatMap((r) => r.skipped ?? []);
@@ -497,11 +585,46 @@ function writeReport(state, baseUrl) {
 // Main
 // ---------------------------------------------------------------------------
 
+/**
+ * Real help text, rather than a slice of this file's header comment.
+ *
+ * That is what `--help` used to print: it cut off mid-word at 2200 characters,
+ * showed the `*` of the comment syntax, and documented none of `--reset`,
+ * `--project` or `--dwell` — the three flags somebody reaching for `--help` is
+ * most likely to be looking for.
+ */
+const USAGE = `
+Seed a Jira Cloud developer site with issues that re-enter statuses, and write
+the table the first tunnel session checks the product against.
+
+  pnpm run seed:dev-site -- [options]
+
+Options:
+  --dry-run          Print the plan and the expectations it would produce.
+                     Makes no writes of any kind, including to the state file.
+  --phase 1|2|all    Which half of each path to walk. Default: all.
+                     Jira stamps changelog entries with its own clock and REST
+                     cannot backdate one, so run --phase 1, wait a day or two,
+                     then --phase 2 to get history with real elapsed days in it.
+  --project KEY      Project to seed. Default: JFM, created if absent.
+  --dwell SECONDS    Pause between transitions, so consecutive visits are not
+                     stamped within the same second. Default: 0.
+  --reset            Delete the issues recorded in tools/.seed-state.json and
+                     clear it. Only ever touches keys that file records.
+  --help, -h         This text.
+
+Credentials come from .env (see .env.example): JIRA_BASE_URL, JIRA_EMAIL and
+JIRA_API_TOKEN. .env is git-ignored; the token must never be committed.
+
+Re-running a phase is safe — walked issues are skipped. The hand-check table
+is written to tools/seed-report.md.
+`.trim();
+
 async function main() {
   loadDotEnv();
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    say(readFileSync(fileURLToPath(import.meta.url), 'utf8').slice(0, 2200));
+    say(USAGE);
     return;
   }
 
@@ -663,7 +786,7 @@ async function main() {
   }
 
   saveState(state);
-  const report = writeReport(state, baseUrl);
+  const report = writeReport(state, baseUrl, await collectExcess(jira, state));
   const reEntered = Object.values(state.issues).filter((r) => demonstratesReEntry(r.executed));
 
   say(`\n${'─'.repeat(72)}`);
