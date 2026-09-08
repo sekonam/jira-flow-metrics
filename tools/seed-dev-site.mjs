@@ -88,7 +88,28 @@ function loadDotEnv() {
 }
 
 export function parseArgs(argv) {
-  const args = { phase: 'all', dryRun: false, project: null, dwellSeconds: 0 };
+  const args = {
+    phase: 'all',
+    dryRun: false,
+    project: null,
+    dwellSeconds: 0,
+    reset: false,
+    help: false,
+  };
+
+  /**
+   * Take the next argv entry as a value, refusing to swallow a flag.
+   *
+   * `--project --dry-run` used to set the project key to the string
+   * "--dry-run" and leave `dryRun` false, so a command that looks like a
+   * simulation writes to a real site. Anything starting with `--` is a
+   * mistyped invocation, not a value.
+   */
+  const valueFor = (flag, raw) => {
+    if (raw === undefined || raw.startsWith('--')) throw new UsageError(`${flag} needs a value`);
+    return raw;
+  };
+
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     // `pnpm run seed:dev-site -- --dry-run` forwards the separator itself,
@@ -97,24 +118,45 @@ export function parseArgs(argv) {
     // in START-HERE.md fail. Ignore it instead.
     if (arg === '--') continue;
     if (arg === '--dry-run') args.dryRun = true;
-    else if (arg === '--phase') args.phase = argv[++i];
+    else if (arg === '--phase') args.phase = valueFor('--phase', argv[++i]);
     else if (arg.startsWith('--phase=')) args.phase = arg.slice('--phase='.length);
-    else if (arg === '--project') args.project = argv[++i];
+    else if (arg === '--project') args.project = valueFor('--project', argv[++i]);
     else if (arg.startsWith('--project=')) args.project = arg.slice('--project='.length);
-    else if (arg.startsWith('--dwell=')) args.dwellSeconds = Number(arg.slice('--dwell='.length));
+    else if (arg === '--dwell') args.dwellSeconds = dwellFrom(valueFor('--dwell', argv[++i]));
+    else if (arg.startsWith('--dwell='))
+      args.dwellSeconds = dwellFrom(arg.slice('--dwell='.length));
     else if (arg === '--reset') args.reset = true;
     else if (arg === '--help' || arg === '-h') args.help = true;
-    else die(`Unknown argument: ${arg}`);
+    else throw new UsageError(`Unknown argument: ${arg}`);
   }
+
   if (!['1', '2', 'all'].includes(args.phase))
-    die(`--phase must be 1, 2 or all (got ${args.phase})`);
+    throw new UsageError(`--phase must be 1, 2 or all (got ${args.phase})`);
   return args;
+}
+
+/** `--dwell=abc` used to become NaN and be silently ignored. */
+function dwellFrom(raw) {
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0)
+    throw new UsageError(`--dwell must be a non-negative number of seconds (got ${raw})`);
+  return seconds;
 }
 
 function die(message) {
   sayErr(`\n✖ ${message}\n`);
   process.exit(1);
 }
+
+/**
+ * A bad command line, as opposed to a bad site.
+ *
+ * Thrown rather than exiting so `parseArgs` can be tested: a helper that calls
+ * `process.exit` takes the test runner down with it, which is exactly why the
+ * argument bugs below went unnoticed. The entry point prints these without a
+ * stack, since a stack trace is noise when the answer is "you typed it wrong".
+ */
+class UsageError extends Error {}
 
 // ---------------------------------------------------------------------------
 // Jira REST
@@ -439,7 +481,9 @@ function writeReport(state, baseUrl) {
       '',
       "The site's workflow had no status matching these roles, so the seeder skipped them and",
       'the expectations above were computed without them. Adding the status to the workflow and',
-      're-running would give a richer history, but nothing above is invalidated by their absence.',
+      're-running after `--reset` would give a richer history, but nothing above is invalidated',
+      'by their absence. A plain re-run will not revisit them: the phase is already recorded as',
+      'walked, and repeating it would add visits the scenarios never asked for.',
       '',
       ...[...new Set(skipped)].map((role) => `- \`${role}\``),
     );
@@ -639,4 +683,7 @@ async function main() {
 // immediately trying to talk to somebody's Jira site.
 const invokedAsScript =
   process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedAsScript) main().catch((error) => die(error.stack ?? String(error)));
+if (invokedAsScript)
+  main().catch((error) =>
+    die(error instanceof UsageError ? error.message : (error.stack ?? String(error))),
+  );

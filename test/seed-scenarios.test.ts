@@ -366,3 +366,50 @@ describe('isoDaysFromNow', () => {
     expect(base.getDate()).toBe(15);
   });
 });
+
+describe('parseArgs — rejecting a malformed command line', () => {
+  it('refuses to swallow a flag as the value of another flag', () => {
+    // `--project --dry-run` used to set the project key to "--dry-run" and
+    // leave dryRun false, so a command that reads as a simulation writes to a
+    // real Jira site. That is the one misparse with a blast radius.
+    expect(() => parseArgs(['--project', '--dry-run'])).toThrow(/--project needs a value/);
+    expect(() => parseArgs(['--phase', '--dry-run'])).toThrow(/--phase needs a value/);
+  });
+
+  it('refuses a value-taking flag with nothing after it', () => {
+    expect(() => parseArgs(['--project'])).toThrow(/--project needs a value/);
+    expect(() => parseArgs(['--phase'])).toThrow(/--phase needs a value/);
+    expect(() => parseArgs(['--dwell'])).toThrow(/--dwell needs a value/);
+  });
+
+  it('refuses a dwell that is not a non-negative number', () => {
+    // `Number('abc')` is NaN, which failed the `> 0` guard silently: the run
+    // proceeded with no dwell at all rather than saying the flag was garbage.
+    expect(() => parseArgs(['--dwell=abc'])).toThrow(/non-negative number/);
+    expect(() => parseArgs(['--dwell=-5'])).toThrow(/non-negative number/);
+    expect(parseArgs(['--dwell=0']).dwellSeconds).toBe(0);
+    expect(parseArgs(['--dwell', '90']).dwellSeconds).toBe(90);
+  });
+
+  it('refuses an unknown flag and an out-of-range phase', () => {
+    expect(() => parseArgs(['--bogus'])).toThrow(/Unknown argument/);
+    expect(() => parseArgs(['--phase=3'])).toThrow(/must be 1, 2 or all/);
+  });
+
+  it('throws rather than exiting, so a bad flag cannot kill the test run', () => {
+    // The argument bugs above survived precisely because the validation used
+    // `process.exit`, which no test can call without taking vitest with it.
+    expect(() => parseArgs(['--bogus'])).toThrow(Error);
+  });
+
+  it('defaults every flag it did not see', () => {
+    expect(parseArgs([])).toEqual({
+      phase: 'all',
+      dryRun: false,
+      project: null,
+      dwellSeconds: 0,
+      reset: false,
+      help: false,
+    });
+  });
+});
