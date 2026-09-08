@@ -561,6 +561,21 @@ function writeReport(state, baseUrl, excessByIssue = new Map()) {
     );
   }
 
+  const degraded = Object.entries(state.issues).filter(([, record]) => record.degraded);
+  if (degraded.length > 0) {
+    lines.push(
+      '',
+      '## Issues that did not achieve the re-entry they intended',
+      '',
+      'These carry a `[RE-ENTRY]` summary in Jira, because that is what the scenario asked for,',
+      'but the workflow would not walk it — so they behave as extra controls and prove nothing',
+      'about re-entered statuses. Their rows above are still correct; the label on the issue is',
+      'the misleading part.',
+      '',
+      ...degraded.map(([key, record]) => `- \`${key}\` — ${record.scenarioId}`),
+    );
+  }
+
   const skipped = Object.values(state.issues).flatMap((r) => r.skipped ?? []);
   if (skipped.length > 0) {
     lines.push(
@@ -608,7 +623,11 @@ Options:
                      then --phase 2 to get history with real elapsed days in it.
   --project KEY      Project to seed. Default: JFM, created if absent.
   --dwell SECONDS    Pause between transitions, so consecutive visits are not
-                     stamped within the same second. Default: 0.
+                     stamped within the same second and the report's margins
+                     are large enough to see on screen. Default: 0. Costs real
+                     time: a full walk is about 19 transitions in phase 1 and
+                     15 in phase 2, so --dwell 120 adds roughly 38 and 30
+                     minutes. Ignored under --dry-run.
   --reset            Delete the issues recorded in tools/.seed-state.json and
                      clear it. Only ever touches keys that file records.
   --help, -h         This text.
@@ -737,7 +756,10 @@ async function main() {
     }
 
     for (const role of steps) {
-      if (args.dwellSeconds > 0) await sleep(args.dwellSeconds * 1000);
+      // Never dwell in a dry run: it writes nothing, so there is nothing to
+      // space out, and `--dry-run --dwell 120` would otherwise sit there for
+      // half an hour producing exactly the output it produces instantly.
+      if (args.dwellSeconds > 0 && !args.dryRun) await sleep(args.dwellSeconds * 1000);
       const reached = await transitionTo(jira, issueKey, role, simulated);
       if (reached === null) {
         // Not fatal, and not silent: a missing status changes the expectation

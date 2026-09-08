@@ -80,9 +80,9 @@ rows. Working-hours arithmetic is not exercised either way; that is what
 ```bash
 cp .env.example .env                       # JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 pnpm run seed:dev-site -- --dry-run        # print the plan, write nothing
-pnpm run seed:dev-site -- --phase 1 --dwell 120
+pnpm run seed:dev-site -- --phase 1 --dwell 120   # ~38 min: it really does wait
 # ...wait a day or two — the longer the gap, the bigger the margins...
-pnpm run seed:dev-site -- --phase 2 --dwell 120
+pnpm run seed:dev-site -- --phase 2 --dwell 120   # ~30 min
 pnpm run seed:dev-site -- --help           # every flag, including --reset
 ```
 
