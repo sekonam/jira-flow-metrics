@@ -43,7 +43,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   SCENARIOS,
@@ -87,10 +87,15 @@ function loadDotEnv() {
   }
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { phase: 'all', dryRun: false, project: null, dwellSeconds: 0 };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
+    // `pnpm run seed:dev-site -- --dry-run` forwards the separator itself,
+    // unlike npm, which swallows it. The documented command therefore arrives
+    // here as `['--', '--dry-run']`, and dying on it made every usage example
+    // in START-HERE.md fail. Ignore it instead.
+    if (arg === '--') continue;
     if (arg === '--dry-run') args.dryRun = true;
     else if (arg === '--phase') args.phase = argv[++i];
     else if (arg.startsWith('--phase=')) args.phase = arg.slice('--phase='.length);
@@ -521,11 +526,27 @@ async function main() {
       say(`  ↻ ${issueKey}  ${scenario.summary}`);
     }
 
+    // `--phase all` against an issue phase 1 already walked must *resume*, not
+    // start over: replaying the whole path from the issue's current status
+    // drives more re-entries than the scenario describes, so the expectation
+    // table would faithfully describe a seed nobody asked for. This matters
+    // most for `--dry-run`, which defaults to `all` and is the first command
+    // START-HERE.md tells you to run.
+    const resuming = args.phase === 'all' && record.done.includes('p1');
+
     // `path[0]` is the status the issue was created in, not a transition.
     const steps =
-      args.phase === '1' ? phase1.slice(1) : args.phase === '2' ? phase2 : scenario.path.slice(1);
-    const phaseTag = args.phase === 'all' ? 'all' : `p${args.phase}`;
-    if (record.done.includes(phaseTag)) {
+      args.phase === '1'
+        ? phase1.slice(1)
+        : args.phase === '2' || resuming
+          ? phase2
+          : scenario.path.slice(1);
+
+    // `all` walks both halves, so it records both — otherwise a later
+    // `--phase 2` would see no `p2` tag and walk the second half a second time.
+    const phaseTags =
+      args.phase === '1' ? ['p1'] : args.phase === '2' || resuming ? ['p2'] : ['p1', 'p2'];
+    if (phaseTags.every((tag) => record.done.includes(tag))) {
       say('      · already walked; skipping');
       continue;
     }
@@ -558,7 +579,7 @@ async function main() {
       say('      ⚠ intended a re-entry but did not achieve one — this issue proves nothing');
     }
 
-    record.done.push(phaseTag);
+    record.done.push(...phaseTags.filter((tag) => !record.done.includes(tag)));
     if (!args.dryRun) saveState(state);
   }
 
@@ -596,4 +617,8 @@ async function main() {
   say(`${'─'.repeat(72)}\n`);
 }
 
-main().catch((error) => die(error.stack ?? String(error)));
+// Guarded so `parseArgs` can be imported by a test without the module
+// immediately trying to talk to somebody's Jira site.
+const invokedAsScript =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedAsScript) main().catch((error) => die(error.stack ?? String(error)));

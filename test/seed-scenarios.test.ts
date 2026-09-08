@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseArgs } from '../tools/seed-dev-site.mjs';
 import {
   SCENARIOS,
   countVisits,
@@ -290,5 +291,29 @@ describe('rolesFromStatuses', () => {
 
   it('tolerates a status with no category', () => {
     expect(rolesFromStatuses([{ name: 'Mystery' }]).size).toBe(0);
+  });
+});
+
+describe('parseArgs', () => {
+  it('ignores the bare `--` that pnpm forwards', () => {
+    // `pnpm run seed:dev-site -- --dry-run` is the command START-HERE.md and
+    // the script's own header both document, and pnpm passes the separator
+    // through rather than swallowing it as npm does. Rejecting it made every
+    // documented invocation exit 1 before doing anything.
+    expect(parseArgs(['--', '--dry-run']).dryRun).toBe(true);
+    expect(parseArgs(['--', '--phase', '2']).phase).toBe('2');
+    expect(parseArgs(['--', '--project=ABC']).project).toBe('ABC');
+  });
+
+  it('still reads the flags without a separator', () => {
+    expect(parseArgs(['--dry-run']).dryRun).toBe(true);
+    expect(parseArgs(['--phase=1']).phase).toBe('1');
+  });
+
+  it('defaults to walking the whole path, writing for real', () => {
+    const args = parseArgs([]);
+    expect(args.phase).toBe('all');
+    expect(args.dryRun).toBe(false);
+    expect(args.project).toBeNull();
   });
 });
