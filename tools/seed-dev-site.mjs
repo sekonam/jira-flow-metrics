@@ -37,9 +37,12 @@
  *   # ...wait a day or two...
  *   pnpm run seed:dev-site -- --phase 2
  *
- * `--phase all` does the whole walk in one run, accepting compressed durations.
- * Re-running a phase is safe: state is kept in `tools/.seed-state.json` and
- * issues already walked are skipped.
+ * `--phase all` does the whole walk in one run, accepting compressed durations
+ * — and resumes at phase 2 for any issue phase 1 already walked, rather than
+ * starting the path over. Re-running a phase is safe: state is kept in
+ * `tools/.seed-state.json` and issues already walked are skipped.
+ *
+ * `--help` lists every flag.
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
