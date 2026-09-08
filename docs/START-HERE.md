@@ -4,7 +4,7 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 692 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
+reviewed — 698 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
 ever run on Forge.** No Atlassian account exists, no app is registered, no listing is submitted.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an

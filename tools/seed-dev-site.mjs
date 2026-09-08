@@ -287,10 +287,16 @@ const DEFAULT_TEMPLATE_STATUSES = new Map([
   ['DONE', 'Done'],
 ]);
 
-function isoDaysFromNow(days) {
-  const date = new Date();
+export function isoDaysFromNow(days, from = new Date()) {
+  const date = new Date(from.getTime());
   date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  // Local components rather than `toISOString().slice(0, 10)`, which converts
+  // to UTC first: an evening run west of Greenwich, or an early-morning run
+  // east of it, lands the due date a day off. `dueDateOffsetDays: -1` is meant
+  // to be *just* overdue, and a one-day slip turns it into due-today — a
+  // different row in the SLA listing than the scenario asked for.
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 /** Jira wants `+0000`, not the `Z` that `toISOString` produces. */
@@ -364,15 +370,25 @@ async function reset(jira, state) {
     say('  · nothing recorded in the state file; nothing to delete');
     return;
   }
-  say(`  Deleting ${keys.length} previously seeded issue(s):`);
+  say(`  ${jira.dryRun ? 'Would delete' : 'Deleting'} ${keys.length} previously seeded issue(s):`);
   for (const key of keys) {
     try {
       await jira.del(`/rest/api/3/issue/${key}?deleteSubtasks=true`);
-      say(`      ✓ deleted ${key}`);
+      // Never claim a deletion that did not happen: the only reason to run a
+      // destructive command with --dry-run is to be told the truth about it.
+      say(`      ${jira.dryRun ? '⤳ would delete' : '✓ deleted'} ${key}`);
     } catch (error) {
       // A 404 means somebody already removed it by hand, which is fine.
       say(`      ⤳ ${key}: ${String(error.message).split('\n')[0]}`);
     }
+  }
+  if (jira.dryRun) {
+    // Nothing was actually deleted, and `reset` only ever touches keys this
+    // file records. Clearing it here would strand the real issues beyond the
+    // reach of the tool that made them — a dry run destroying the only thing
+    // that was not a dry run.
+    say('  · [dry-run] state file left untouched');
+    return;
   }
   saveState({ ...state, issues: {} });
   say('  · state file cleared');
@@ -482,11 +498,14 @@ async function main() {
 
   if (args.reset) {
     await reset(jira, state);
-    say('\nReset complete. Re-run without --reset to seed.\n');
+    say(
+      args.dryRun
+        ? '\nDry run complete — nothing was deleted.\n'
+        : '\nReset complete. Re-run without --reset to seed.\n',
+    );
     return;
   }
 
-  const unsupported = [];
   for (const scenario of SCENARIOS) {
     const missing = missingRolesFor(scenario, availableRoles);
     if (missing.length > 0) {
@@ -495,7 +514,6 @@ async function main() {
       // so the issue would sit in the backlog looking like a seeded re-entry
       // case while proving nothing.
       say(`  ⤳ ${scenario.id}: workflow has no ${missing.join('/')}; skipped`);
-      unsupported.push(scenario.id);
       continue;
     }
     const { phase1, phase2 } = splitPhases(scenario.path);

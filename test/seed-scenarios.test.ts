@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from '../tools/seed-dev-site.mjs';
+import { isoDaysFromNow, parseArgs } from '../tools/seed-dev-site.mjs';
 import {
   SCENARIOS,
   countVisits,
@@ -315,5 +315,54 @@ describe('parseArgs', () => {
     expect(args.phase).toBe('all');
     expect(args.dryRun).toBe(false);
     expect(args.project).toBeNull();
+  });
+});
+
+describe('expectationsFor — the open marker', () => {
+  it('does not mark a finished issue open', () => {
+    // A control that ran straight through is the one row that must agree with
+    // the Control Chart *exactly*. Marking its Done row `open` told the reader
+    // to compare loosely there, softening the check that RUNBOOK item 9 leans
+    // on hardest.
+    const rows = expectationsFor(['TODO', 'IN_PROGRESS', 'DONE']);
+    expect(rows.every((row) => row.open === false)).toBe(true);
+  });
+
+  it('marks the status an in-flight issue is actually sitting in', () => {
+    const rows = expectationsFor(['TODO', 'IN_PROGRESS', 'TODO', 'IN_PROGRESS']);
+    expect(rows.find((row) => row.role === 'IN_PROGRESS')?.open).toBe(true);
+    expect(rows.find((row) => row.role === 'TODO')?.open).toBe(false);
+  });
+
+  it('marks a reopened-and-still-open issue on its current status, not on Done', () => {
+    const rows = expectationsFor(['TODO', 'IN_PROGRESS', 'DONE', 'IN_PROGRESS']);
+    expect(rows.find((row) => row.role === 'IN_PROGRESS')?.open).toBe(true);
+    expect(rows.find((row) => row.role === 'DONE')?.open).toBe(false);
+  });
+});
+
+describe('isoDaysFromNow', () => {
+  it('formats the local calendar date, never the UTC one', () => {
+    // `toISOString()` converts to UTC before slicing, so a late-evening run in
+    // a negative offset and an early-morning run in a positive one each land a
+    // day off. Both ends are pinned so that wherever this runs, at least one of
+    // them differs from UTC and would catch a regression.
+    expect(isoDaysFromNow(0, new Date(2026, 2, 15, 23, 30))).toBe('2026-03-15');
+    expect(isoDaysFromNow(0, new Date(2026, 2, 15, 0, 30))).toBe('2026-03-15');
+  });
+
+  it('shifts by whole days in either direction, and pads', () => {
+    const base = new Date(2026, 2, 15, 12, 0);
+    expect(isoDaysFromNow(-3, base)).toBe('2026-03-12');
+    expect(isoDaysFromNow(7, base)).toBe('2026-03-22');
+    expect(isoDaysFromNow(-14, base)).toBe('2026-03-01');
+  });
+
+  it('does not mutate the date it was handed', () => {
+    // It is called once per scenario off the same clock; a mutating helper
+    // would make every due date relative to the previous one.
+    const base = new Date(2026, 2, 15, 12, 0);
+    isoDaysFromNow(30, base);
+    expect(base.getDate()).toBe(15);
   });
 });

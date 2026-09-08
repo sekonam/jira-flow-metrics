@@ -305,10 +305,17 @@ export function countVisits(executedPath) {
  *
  * The `open` flag marks the status the issue is still sitting in, whose figure
  * grows between the two readings and so can only be compared loosely.
+ *
+ * An issue parked in Done is deliberately **not** open. Its time-in-Done does
+ * keep ticking, but nothing compares that figure, and marking the row open told
+ * the reader to compare loosely on exactly the rows where they must not: a
+ * finished control's whole job is to agree with the Control Chart exactly, and
+ * `agrees · open` invites a shrug where item 9 wants a hard stop.
  */
 export function expectationsFor(executedPath) {
   const visits = countVisits(executedPath);
-  const open = executedPath[executedPath.length - 1];
+  const last = executedPath[executedPath.length - 1];
+  const open = last === 'DONE' ? null : last;
   return [...visits.entries()].map(([role, count]) => ({
     role,
     visits: count,
