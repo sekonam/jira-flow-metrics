@@ -378,7 +378,11 @@ describe('backfill', () => {
     expect(result.done).toBe(false);
     expect(result.stoppedBecause).toBe('issue_budget');
     expect(result.issuesProcessed).toBe(1);
-    expect(d.scheduler.jobs).toEqual([{ projectId: '10000', cursor: null, slice: 1 }]);
+    // Stopped mid-page-one (it has two issues), so the cursor carries a skip
+    // of 1 rather than staying bare null — otherwise the next slice would
+    // re-fetch this page, reprocess the first issue, and stop at the same
+    // spot forever. See `encodeCursor` in `backfill.ts`.
+    expect(d.scheduler.jobs).toEqual([{ projectId: '10000', cursor: '::skip=1', slice: 1 }]);
 
     // The write happened before the cursor advanced, so the issue is persisted.
     expect(await d.store.getIssueMeta('20001')).not.toBeNull();
@@ -713,17 +717,35 @@ describe('backfill cursor advancement', () => {
     expect(tokens).toEqual(['FIRST', 'P2', 'P3']);
   });
 
-  it('keeps the cursor on a page it stopped in the middle of', async () => {
+  it('keeps the cursor on a page it stopped in the middle of, and skips past what it already did', async () => {
     const d = deps();
-    const result = await runBackfillSlice(d, {
+    const options = {
       ...DEFAULT_BACKFILL_OPTIONS,
       projectId: '10000',
       issuesPerSlice: 3,
       pageSize: 2,
-    });
-    expect(result.stoppedBecause).toBe('issue_budget');
-    // Stopped after the first issue of page 2, so page 2 must be re-read.
-    expect(result.nextCursor).toBe('P2');
+    };
+    const first = await runBackfillSlice(d, options);
+    expect(first.stoppedBecause).toBe('issue_budget');
+    // Stopped after the first issue of page 2 (issue 3). Page 2 has to be
+    // re-read — Jira's page tokens are opaque, there is no other way to
+    // resume it — but the "1" here is what makes the next slice skip past
+    // issue 3 instead of reprocessing it and stopping at the same spot again.
+    expect(first.nextCursor).toBe('P2::skip=1');
+
+    // Without that skip, this second call would re-fetch page 2, reprocess
+    // issue 3, and stop again after issue 4 — never reaching page 3 at all.
+    // With it, the remaining work is exactly issue 4 (page 2) plus issues 5
+    // and 6 (page 3): three issues, which is exactly the budget.
+    const second = await runBackfillSlice(d, options);
+    expect(second.issuesProcessed).toBe(3);
+    expect(second.done).toBe(true);
+    expect((await d.store.getIndexState('10000'))?.state).toBe('complete');
+
+    // Page 2 was fetched twice (unavoidable — once per slice call above) and
+    // never a third time, which is what "no forward progress" would look like.
+    const page2Fetches = d.api.searchCalls.filter((c) => c.nextPageToken === 'P2').length;
+    expect(page2Fetches).toBe(2);
   });
 
   it('marks itself done when the budget ends exactly on the final page', async () => {

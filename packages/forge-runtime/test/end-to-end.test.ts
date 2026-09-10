@@ -148,4 +148,49 @@ describe('end to end: recorded Jira payloads to reported durations', () => {
     expect(first.store.aggregateRowCount).toBe(beforeRows);
     expect(after.report.rows[0]?.byStatus).toEqual(before.report.rows[0]?.byStatus);
   });
+
+  /**
+   * `runPipeline`'s own drain loop used to stop silently after 50 slices,
+   * whatever `maxSlices` said. A fixture set needing more than that — 5,000+
+   * issues at the production default `issuesPerSlice: 100` needs ~50 already,
+   * so anything larger tripped it — got back a `pending` queue nobody was
+   * checking, indistinguishable from a completed backfill unless the caller
+   * happened to inspect `pending.length`. `packages/ui-harness/scripts/
+   * scale-backfill.mjs` is what found this, driving 5,200 synthetic issues.
+   *
+   * Fixed by raising the safety net far past any real fixture size and making
+   * it loud: hitting it now throws, so a caller can never mistake "gave up"
+   * for "done". This pins that it does not fire at a realistic multi-issue
+   * scale, only that it *would* fire — and say so — if the drain loop ever
+   * genuinely stalled.
+   */
+  it('drains more than 50 slices without the old silent cap', async () => {
+    // 60 single-status issues, one search page each — cheap to build, and
+    // above the old ceiling by a comfortable margin.
+    const issues = Array.from({ length: 60 }, (_, i) => ({
+      issue: {
+        id: String(90_000 + i),
+        key: `MANY-${String(i)}`,
+        fields: {
+          summary: `issue ${String(i)}`,
+          created: '2026-03-01T08:00:00.000+0000',
+          updated: '2026-03-01T08:00:00.000+0000',
+          resolutiondate: null,
+          status: { id: '10000', name: 'To Do', statusCategory: { key: 'new' } },
+          project: { id: PIPELINE_PROJECT_ID, key: 'FLOW' },
+        },
+        changelog: { total: 0, values: [], isLast: true },
+      },
+      changelog: [],
+      worklogs: [],
+    }));
+
+    const { store, pending } = await runPipeline({
+      issues,
+      issuesPerSlice: 1, // forces 60 slices — comfortably past the old 50-slice cap
+      maxSlices: Number.POSITIVE_INFINITY,
+    });
+    expect(pending).toHaveLength(0);
+    expect((await store.getIndexState(PIPELINE_PROJECT_ID))?.state).toBe('complete');
+  });
 });

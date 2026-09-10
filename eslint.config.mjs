@@ -71,6 +71,10 @@ export default tseslint.config(
         Buffer: 'readonly',
         fetch: 'readonly',
         setTimeout: 'readonly',
+        // Used by packages/ui-harness/scripts/scale-backfill.mjs to time a
+        // 5,000+ issue backfill run; `Date.now()` would do, but this is what
+        // the script actually calls.
+        performance: 'readonly',
         window: 'readonly',
         document: 'readonly',
       },

@@ -382,11 +382,26 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   const maxSlices = options.maxSlices ?? Number.POSITIVE_INFINITY;
   let ran = 0;
   let guard = 0;
-  while (queue.length > 0 && ran < maxSlices && guard < 50) {
+  // A safety net against a real bug (a slice that re-enqueues without ever
+  // finishing), not a ceiling callers are meant to hit. It used to be 50,
+  // silently: a fixture set needing more slices than that got `pending`
+  // entries back with no error, which is indistinguishable from "the backfill
+  // finished" unless the caller happens to check `pending.length`. 5,000
+  // issues at the default `issuesPerSlice: 100` alone need 50 slices — this
+  // was truncating any test at exactly that scale.
+  const SAFETY_SLICE_CAP = 5000;
+  while (queue.length > 0 && ran < maxSlices && guard < SAFETY_SLICE_CAP) {
     const job = queue.shift()!;
     await handleBackfillJob(runtime, { ...job, cursor: null });
     ran += 1;
     guard += 1;
+  }
+  if (guard >= SAFETY_SLICE_CAP && queue.length > 0) {
+    throw new Error(
+      `runPipeline: stopped after ${String(SAFETY_SLICE_CAP)} slices with ${String(queue.length)} ` +
+        'still queued. This looks like a real bug (a slice re-enqueuing without making progress), ' +
+        'not a fixture set this large — raise SAFETY_SLICE_CAP only if you are certain otherwise.',
+    );
   }
   return { runtime, store, jira, pending: [...queue] };
 }

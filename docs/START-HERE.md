@@ -4,13 +4,14 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 734 tests, 98.3% statements, lint/typecheck/build green, secret-scanned. **Nothing has
-has run on Forge until now.** All five apps are registered and lint clean, and `time-in-status`
-is **deployed and installed** on the developer site, where it processes real Jira issue events
-without error. Getting there took four fixes nothing local could have caught — see ROADMAP 1.5.
+reviewed — 735 tests, 97.8% statements, lint/typecheck/build green, secret-scanned. **All five
+apps are now deployed and installed** on the developer site, processing real Jira issue events
+without error — getting there took four fixes nothing local could have caught, see ROADMAP 1.5.
 `pnpm run e2e:live` separately runs the real engine against that site and agrees with Jira on
-every figure. What has still never happened: any UI opened inside Jira, a backfill at scale, the
-Control Chart comparison, and a listing.
+every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past 5,000
+issues (synthetically — see ROADMAP 1.7, which found and fixed a real cursor bug on the way).
+What has still never happened: any UI opened inside Jira (no `forge tunnel` session has run), a
+backfill at that scale against a real instance, the Control Chart comparison, and a listing.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
 **Atlassian identity**, roughly **half a day at a terminal with a tunnel open**, and **one week of

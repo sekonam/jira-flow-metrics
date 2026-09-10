@@ -154,6 +154,44 @@ export function formatJqlInstant(instant: Millis): string {
 }
 
 /**
+ * `backfillCursor` sometimes carries more than a page token.
+ *
+ * When a slice's issue or time budget runs out partway through a page, the
+ * page has to be re-fetched next slice — Jira's `nextPageToken` is opaque and
+ * has no way to ask for "this same page, but skip the first K" — and how many
+ * items to skip on that re-fetch has to travel somewhere. Encoding it onto the
+ * cursor string avoids a schema change for what is otherwise a one-field
+ * concern; `{@link decodeCursor}` is the only place that ever has to know the
+ * format.
+ *
+ * A mid-page stop is not a corner case: the 40s default time budget has
+ * nothing to do with `issuesPerSlice`/`pageSize` alignment, so on a real
+ * instance under real network latency it will routinely fall in the middle of
+ * a page. Before this, that stop left the cursor untouched, so the next slice
+ * re-fetched the identical page and — being fully deterministic apart from
+ * timing — stopped at the identical position again. Whether that resolves
+ * itself depends entirely on timing jitter being generous enough on some later
+ * attempt; nothing here guarantees it, which is what makes it a real defect
+ * rather than a curiosity: a project with a project-specific reason to be
+ * evenly slow (not jittery, just consistent) could stall forever short of the
+ * customer's own backfill, one page from the end.
+ */
+const CURSOR_SKIP_MARKER = '::skip=';
+
+export function encodeCursor(token: string | null, skip: number): string | null {
+  if (skip <= 0) return token;
+  return `${token ?? ''}${CURSOR_SKIP_MARKER}${String(skip)}`;
+}
+
+export function decodeCursor(raw: string | null): { token: string | null; skip: number } {
+  if (raw === null) return { token: null, skip: 0 };
+  const at = raw.indexOf(CURSOR_SKIP_MARKER);
+  if (at === -1) return { token: raw, skip: 0 };
+  const skip = Number(raw.slice(at + CURSOR_SKIP_MARKER.length));
+  return { token: raw.slice(0, at) || null, skip: Number.isFinite(skip) && skip > 0 ? skip : 0 };
+}
+
+/**
  * Run exactly one backfill slice. Returns when the slice's budget is spent;
  * enqueues the next slice through the scheduler if work remains.
  */
@@ -190,7 +228,13 @@ export async function runBackfillSlice(
   });
 
   let jql = buildBackfillJql(options);
-  let cursor = state.backfillCursor;
+  const initialCursor = decodeCursor(state.backfillCursor);
+  let cursor = initialCursor.token;
+  // Only ever applied to the very first page fetched by this slice — every
+  // page after that starts fresh, because the loop only continues past a page
+  // it did not fully consume by breaking out first.
+  const pendingSkip = initialCursor.skip;
+  let firstIteration = true;
   let processedCount = 0;
   let skipped = 0;
   let requests = 0;
@@ -236,7 +280,15 @@ export async function runBackfillSlice(
       requests += 1;
       if (typeof page.total === 'number') issuesTotal = page.total;
 
-      const issues: readonly JiraIssue[] = page.issues ?? [];
+      const fetchedIssues: readonly JiraIssue[] = page.issues ?? [];
+      const skipNow = firstIteration ? pendingSkip : 0;
+      firstIteration = false;
+      // Re-fetching this exact page was unavoidable (opaque tokens), but
+      // re-processing the part already written on a previous attempt is not:
+      // it was written idempotently, so redoing it would only waste the
+      // request budget, not corrupt anything — skipping it is purely an
+      // efficiency choice, not a correctness one.
+      const issues = skipNow > 0 ? fetchedIssues.slice(skipNow) : fetchedIssues;
       const batch: ProcessedIssue[] = [];
       let handledInPage = 0;
 
@@ -280,12 +332,18 @@ export async function runBackfillSlice(
         // last page of every single slice and roughly double the backfill's
         // Jira request count.
         //
-        // Stopping mid-page leaves the cursor where it is on purpose: the next
-        // slice re-reads that page and re-processes issues already written,
-        // which is safe because writes replace rather than merge.
+        // Stopping mid-page re-reads that same page next slice — Jira's page
+        // tokens are opaque, so there is no other way to resume one — but it
+        // does not re-process what this attempt already got through: the
+        // count handled so far travels on the cursor itself (see
+        // `encodeCursor`), so the next slice skips straight past it. Without
+        // that, a slice landing here twice in a row would stop at the exact
+        // same position both times and never advance.
         if (pageFullyConsumed) {
           cursor = nextToken;
           if (pageWasLast) done = true;
+        } else {
+          cursor = encodeCursor(cursor, skipNow + handledInPage);
         }
         break outer;
       }
@@ -304,10 +362,19 @@ export async function runBackfillSlice(
       slice,
       message,
     });
+    // A failure on the page's very first fetch attempt (before anything in it
+    // has been processed) still owes whatever skip was pending on entry —
+    // persisting the bare token here would silently forgive it, and the next
+    // slice would re-process items already written by an earlier one. A
+    // failure partway through a resumed page's items is not recovered this
+    // precisely (the retry falls back to reprocessing that page from its
+    // start), which is safe, only slightly wasteful, and not the failure mode
+    // this cursor scheme exists to close — see `encodeCursor`'s docstring.
+    const cursorToPersist = encodeCursor(cursor, firstIteration ? pendingSkip : 0);
     await deps.store.putIndexState({
       ...state,
       state: rateLimited ? 'paused' : 'failed',
-      backfillCursor: cursor,
+      backfillCursor: cursorToPersist,
       issuesProcessed: state.issuesProcessed + processedCount,
       issuesTotal,
       lastError: message.slice(0, 1000),
@@ -316,7 +383,7 @@ export async function runBackfillSlice(
     if (rateLimited) {
       await deps.scheduler.enqueueBackfill({
         projectId: options.projectId,
-        cursor,
+        cursor: cursorToPersist,
         slice: slice + 1,
       });
     }
@@ -326,7 +393,7 @@ export async function runBackfillSlice(
       issuesSkipped: skipped,
       requests,
       done: false,
-      nextCursor: cursor,
+      nextCursor: cursorToPersist,
       stoppedBecause: rateLimited ? 'rate_limited' : 'error',
       elapsedMs: deps.clock.now() - startedAt,
     };
