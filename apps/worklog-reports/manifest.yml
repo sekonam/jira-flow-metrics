@@ -1,7 +1,11 @@
-# ⚠️ UNVALIDATED. This manifest has never been checked by `forge lint` or
-# accepted by `forge deploy` — no Atlassian credentials exist in this
-# repository. It is written against Atlassian's published module reference.
-# Validating it is step 1 of docs/RUNBOOK.md.
+# ✔ VALIDATED — `forge lint` reports "No issues found" as of 2026-09-10, against
+# the app id below, registered in the "AskMe Solutions" Developer Space. Two
+# fixes were needed that the published module reference did not make obvious:
+# the `sql` module (the code uses Forge SQL and nothing declared it) and the
+# gadget `thumbnail`.
+#
+# NOT DEPLOYED. Only `time-in-status` has been through `forge deploy`; see its
+# manifest for what that turned up.
 
 modules:
   jira:projectPage:

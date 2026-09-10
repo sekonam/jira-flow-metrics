@@ -31,11 +31,17 @@ const APP_KEYS = readdirSync(APPS_DIR).sort();
  * the assertions below is that nobody reads this repository and believes more
  * has been proven than has. Registering an app should require saying so here.
  *
- * The other four stop at Atlassian's Developer Terms, which bind the account
- * owner to billing above the free allowance — not a step automation should
- * take on someone's behalf.
+ * All five are registered and lint clean. Only `time-in-status` has been
+ * deployed and installed; the rest are validated but have never been bundled,
+ * which is a weaker claim and worth keeping distinct.
  */
-const REGISTERED = new Set(['time-in-status']);
+const REGISTERED = new Set([
+  'issue-history',
+  'sla-breach',
+  'time-in-status',
+  'wip-aging',
+  'worklog-reports',
+]);
 
 interface Manifest {
   modules?: Record<string, unknown>;

@@ -4,9 +4,12 @@
 # module reference did not make obvious: the `sql` module (the code uses Forge
 # SQL and nothing declared it) and the gadget `thumbnail`.
 #
-# It has still never been DEPLOYED. `forge deploy` needs the Atlassian
-# Developer Terms accepted, which binds the account owner to billing above the
-# free allowance and is therefore not a step a tool should take for them.
+# ✔ DEPLOYED — version 2.0.0 is live in the `development` environment and
+# installed on sergiip180.atlassian.net. Getting there needed one more fix that
+# no local check caught: `import ... from './runtime.js'` typechecks and builds
+# but cannot be bundled, because Forge's webpack resolves the specifier
+# literally and there is no `runtime.js` on disk. Atlassian reports the build
+# eligible for Runs on Atlassian — the app makes no external egress.
 
 modules:
   jira:projectPage:
