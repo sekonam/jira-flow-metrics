@@ -9,7 +9,7 @@ import {
   projectIdFromEvent,
   handleWorklogReport,
 } from '@jfm/forge-runtime';
-import { getRuntime } from './runtime.js';
+import { getRuntime } from './runtime';
 
 /**
  * Forge entry points for the Worklog Reports & Time Tracking listing.

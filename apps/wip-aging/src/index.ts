@@ -9,7 +9,7 @@ import {
   projectIdFromEvent,
   handleAgingReport,
 } from '@jfm/forge-runtime';
-import { getRuntime } from './runtime.js';
+import { getRuntime } from './runtime';
 
 /**
  * Forge entry points for the WIP Aging & Run Charts listing.

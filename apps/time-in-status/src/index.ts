@@ -8,7 +8,7 @@ import {
   handleStartIndexing,
   projectIdFromEvent,
 } from '@jfm/forge-runtime';
-import { getRuntime } from './runtime.js';
+import { getRuntime } from './runtime';
 
 /**
  * Forge entry points for the Time in Status & Cycle Time listing.

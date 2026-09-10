@@ -19,7 +19,8 @@ modules:
       resolver:
         function: resolver
       title: Field changes
-      description: Filterable, exportable field-change history across every issue in a project.
+      description: Filterable, exportable field-change history across every issue in a
+        project.
       # Required by the gadget schema. Must be a reachable image URL; this one
       # is a placeholder and has to be replaced before any real deploy.
       thumbnail: https://jira-flow-metrics.example/issue-history-thumbnail.png
@@ -67,8 +68,7 @@ resources:
 app:
   runtime:
     name: nodejs22.x
-  # `forge register` writes the real id here on first run.
-  id: ari:cloud:ecosystem::app/REPLACE-WITH-forge-register-OUTPUT
+  id: ari:cloud:ecosystem::app/b7a70548-f901-43a4-be30-55e632b70468
 
 permissions:
   scopes:

@@ -67,8 +67,7 @@ resources:
 app:
   runtime:
     name: nodejs22.x
-  # `forge register` writes the real id here on first run.
-  id: ari:cloud:ecosystem::app/REPLACE-WITH-forge-register-OUTPUT
+  id: ari:cloud:ecosystem::app/b149665a-b013-4688-b2e7-bf1304de2955
 
 permissions:
   scopes:

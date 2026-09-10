@@ -9,7 +9,7 @@ import {
   projectIdFromEvent,
   handleHistoryReport,
 } from '@jfm/forge-runtime';
-import { getRuntime } from './runtime.js';
+import { getRuntime } from './runtime';
 
 /**
  * Forge entry points for the Issue History & Audit Log listing.
