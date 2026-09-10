@@ -21,8 +21,15 @@ import {
  * the test suite. The other four listings have the same file with a different
  * `datasets` value — that is the portfolio thesis in fifteen lines.
  *
- * ⚠️ The SDK wiring here has never run: `forge tunnel` and `forge deploy`
- * need credentials this repository does not have. See `docs/RUNBOOK.md`.
+ * The SDK wiring below is no longer guesswork. `time-in-status` was deployed
+ * and installed on 2026-09-10 and processed real Jira issue events, which is
+ * what exposed three defects in the shared adapters every app here uses:
+ * `bindParams` is variadic, DDL must go through `migrationRunner`, and a bound
+ * parameter inside `ORDER BY` is refused. See `packages/forge-runtime/src/sql`.
+ *
+ * ⚠️ Only `time-in-status` has actually run. This file is identical across the
+ * five apart from `datasets`, so the fixes carry over — but "should carry
+ * over" is not "observed", and the other four have never been deployed.
  */
 
 export const BACKFILL_QUEUE = 'backfill';

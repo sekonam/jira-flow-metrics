@@ -5,10 +5,12 @@
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
 reviewed — 734 tests, 98.3% statements, lint/typecheck/build green, secret-scanned. **Nothing has
-ever been deployed to Forge.** An Atlassian account, a developer site and a Developer Space now
-exist; `pnpm run e2e:live` runs the real engine against that site and agrees with Jira on every
-figure; and `time-in-status` is registered with a manifest `forge lint` accepts. What has never
-happened is a deploy, an install, or a listing.
+has run on Forge until now.** All five apps are registered and lint clean, and `time-in-status`
+is **deployed and installed** on the developer site, where it processes real Jira issue events
+without error. Getting there took four fixes nothing local could have caught — see ROADMAP 1.5.
+`pnpm run e2e:live` separately runs the real engine against that site and agrees with Jira on
+every figure. What has still never happened: any UI opened inside Jira, a backfill at scale, the
+Control Chart comparison, and a listing.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
 **Atlassian identity**, roughly **half a day at a terminal with a tunnel open**, and **one week of
