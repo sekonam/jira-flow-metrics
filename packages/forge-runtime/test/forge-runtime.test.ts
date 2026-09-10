@@ -399,14 +399,23 @@ describe('SqlMetricsStore statement generation', () => {
 });
 
 describe('forgeSqlExecutor', () => {
-  // The Forge SDK itself is unavailable here; this only pins the call shape the
-  // adapter expects, so a change in the SDK shows up as a failing test rather
-  // than as a runtime error in production.
-  it('uses bindParams only when there are parameters', async () => {
+  // ⚠️ Read this before trusting the fake below.
+  //
+  // This suite used to build `bindParams` as taking an array, because that is
+  // how the adapter called it — so it pinned the adapter to its own mistake and
+  // passed while every statement failed on Forge with `argument mismatch, need
+  // 2 but got 1`. A fake can only assert what its author already believes.
+  //
+  // The signature is now taken from the SDK rather than from us:
+  // `bindParams(...args: SqlParameters): this` in
+  // `@forge/sql/out/sql-statement.d.ts`, used as
+  // `prepare(q).bindParams(migration.name)` by Forge's own migration runner.
+  // `forge-host.contract.test.ts` does the equivalent job for `@forge/react`.
+  it('spreads parameters into bindParams, and omits the call when there are none', async () => {
     const calls: { statement: string; params?: readonly unknown[] }[] = [];
     const fake = {
       prepare: <T>(statement: string) => ({
-        bindParams: (params: readonly unknown[]) => ({
+        bindParams: (...params: readonly unknown[]) => ({
           execute: () => {
             calls.push({ statement, params });
             return Promise.resolve({ rows: [] as T[] });
@@ -420,17 +429,21 @@ describe('forgeSqlExecutor', () => {
     };
     const executor = forgeSqlExecutor(fake);
     expect(await executor.query('SELECT 1')).toEqual([{ n: 1 }]);
-    await executor.execute('DELETE FROM x WHERE id = ?', ['a']);
+    // Two placeholders, two arguments — the case that was broken. Passing the
+    // array bound one argument and Forge rejected the statement.
+    await executor.execute('DELETE FROM x WHERE id = ? AND scope = ?', ['a', 'b']);
     expect(calls).toEqual([
       { statement: 'SELECT 1' },
-      { statement: 'DELETE FROM x WHERE id = ?', params: ['a'] },
+      { statement: 'DELETE FROM x WHERE id = ? AND scope = ?', params: ['a', 'b'] },
     ]);
   });
 
   it('treats a missing rows property as no rows', async () => {
     const fake = {
       prepare: () => ({
-        bindParams: () => ({ execute: () => Promise.resolve({}) }),
+        bindParams: (..._params: readonly unknown[]) => ({
+          execute: () => Promise.resolve({}),
+        }),
         execute: () => Promise.resolve({}),
       }),
     };
@@ -704,9 +717,13 @@ describe('settings', () => {
   });
 
   it('prefers the project row over the instance-wide one', async () => {
+    // The instance-wide row is returned FIRST on purpose. Precedence used to
+    // ride on `ORDER BY scope_key = ? DESC`, which Forge SQL refuses — a bound
+    // parameter in an ORDER BY expression — so it is now decided in code, and
+    // this ordering is what proves it no longer depends on the database.
     const sql = new RecordingSqlExecutor(() => [
-      { settings: JSON.stringify({ defaultBasis: 'business' }) },
-      { settings: JSON.stringify({ defaultBasis: 'elapsed' }) },
+      { scope_key: '__global__', settings: JSON.stringify({ defaultBasis: 'elapsed' }) },
+      { scope_key: '10000', settings: JSON.stringify({ defaultBasis: 'business' }) },
     ]);
     const store = new SettingsStore(sql);
     expect((await store.get('10000')).defaultBasis).toBe('business');

@@ -267,7 +267,7 @@ export async function handleIssueEvent(
     return 'updated';
   } catch (error: unknown) {
     console.error(
-      JSON.stringify({ message: 'issue event failed', eventType, error: String(error) }),
+      JSON.stringify({ message: 'issue event failed', eventType, error: describeError(error) }),
     );
     return 'failed';
   }
@@ -438,4 +438,51 @@ export async function handleHistoryReport(
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }
+}
+
+/**
+ * An error and everything it wraps, as one line.
+ *
+ * `String(error)` gives the outermost message only, which on Forge meant every
+ * SQL failure reported itself as `ForgeSQLError: Unknown SQL execution error`
+ * — true, and useless. The chain is what says which statement was refused.
+ */
+export function describeError(error: unknown): string {
+  const describe = (value: unknown): string => {
+    if (value instanceof Error) {
+      // Platform errors carry the useful part in their own fields, not their
+      // message: `@forge/sql`'s ForgeSQLAPIError keeps `code`, `suggestion`
+      // and `context` beside a message that is only ever "Unknown SQL
+      // execution error". Dropping them left nothing to act on.
+      const extra = Object.getOwnPropertyNames(value)
+        .filter((key) => key !== 'message' && key !== 'stack' && key !== 'cause')
+        .map((key) => {
+          try {
+            return `${key}=${JSON.stringify((value as unknown as Record<string, unknown>)[key])}`;
+          } catch {
+            return `${key}=?`;
+          }
+        })
+        .filter((part) => !part.endsWith('=undefined'));
+      const suffix = extra.length === 0 ? '' : ` {${extra.join(' ')}}`;
+      return `${value.name}: ${value.message}${suffix}`;
+    }
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    // A thrown non-Error object stringifies to "[object Object]", which tells
+    // nobody anything; JSON at least carries whatever fields it had.
+    try {
+      return JSON.stringify(value) ?? 'unknown';
+    } catch {
+      return 'unserialisable';
+    }
+  };
+
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current !== undefined && current !== null && depth < 5; depth += 1) {
+    parts.push(describe(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return parts.join(' ← caused by ');
 }

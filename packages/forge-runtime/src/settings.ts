@@ -134,12 +134,20 @@ export class SettingsStore {
   async get(projectId: string): Promise<ProjectSettings> {
     const cached = this.cache.get(projectId);
     if (cached !== undefined) return cached;
-    const rows = await this.sql.query<{ settings?: unknown }>(
-      'SELECT settings FROM app_settings WHERE scope_key IN (?, ?) ORDER BY scope_key = ? DESC',
-      [projectId, GLOBAL_SCOPE, projectId],
+    // The precedence is decided here rather than in `ORDER BY scope_key = ?
+    // DESC`, which is what this used to do. Forge SQL refuses a bound
+    // parameter inside an ORDER BY expression — `ForgeSQLError: Unknown SQL
+    // execution error`, with no indication of which statement — so the first
+    // deployed build failed on every event before reading a single setting.
+    // Two rows at most, and choosing between them in code costs nothing.
+    const rows = await this.sql.query<{ scope_key?: string; settings?: unknown }>(
+      'SELECT scope_key, settings FROM app_settings WHERE scope_key IN (?, ?)',
+      [projectId, GLOBAL_SCOPE],
     );
-    const first = rows[0]?.settings;
-    const parsed = parseSettings(safeJson(first), this.fallbackTimeZone);
+    const preferred =
+      rows.find((row) => row.scope_key === projectId) ??
+      rows.find((row) => row.scope_key === GLOBAL_SCOPE);
+    const parsed = parseSettings(safeJson(preferred?.settings), this.fallbackTimeZone);
     this.cache.set(projectId, parsed);
     return parsed;
   }

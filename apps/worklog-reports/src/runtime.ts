@@ -1,6 +1,6 @@
 import api, { route } from '@forge/api';
 import { Queue } from '@forge/events';
-import sql from '@forge/sql';
+import sql, { migrationRunner } from '@forge/sql';
 import { DATASETS_WORKLOG, realSleeper, systemClock } from '@jfm/engine';
 import {
   JiraRestClient,
@@ -10,6 +10,7 @@ import {
   SqlMetricsStore,
   forgeJiraFetch,
   forgeSqlExecutor,
+  forgeSqlMigrator,
 } from '@jfm/forge-runtime';
 
 /**
@@ -32,7 +33,10 @@ export function getRuntime(): ListingRuntime {
   if (cached !== null) return cached;
 
   const executor = forgeSqlExecutor(sql as unknown as Parameters<typeof forgeSqlExecutor>[0]);
-  const store = new SqlMetricsStore(executor);
+  // The migrator is separate from the executor because Forge SQL refuses
+  // DDL sent through `prepare().execute()`; schema goes through
+  // `migrationRunner` or the app fails on its first event.
+  const store = new SqlMetricsStore(executor, forgeSqlMigrator(migrationRunner));
   const settings = new SettingsStore(executor);
   // Two Jira clients on purpose. Ingestion reads as the app, because a
   // background event has no user; the permission check reads as the calling

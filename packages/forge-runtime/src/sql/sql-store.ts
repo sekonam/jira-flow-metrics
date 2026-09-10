@@ -1,5 +1,6 @@
 import {
   CREATE_STATEMENTS,
+  MIGRATIONS,
   DELETE_ISSUE_STATEMENTS,
   ESTIMATED_ROW_BYTES,
   type HistoryQuery,
@@ -15,7 +16,7 @@ import {
   type WorklogQuery,
   type WorklogRecord,
 } from '@jfm/engine';
-import type { SqlExecutor } from './executor.js';
+import type { SqlExecutor, SqlMigrator } from './executor.js';
 import {
   historyFromRow,
   historyToParams,
@@ -53,9 +54,22 @@ import {
  *   ever put into statement text is the placeholder count.
  */
 export class SqlMetricsStore implements MetricsStore {
-  constructor(private readonly sql: SqlExecutor) {}
+  /**
+   * `migrator` is optional so the in-memory executors the tests drive can keep
+   * applying DDL through `execute`, which is exactly what a plain SQL engine
+   * wants. On Forge it must be supplied: DDL through the query path is refused
+   * there, and the app fails on the first event rather than at startup.
+   */
+  constructor(
+    private readonly sql: SqlExecutor,
+    private readonly migrator?: SqlMigrator,
+  ) {}
 
   async migrate(): Promise<void> {
+    if (this.migrator !== undefined) {
+      await this.migrator.migrate(MIGRATIONS);
+      return;
+    }
     for (const statement of CREATE_STATEMENTS) {
       await this.sql.execute(statement);
     }

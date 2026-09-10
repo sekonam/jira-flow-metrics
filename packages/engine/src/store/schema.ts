@@ -139,6 +139,28 @@ export const CREATE_STATEMENTS: readonly string[] = [
    )`,
 ];
 
+/**
+ * The schema as named migrations.
+ *
+ * Forge SQL will not accept DDL through `prepare().execute()` — that path
+ * answers `ForgeSQLError: Unknown SQL execution error`, which is what the first
+ * deployed build did on every issue event. Schema has to go through
+ * `migrationRunner`, which records each migration by name and skips the ones it
+ * has already applied.
+ *
+ * Names are derived from the statement rather than written out beside it, so
+ * they cannot drift from the table they create. They are also the migration's
+ * identity forever: renaming one makes Forge run it again.
+ */
+export const MIGRATIONS: readonly { name: string; statement: string }[] = CREATE_STATEMENTS.map(
+  (statement) => {
+    const match = /CREATE TABLE IF NOT EXISTS\s+(\w+)/i.exec(statement);
+    if (match === null)
+      throw new Error(`Cannot derive a migration name from: ${statement.slice(0, 60)}`);
+    return { name: `v${String(SCHEMA_VERSION)}-create-${match[1]}`, statement };
+  },
+);
+
 /** Rows to delete, in order, when an issue is removed from Jira. */
 export const DELETE_ISSUE_STATEMENTS: readonly string[] = [
   'DELETE FROM issue_status_agg WHERE issue_id = ?',
