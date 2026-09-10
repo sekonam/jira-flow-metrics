@@ -18,18 +18,18 @@ listing-page work**. Total cash exposure to reach the day-90 decision is **under
 
 ## 1. What you need
 
-| Need                                           | Cost      | Why it cannot be done for you                                                              |
-| ---------------------------------------------- | --------- | ------------------------------------------------------------------------------------------ |
-| **Atlassian account**                          | $0        | An identity. Used for the developer console and the vendor account alike.                  |
-| **Free Jira Cloud developer site**             | $0        | `developer.atlassian.com` → _Create a free developer site_. Hosts the tunnel.              |
-| **Atlassian API token** → `forge login`        | $0        | A credential. Never committed; `.forge/` is git-ignored for this reason.                   |
-| **Marketplace vendor account**                 | $0        | `marketplace.atlassian.com/manage/vendors`. Legal identity of the seller.                  |
-| **Tax and bank details**                       | $0        | Required before any payout can be released. Do it early; it is paperwork, not a decision.  |
-| **A domain for the docs site**                 | ~$12/yr   | The Marketplace links to it and reviewers open it. The only recurring cost before revenue. |
-| **Node 22 + pnpm 9.12.3**                      | $0        | `corepack enable && corepack prepare pnpm@9.12.3 --activate`                               |
-| **~half a day** for the first tunnel session   | your time | The single highest-value hour in this plan. See § 3.                                       |
-| **~one week** for listing copy and screenshots | your time | The listing page is the entire conversion surface. `PROMOTION.md` § 1.                     |
-| **Forge consumption** once installs arrive     | $0–25/mo  | ~55 reference installs fit inside the free allowance. `TECHNICAL-SPEC.md`.                 |
+| Need                                           | Cost      | Why it cannot be done for you                                                                                                                                                  |
+| ---------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Atlassian account**                          | $0        | An identity. Used for the developer console and the vendor account alike.                                                                                                      |
+| **Free Jira Cloud developer site**             | $0        | `developer.atlassian.com` → _Create a free developer site_. Hosts the tunnel.                                                                                                  |
+| **Atlassian API token** → `forge login`        | $0        | A credential. Never committed; `.forge/` is git-ignored for this reason.                                                                                                       |
+| **Marketplace vendor account**                 | $0        | `marketplace.atlassian.com/manage/vendors`. Legal identity of the seller.                                                                                                      |
+| **Tax and bank details**                       | $0        | Required before any payout can be released. Do it early; it is paperwork, not a decision.                                                                                      |
+| **A domain for the docs site**                 | ~$12/yr   | The Marketplace links to it and reviewers open it. The only recurring cost before revenue.                                                                                     |
+| **Node ≥ 22.12 + pnpm 9.12.3**                 | $0        | `corepack enable && corepack prepare pnpm@9.12.3 --activate`. The 22.12 floor is not cosmetic: `forge lint` `require()`s an ESM-only dependency and cannot start on older 22.x |
+| **~half a day** for the first tunnel session   | your time | The single highest-value hour in this plan. See § 3.                                                                                                                           |
+| **~one week** for listing copy and screenshots | your time | The listing page is the entire conversion surface. `PROMOTION.md` § 1.                                                                                                         |
+| **Forge consumption** once installs arrive     | $0–25/mo  | ~55 reference installs fit inside the free allowance. `TECHNICAL-SPEC.md`.                                                                                                     |
 
 **Not needed, deliberately:** an audience, a newsletter, a company, a budget for ads (Atlassian
 sells no placement), a designer, or a second person.
@@ -41,7 +41,7 @@ sells no placement), a designer, or a second person.
 Work top to bottom. Nothing below the line is worth starting until everything above it is ticked.
 
 ```
-[ ] node -v                       → v22.x
+[ ] node -v                       → v22.12 or newer (forge lint needs it; see § 1)
 [ ] corepack prepare pnpm@9.12.3 --activate
 [ ] git clone git@github.com:sekonam/jira-flow-metrics.git && cd jira-flow-metrics && pnpm install
 [ ] pnpm run verify               → green (format · typecheck · lint · coverage · build)
