@@ -20,6 +20,9 @@ modules:
         function: resolver
       title: SLA breaches
       description: Working time against a target, plus plain due-date breaches.
+      # Required by the gadget schema. Must be a reachable image URL; this one
+      # is a placeholder and has to be replaced before any real deploy.
+      thumbnail: https://jira-flow-metrics.example/sla-breach-thumbnail.png
 
   function:
     - key: resolver
@@ -40,6 +43,13 @@ modules:
         - avi:jira:created:issue
         - avi:jira:updated:issue
         - avi:jira:deleted:issue
+
+  # `forge lint` rejects the app without this: src/runtime.ts uses the Forge
+  # SQL package, and a manifest that does not declare the module fails
+  # validation before it ever reaches a tenant.
+  sql:
+    - key: db
+      engine: mysql
 
   consumer:
     - key: backfill-queue-consumer

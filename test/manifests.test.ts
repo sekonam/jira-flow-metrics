@@ -24,6 +24,19 @@ import { ALL_PRICING } from '@jfm/engine';
 const APPS_DIR = fileURLToPath(new URL('../apps', import.meta.url));
 const APP_KEYS = readdirSync(APPS_DIR).sort();
 
+/**
+ * The apps `forge register` has claimed and `forge lint` has accepted.
+ *
+ * Listed by hand rather than inferred from the manifests, because the point of
+ * the assertions below is that nobody reads this repository and believes more
+ * has been proven than has. Registering an app should require saying so here.
+ *
+ * The other four stop at Atlassian's Developer Terms, which bind the account
+ * owner to billing above the free allowance — not a step automation should
+ * take on someone's behalf.
+ */
+const REGISTERED = new Set(['time-in-status']);
+
 interface Manifest {
   modules?: Record<string, unknown>;
   resources?: { key: string; path: string }[];
@@ -85,8 +98,14 @@ describe.each(APP_KEYS)('manifest: %s', (key) => {
     expect(manifest.app?.runtime?.name).toBe('nodejs22.x');
   });
 
-  it('still carries the placeholder app id, so nobody thinks it is registered', () => {
-    expect(manifest.app?.id).toContain('REPLACE-WITH-forge-register-OUTPUT');
+  it('carries a real app id only once it has actually been registered', () => {
+    if (REGISTERED.has(key)) {
+      expect(manifest.app?.id).toMatch(
+        /^ari:cloud:ecosystem::app\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    } else {
+      expect(manifest.app?.id).toContain('REPLACE-WITH-forge-register-OUTPUT');
+    }
   });
 
   it('points every declared function at an export that exists', () => {
@@ -107,7 +126,15 @@ describe.each(APP_KEYS)('manifest: %s', (key) => {
     }
   });
 
-  it('says in a comment that it has never been validated', () => {
-    expect(readFileSync(`${APPS_DIR}/${key}/manifest.yml`, 'utf8')).toContain('UNVALIDATED');
+  it('says in a comment whether forge lint has ever accepted it', () => {
+    // "UNVALIDATED" contains "VALIDATED", so the negative is asserted too —
+    // otherwise a stale warning banner would satisfy the validated branch.
+    const text = readFileSync(`${APPS_DIR}/${key}/manifest.yml`, 'utf8');
+    if (REGISTERED.has(key)) {
+      expect(text).toContain('✔ VALIDATED');
+      expect(text).not.toContain('UNVALIDATED');
+    } else {
+      expect(text).toContain('UNVALIDATED');
+    }
   });
 });

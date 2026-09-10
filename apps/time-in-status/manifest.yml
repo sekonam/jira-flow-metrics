@@ -1,7 +1,12 @@
-# ⚠️ UNVALIDATED. This manifest has never been checked by `forge lint` or
-# accepted by `forge deploy` — no Atlassian credentials exist in this
-# repository. It is written against Atlassian's published module reference.
-# Validating it is step 1 of docs/RUNBOOK.md.
+# ✔ VALIDATED — `forge lint` reports "No issues found" for this manifest, as of
+# 2026-09-10, against the app id below registered in the "AskMe Solutions"
+# Developer Space. It took two fixes to get there, both of which the published
+# module reference did not make obvious: the `sql` module (the code uses Forge
+# SQL and nothing declared it) and the gadget `thumbnail`.
+#
+# It has still never been DEPLOYED. `forge deploy` needs the Atlassian
+# Developer Terms accepted, which binds the account owner to billing above the
+# free allowance and is therefore not a step a tool should take for them.
 
 modules:
   jira:projectPage:
@@ -19,7 +24,11 @@ modules:
       resolver:
         function: resolver
       title: Time in Status
-      description: Cumulative time each issue has spent in every status, including re-entries.
+      description: Cumulative time each issue has spent in every status, including
+        re-entries.
+      # Required by the gadget schema. Must be a reachable image URL; this one
+      # is a placeholder and has to be replaced before any real deploy.
+      thumbnail: https://jira-flow-metrics.example/gadget-thumbnail.png
 
   function:
     - key: resolver
@@ -41,6 +50,13 @@ modules:
         - avi:jira:updated:issue
         - avi:jira:deleted:issue
 
+  # `forge lint` rejects the app without this: src/runtime.ts uses the Forge
+  # SQL package, and a manifest that does not declare the module fails
+  # validation before it ever reaches a tenant.
+  sql:
+    - key: db
+      engine: mysql
+
   consumer:
     - key: backfill-queue-consumer
       queue: backfill
@@ -57,8 +73,7 @@ resources:
 app:
   runtime:
     name: nodejs22.x
-  # `forge register` writes the real id here on first run.
-  id: ari:cloud:ecosystem::app/REPLACE-WITH-forge-register-OUTPUT
+  id: ari:cloud:ecosystem::app/05b589b7-c96b-40eb-8ded-0cc100ef851b
 
 permissions:
   scopes:
