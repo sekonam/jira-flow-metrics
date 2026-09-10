@@ -5,7 +5,9 @@
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
 reviewed — 711 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
-ever run on Forge.** No Atlassian account exists, no app is registered, no listing is submitted.
+ever run on Forge.** An Atlassian account and a developer site now exist — `pnpm run e2e:live`
+runs the real engine against that site and agrees with Jira on every figure — but no Developer
+Space exists, no app is registered, and no listing is submitted.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
 **Atlassian identity**, roughly **half a day at a terminal with a tunnel open**, and **one week of
@@ -47,6 +49,7 @@ Work top to bottom. Nothing below the line is worth starting until everything ab
 [ ] Atlassian account created
 [ ] Free Jira Cloud developer site created, with one project and ≥ 50 issues with real history
 [ ] pnpm exec forge login && pnpm exec forge whoami
+[ ] Developer Space created  (forge register prompts for one; the CLI cannot create it non-interactively)
 [ ] Marketplace vendor account created
 [ ] Tax and bank details submitted
 ```
