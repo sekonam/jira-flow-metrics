@@ -4,7 +4,7 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 711 tests, 98.6% statements, lint/typecheck/build green, secret-scanned. **Nothing has
+reviewed — 734 tests, 98.3% statements, lint/typecheck/build green, secret-scanned. **Nothing has
 ever been deployed to Forge.** An Atlassian account, a developer site and a Developer Space now
 exist; `pnpm run e2e:live` runs the real engine against that site and agrees with Jira on every
 figure; and `time-in-status` is registered with a manifest `forge lint` accepts. What has never

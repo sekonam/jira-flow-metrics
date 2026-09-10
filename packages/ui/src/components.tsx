@@ -2,11 +2,19 @@ import React from 'react';
 import {
   Box,
   Button,
+  CodeBlock,
   DynamicTable,
   EmptyState,
   Heading,
   Inline,
+  LoadingButton,
   Lozenge,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTransition,
   SectionMessage,
   Spinner,
   Stack,
@@ -254,5 +262,98 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
         </Text>
       ))}
     </Stack>
+  );
+}
+
+/**
+ * The CSV export control.
+ *
+ * ## Why this shows the file instead of downloading it
+ *
+ * UI Kit 2 renders in a sandboxed frame with no DOM, so the usual mechanisms
+ * are all unavailable: there is no `Blob`, no `<a download>`, no way to hand
+ * the browser a file. The obvious workaround — `router.open` on a
+ * `data:text/csv` URI — does not work either, and not because of Forge:
+ * Chrome blocks top-level navigation to `data:` URLs outright, so the tab
+ * opens onto nothing. A Custom UI resource would have real DOM and could do a
+ * proper download, but these listings are `render: native` throughout and
+ * converting one surface to Custom UI to add a download button would cost more
+ * than it returns.
+ *
+ * So the export is shown, selectable, with its filename. It is honest about
+ * what it is, and it is reachable — which beats the resolver that has existed
+ * since the beginning with nothing calling it.
+ *
+ * `onRequestCsv` is a callback rather than an `invoke` here on purpose: this
+ * package holds presentation, and the bridge belongs to the app frontends.
+ */
+export function CsvExport({
+  onRequestCsv,
+}: {
+  onRequestCsv: () => Promise<{ filename: string; csv: string }>;
+}): React.JSX.Element {
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState<{ filename: string; csv: string } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const run = React.useCallback(() => {
+    setBusy(true);
+    setError(null);
+    onRequestCsv()
+      .then(setResult)
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'The export could not be produced.');
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }, [onRequestCsv]);
+
+  return (
+    <>
+      <LoadingButton isLoading={busy} onClick={run}>
+        Export CSV
+      </LoadingButton>
+
+      {error !== null && (
+        <SectionMessage title="Export failed" appearance="error">
+          <Text>{error}</Text>
+        </SectionMessage>
+      )}
+
+      <ModalTransition>
+        {result !== null && (
+          <Modal
+            onClose={() => {
+              setResult(null);
+            }}
+            width="x-large"
+          >
+            <ModalHeader>
+              <ModalTitle>{result.filename}</ModalTitle>
+            </ModalHeader>
+            <ModalBody>
+              <Stack space="space.100">
+                <Text>
+                  Select the text below and copy it, then save it as{' '}
+                  <Strong>{result.filename}</Strong>. Jira apps render in a sandbox that cannot hand
+                  a file to the browser.
+                </Text>
+                <CodeBlock language="text" text={result.csv} />
+              </Stack>
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                onClick={() => {
+                  setResult(null);
+                }}
+              >
+                Close
+              </Button>
+            </ModalFooter>
+          </Modal>
+        )}
+      </ModalTransition>
+    </>
   );
 }

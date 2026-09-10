@@ -3,6 +3,7 @@ import ForgeReconciler, { Box, Button, ButtonGroup, Stack, Text } from '@forge/r
 import { invoke } from '@forge/bridge';
 import type { ReportEnvelope } from '@jfm/forge-runtime';
 import {
+  CsvExport,
   EmptySurface,
   ErrorSurface,
   IndexingBanner,
@@ -56,6 +57,18 @@ export const App = (): React.JSX.Element => {
     }
   }, []);
 
+  // The `exportCsv` resolver has existed since the first commit with no
+  // caller; this is the caller. `CsvExport` owns the presentation, so all
+  // that belongs here is the bridge call and unwrapping the envelope.
+  const requestCsv = useCallback(async () => {
+    const result = (await invoke('exportCsv', { basis })) as Result<{
+      filename: string;
+      csv: string;
+    }>;
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
+  }, [basis]);
+
   useEffect(() => {
     void load(basis);
   }, [basis, load]);
@@ -90,6 +103,7 @@ export const App = (): React.JSX.Element => {
             >
               Working hours
             </Button>
+            <CsvExport onRequestCsv={requestCsv} />
           </ButtonGroup>
         }
       />

@@ -1,5 +1,6 @@
 import {
   handleAgingReport,
+  handleExportCsv,
   handleGetReport,
   handleIndexProgress,
   handleHistoryReport,
@@ -38,6 +39,7 @@ export type ResolverKey =
   | 'getAgingReport'
   | 'getSlaReport'
   | 'getHistoryReport'
+  | 'exportCsv'
   | 'startIndexing';
 
 /** Everything the five frontends can ask for, in one JSON-serialisable object. */
@@ -122,6 +124,9 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
       payload: { countedStatusIds: ['3', '10200'], targetMs: 8 * 3_600_000 },
     }),
     getHistoryReport: await handleHistoryReport(runtime, INVOCATION),
+    // Produced by the real exporter, like everything else here, so the modal
+    // shows the CSV a user would actually get rather than a sample of one.
+    exportCsv: await handleExportCsv(runtime, INVOCATION),
     startIndexing: { ok: true, data: { started: true } },
   };
 }
@@ -188,6 +193,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getAgingReport',
   'getSlaReport',
   'getHistoryReport',
+  'exportCsv',
   'startIndexing',
 ];
 

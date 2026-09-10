@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { BackfillProgress, StatusReport } from '@jfm/engine';
 import { auditA11y, describeFindings } from '@jfm/ui-harness';
 
@@ -33,6 +33,7 @@ import { auditA11y, describeFindings } from '@jfm/ui-harness';
 vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 
 const {
+  CsvExport,
   EmptySurface,
   ErrorSurface,
   IndexingBanner,
@@ -385,5 +386,74 @@ describe('SimpleReportTable', () => {
     );
     expect(screen.getByText('FLOW-1').tagName).toBe('STRONG');
     expect(screen.getByText('9 Mar 2026 12:00').tagName).not.toBe('STRONG');
+  });
+});
+
+describe('CsvExport', () => {
+  const CSV = 'Issue,Status,Elapsed\nFLOW-1,In Progress,3h\nFLOW-2,Done,1d\n';
+
+  it('shows a button and nothing else until it is asked', () => {
+    render(<CsvExport onRequestCsv={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('puts the CSV and its filename on screen when asked', async () => {
+    const onRequestCsv = vi
+      .fn()
+      .mockResolvedValue({ filename: 'time-in-status-10000.csv', csv: CSV });
+    render(<CsvExport onRequestCsv={onRequestCsv} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const dialog = await screen.findByRole('dialog');
+
+    expect(onRequestCsv).toHaveBeenCalledTimes(1);
+    // The whole file, not a preview: this is the only copy the user gets.
+    // Read off the element rather than via getByText, which collapses the
+    // newlines that make a CSV a CSV.
+    expect(dialog.querySelector('pre')?.textContent).toBe(CSV);
+    expect(within(dialog).getAllByText(/time-in-status-10000\.csv/).length).toBeGreaterThan(0);
+  });
+
+  it('explains why it cannot simply download the file', async () => {
+    // The modal is a workaround for a sandbox with no DOM, and saying so is
+    // the difference between a limitation and an apparent bug.
+    render(<CsvExport onRequestCsv={vi.fn().mockResolvedValue({ filename: 'a.csv', csv: CSV })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/sandbox that cannot hand a file to the browser/)).toBeTruthy();
+  });
+
+  it('closes again', async () => {
+    render(<CsvExport onRequestCsv={vi.fn().mockResolvedValue({ filename: 'a.csv', csv: CSV })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+  });
+
+  it('reports a refusal instead of opening an empty dialog', async () => {
+    const onRequestCsv = vi.fn().mockRejectedValue(new Error('You do not have permission.'));
+    render(<CsvExport onRequestCsv={onRequestCsv} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(await screen.findByText('You do not have permission.')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('survives a rejection that is not an Error', async () => {
+    // A resolver refusal arrives over the bridge and need not be an Error.
+    render(<CsvExport onRequestCsv={vi.fn().mockRejectedValue('nope')} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(await screen.findByText(/could not be produced/)).toBeTruthy();
+  });
+
+  it('passes an axe audit with the dialog open', async () => {
+    render(<CsvExport onRequestCsv={vi.fn().mockResolvedValue({ filename: 'a.csv', csv: CSV })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await screen.findByRole('dialog');
+    await expectNoA11yViolations();
   });
 });

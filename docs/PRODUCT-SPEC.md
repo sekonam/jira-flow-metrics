@@ -170,8 +170,8 @@ second listing off one engine works.
   document already defers "charting beyond the gadget tiles" to v1.1; this bullet is the
   contradiction. See TECHNICAL-SPEC § 11.
 - Total age since creation; count of work older than 14 days.
-- CSV export ⚠️ **implemented but unreachable** — the resolver and the engine exist, no frontend
-  calls them, so there is no export button. TECHNICAL-SPEC § 11, ROADMAP 1.3a.
+- CSV export — reachable from every project page. Shown in a modal to copy rather than downloaded,
+  because UI Kit 2 has no DOM and Chrome blocks `data:` navigation. TECHNICAL-SPEC § 11.
 - Dashboard gadget.
 
 **Stated limitation, shown in the UI:** age-in-status is elapsed time. The stored working-hours

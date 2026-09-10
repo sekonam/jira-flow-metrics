@@ -4,6 +4,7 @@ import AdsInline from '@atlaskit/primitives/inline';
 import AdsStack from '@atlaskit/primitives/stack';
 import AdsText from '@atlaskit/primitives/text';
 import AdsHeading from '@atlaskit/heading';
+import { token } from '@atlaskit/tokens';
 import AdsButton from '@atlaskit/button/new';
 import AdsButtonGroup from '@atlaskit/button/button-group';
 import AdsLozenge from '@atlaskit/lozenge';
@@ -359,3 +360,91 @@ export default ForgeReconciler;
 
 /** UI Kit's `xcss` is the identity function in `@forge/react` too. */
 export const xcss = <T,>(style: T): T => style;
+
+// ---------------------------------------------------------------------------
+// Modal, CodeBlock and LoadingButton — needed by `CsvExport`
+// ---------------------------------------------------------------------------
+
+/**
+ * Stand-ins for the UI Kit 2 modal family.
+ *
+ * Rendered inline rather than in a portal. Forge puts a real modal in a layer
+ * above the page; here the point is only that the content, its copy and its
+ * controls are visible to a screenshot and to axe, which an inline block does
+ * as well as a portal and with less machinery.
+ */
+export const ModalTransition = ({
+  children,
+}: {
+  children?: React.ReactNode;
+}): React.JSX.Element => <>{children}</>;
+
+export interface ModalProps {
+  children?: React.ReactNode;
+  onClose?: () => void;
+  width?: string;
+}
+
+export const Modal = ({ children }: ModalProps): React.JSX.Element => (
+  <div
+    role="dialog"
+    aria-modal="true"
+    aria-label="Export"
+    style={{
+      border: `1px solid ${token('color.border')}`,
+      borderRadius: 4,
+      background: token('elevation.surface.overlay'),
+      padding: 16,
+      marginTop: 12,
+    }}
+  >
+    {children}
+  </div>
+);
+
+export const ModalHeader = ({ children }: { children?: React.ReactNode }): React.JSX.Element => (
+  <div style={{ marginBottom: 8 }}>{children}</div>
+);
+
+export const ModalTitle = ({ children }: { children?: React.ReactNode }): React.JSX.Element => (
+  <h2 style={{ font: token('font.heading.medium'), margin: 0 }}>{children}</h2>
+);
+
+export const ModalBody = ({ children }: { children?: React.ReactNode }): React.JSX.Element => (
+  <div>{children}</div>
+);
+
+export const ModalFooter = ({ children }: { children?: React.ReactNode }): React.JSX.Element => (
+  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>{children}</div>
+);
+
+export const CodeBlock = ({ text }: { text?: string; language?: string }): React.JSX.Element => (
+  <pre
+    style={{
+      font: token('font.code'),
+      background: token('color.background.neutral'),
+      color: token('color.text'),
+      padding: 12,
+      borderRadius: 3,
+      overflowX: 'auto',
+      maxHeight: 320,
+      margin: 0,
+    }}
+  >
+    {text}
+  </pre>
+);
+
+export interface LoadingButtonProps extends ButtonProps {
+  isLoading?: boolean;
+}
+
+export const LoadingButton = ({
+  isLoading,
+  children,
+  ...rest
+}: LoadingButtonProps): React.JSX.Element => (
+  <Button {...rest} isDisabled={rest.isDisabled === true || isLoading === true}>
+    {isLoading === true ? 'Working…' : children}
+  </Button>
+);

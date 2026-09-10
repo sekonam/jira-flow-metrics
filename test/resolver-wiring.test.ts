@@ -63,23 +63,22 @@ describe('every listing wires its own frontends to its own resolver', () => {
   });
 
   /**
-   * ★ The reverse direction, and it is not clean.
+   * ★ The reverse direction.
    *
-   * `exportCsv` is defined by all five resolvers, implemented in the engine,
+   * `exportCsv` was defined by all five resolvers, implemented in the engine,
    * covered by tests, and listed as a v1 feature of every listing in
-   * `docs/PRODUCT-SPEC.md` — and **no frontend invokes it**, so there is no
-   * way for a user to reach it. It was invisible until every screen was
-   * rendered and looked at: there is no export button anywhere.
+   * `docs/PRODUCT-SPEC.md` — and no frontend invoked it, so no user could
+   * reach it. It stayed invisible until every screen was rendered and clicked
+   * through: there was simply no export button anywhere.
    *
-   * This test pins the gap rather than hiding it. UI Kit 2 has no file
-   * download primitive, so closing it needs a platform decision that cannot be
-   * validated from here; it is recorded in `docs/TECHNICAL-SPEC.md` § 11 and
-   * in `docs/ROADMAP.md`. **When the export button ships, this assertion is
-   * the thing that must change.**
+   * This assertion used to pin that gap open. The button now exists on all
+   * five pages (`CsvExport` in `@jfm/ui`), so the assertion is inverted: a
+   * resolver key that no frontend invokes is a feature nobody can use, and
+   * that is what this file is for.
    */
-  it.each(APPS)('%s: records exportCsv as defined but unreachable from the UI', (app) => {
+  it.each(APPS)('%s: exposes exportCsv to the UI, not just to the resolver', (app) => {
     expect(definedKeys(app)).toContain('exportCsv');
-    expect(invokedKeys(app)).not.toContain('exportCsv');
+    expect(invokedKeys(app)).toContain('exportCsv');
   });
 });
 

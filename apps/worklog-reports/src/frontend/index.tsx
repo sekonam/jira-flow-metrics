@@ -3,6 +3,7 @@ import ForgeReconciler, { Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
 import type { BackfillProgress, WorklogAggregateResult } from '@jfm/engine';
 import {
+  CsvExport,
   EmptySurface,
   ErrorSurface,
   IndexingBanner,
@@ -62,6 +63,18 @@ export const App = (): React.JSX.Element => {
     }
   }, []);
 
+  // The `exportCsv` resolver has existed since the first commit with no
+  // caller; this is the caller. `CsvExport` owns the presentation, so all
+  // that belongs here is the bridge call and unwrapping the envelope.
+  const requestCsv = useCallback(async () => {
+    const result = (await invoke('exportCsv', {})) as Result<{
+      filename: string;
+      csv: string;
+    }>;
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -79,6 +92,7 @@ export const App = (): React.JSX.Element => {
       <PageHeader
         title="Worklog Reports"
         subtitle="Logged time grouped by person, issue or period. Totals are what people entered in Jira."
+        actions={<CsvExport onRequestCsv={requestCsv} />}
       />
 
       {/*

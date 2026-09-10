@@ -4,6 +4,7 @@ import { invoke } from '@forge/bridge';
 import type { AgingReport } from '@jfm/forge-runtime';
 import type { BackfillProgress } from '@jfm/engine';
 import {
+  CsvExport,
   EmptySurface,
   ErrorSurface,
   IndexingBanner,
@@ -63,6 +64,18 @@ export const App = (): React.JSX.Element => {
     }
   }, []);
 
+  // The `exportCsv` resolver has existed since the first commit with no
+  // caller; this is the caller. `CsvExport` owns the presentation, so all
+  // that belongs here is the bridge call and unwrapping the envelope.
+  const requestCsv = useCallback(async () => {
+    const result = (await invoke('exportCsv', {})) as Result<{
+      filename: string;
+      csv: string;
+    }>;
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -80,6 +93,7 @@ export const App = (): React.JSX.Element => {
       <PageHeader
         title="WIP Aging"
         subtitle="How long each unfinished issue has been sitting where it is."
+        actions={<CsvExport onRequestCsv={requestCsv} />}
       />
 
       {/*

@@ -434,12 +434,20 @@ the real `invoke`, its payload validation and its rate limiter all run.
    checklist. The likely fix is a project id on the gadget — a configuration field — not a change
    to the gadget components, which the same test demonstrates by giving the same gadget a context
    that does carry a project.
-8. **★ CSV export is implemented but unreachable.** `exportCsv` is defined by all five resolvers,
+8. **CSV export is reachable — resolved.** `exportCsv` had been defined by all five resolvers,
    implemented in `packages/engine/src/export/csv.ts`, defused against formula injection, covered
-   by tests, and listed as a v1 feature of every listing in `docs/PRODUCT-SPEC.md` — and **no
-   frontend invokes it.** There is no export button on any screen. Found by rendering every screen
-   and looking at them; pinned by `test/resolver-wiring.test.ts` so it cannot be forgotten again.
-   Closing it needs a UI Kit 2 file-download decision that cannot be validated without a tenant.
+   by tests, listed as a v1 feature of every listing — and invoked by nothing, so no user could
+   reach it. `CsvExport` in `@jfm/ui` is now on all five project pages, and
+   `test/resolver-wiring.test.ts` asserts the opposite of what it used to.
+
+   **It shows the file rather than downloading it,** which is a decision worth recording. UI Kit 2
+   renders in a sandbox with no DOM: no `Blob`, no `<a download>`. The documented workaround —
+   `router.open` on a `data:text/csv` URI — fails for a reason unrelated to Forge, in that Chrome
+   blocks top-level navigation to `data:` URLs, so the tab opens onto nothing. A Custom UI resource
+   would have real DOM and a real download, and converting one surface away from `render: native`
+   to get it is a v1.1 question. Until then the export opens in a modal, selectable, with its
+   filename, and says why.
+
 9. **★ The WIP aging histogram is not built either.** `AgingReport.buckets` is computed and
    `toAgingChartData` turns it into a chart series, both tested — and no component renders it.
    `docs/PRODUCT-SPEC.md` § 6 lists the histogram in scope for listing 3 while § 4 defers charting
