@@ -80,6 +80,7 @@ Useful:
 pnpm run ui:screens    # render every screen in every state to a PNG, and audit it with axe
 pnpm run seed:dev-site # seed a Jira dev site with re-entered statuses (needs .env)
 pnpm run e2e:live      # run the real engine over that seeded site and check it (needs .env)
+pnpm run preflight     # check every manifest claim against the code (no account needed)
 pnpm test              # vitest, no coverage gate
 pnpm run coverage      # with the 80% floor enforced
 pnpm run typecheck     # project references + the test project
