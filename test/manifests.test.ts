@@ -87,10 +87,17 @@ describe.each(APP_KEYS)('manifest: %s', (key) => {
   });
 
   it('declares a queue consumer for the resumable backfill', () => {
+    // `function: <key>` directly, not `resolver: {function, method}`. The
+    // nested form is what @forge/events v1.x wanted; v3, which is what is
+    // actually installed (see package.json), wants a plain function taking
+    // the raw queue payload. Both shapes parse as valid YAML and both pass
+    // `forge lint`, so this pin is the only thing that would have caught it
+    // before deploying to a real tenant: the legacy form deployed and linted
+    // clean while the live consumer never fired at all.
     const consumers = manifest.modules?.['consumer'] as
-      { queue?: string; resolver?: { method?: string } }[] | undefined;
+      { queue?: string; function?: string }[] | undefined;
     expect(consumers?.[0]?.queue).toBe('backfill');
-    expect(consumers?.[0]?.resolver?.method).toBe('run-slice');
+    expect(consumers?.[0]?.function).toBe('backfill-consumer');
   });
 
   it('requests least privilege and asks for no write scope', () => {

@@ -9,9 +9,20 @@ import type { BackfillJob, Scheduler } from '@jfm/engine';
  * payload, giving each slice its own invocation budget.
  */
 
-/** Shape of the `@forge/events` Queue used here, declared structurally. */
+/**
+ * Shape of the `@forge/events` Queue used here, declared structurally.
+ *
+ * ✔ **Verified against the live platform** on 2026-09-11, and it did differ:
+ * `push` takes one argument — `{ body, delayInSeconds? }` — not
+ * `push(body, { delayInSeconds })`. This was written from a plausible reading
+ * of the API and never confirmed until a real backfill was watched sitting at
+ * "0 issues indexed" forever: `startIndexing` was silently failing on every
+ * call, `push()` presumably rejecting an argument shape it does not accept,
+ * and the generic error fallback gave no hint which call was even at fault.
+ * `@forge/events/out/queue.d.ts` and `types.d.ts` are the source of truth.
+ */
 export interface ForgeQueueLike {
-  push(payload: unknown, options?: { delayInSeconds?: number }): Promise<unknown>;
+  push(event: { body: Record<string, unknown>; delayInSeconds?: number }): Promise<unknown>;
 }
 
 export interface QueueSchedulerOptions {
@@ -51,10 +62,10 @@ export class QueueScheduler implements Scheduler {
           `over the ${this.options.maxSlices}-slice ceiling`,
       );
     }
-    await this.queue.push(
-      { projectId: job.projectId, cursor: job.cursor, slice: job.slice },
-      { delayInSeconds: this.options.delaySeconds },
-    );
+    await this.queue.push({
+      body: { projectId: job.projectId, cursor: job.cursor, slice: job.slice },
+      delayInSeconds: this.options.delaySeconds,
+    });
   }
 }
 

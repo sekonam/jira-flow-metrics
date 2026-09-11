@@ -67,12 +67,17 @@ modules:
     - key: db
       engine: mysql
 
+  # `function: backfill-consumer` directly, not `resolver: {function, method}`.
+  # The nested-resolver form is what @forge/events v1.x wanted; v3 (the
+  # version actually installed here) wants a plain function taking the raw
+  # queue payload. The legacy form still deploys and lints clean — confirmed
+  # live: the consumer simply never fired, and a real backfill sat at "0
+  # issues indexed" forever with nothing in forge logs, since the function
+  # was never invoked at all.
   consumer:
     - key: backfill-queue-consumer
       queue: backfill
-      resolver:
-        function: backfill-consumer
-        method: run-slice
+      function: backfill-consumer
 
 resources:
   - key: main

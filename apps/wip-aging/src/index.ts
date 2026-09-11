@@ -40,8 +40,31 @@ export async function onIssueEvent(event: unknown): Promise<void> {
   await handleIssueEvent(getRuntime(), event, projectIdFromEvent(event) ?? '');
 }
 
-const backfillResolver = new Resolver();
-backfillResolver.define('run-slice', (req) => handleBackfillJob(getRuntime(), req.payload));
-
-/** Async-events consumer: one backfill slice per invocation. */
-export const backfillHandler = backfillResolver.getDefinitions();
+/**
+ * Async-events consumer: one backfill slice per invocation.
+ *
+ * A plain function, not a `Resolver` — this app's live tenant is the reason
+ * why. The manifest originally wired this the way `@forge/events` v1.x
+ * needed (`consumer.resolver.function`/`.method`, a `Resolver` bound to a
+ * method name), which Atlassian's own docs mark as the legacy form; the
+ * `@forge/events` v3 actually installed here wants `consumer.function`
+ * pointing straight at a function that receives the raw queue payload. The
+ * legacy form still deploys and lints clean — nothing local or server-side
+ * validates the mismatch — but on the real platform the consumer never
+ * fired: a five-issue backfill sat at "0 issues indexed" indefinitely, with
+ * nothing in `forge logs` because the function was never invoked at all.
+ */
+export async function backfillHandler(event: unknown): Promise<'ran' | 'ignored'> {
+  // The pushed payload lives on `event.body`, not on `event` itself — this is
+  // the sixth SDK-shape assumption on this project that only a live tenant
+  // exposed. Atlassian's own docs call the mistake out by name: "There is no
+  // `payload` property; if you read `event.payload` you get `undefined`. The
+  // `payload` argument belonged to the 1.x resolver-based consumer, which
+  // 2.0.0 replaced." Passing the whole event through, unwrapped, made
+  // `jobFromPayload` find no `projectId` at the top level, return `null`, and
+  // `handleBackfillJob` return 'ignored' — no error, no log, just a backfill
+  // that enqueues successfully and then never does anything.
+  const body =
+    typeof event === 'object' && event !== null ? (event as { body?: unknown }).body : undefined;
+  return handleBackfillJob(getRuntime(), body);
+}

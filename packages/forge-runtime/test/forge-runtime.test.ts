@@ -633,19 +633,26 @@ describe('JiraRestClient', () => {
 });
 
 describe('QueueScheduler', () => {
+  // This fake used to take `(payload, options)` — two arguments, matching
+  // what the adapter called at the time. Both were built from the same
+  // plausible-but-wrong reading of `@forge/events`, so the fake could not
+  // have caught the mismatch: it agreed with the code it was meant to check.
+  // The real `Queue.push` takes one argument, `{ body, delayInSeconds }` —
+  // confirmed by reading `@forge/events/out/queue.d.ts` after a live backfill
+  // sat at "0 issues indexed" forever because every `push` call was rejected.
   it('pushes the job with a spacing delay', async () => {
     const pushed: unknown[] = [];
     const scheduler = new QueueScheduler({
-      push: (payload, options) => {
-        pushed.push({ payload, options });
-        return Promise.resolve(undefined);
+      push: (event) => {
+        pushed.push(event);
+        return Promise.resolve({ jobId: 'job-1' });
       },
     });
     await scheduler.enqueueBackfill({ projectId: '10000', cursor: 'abc', slice: 3 });
     expect(pushed).toEqual([
       {
-        payload: { projectId: '10000', cursor: 'abc', slice: 3 },
-        options: { delayInSeconds: 5 },
+        body: { projectId: '10000', cursor: 'abc', slice: 3 },
+        delayInSeconds: 5,
       },
     ]);
   });

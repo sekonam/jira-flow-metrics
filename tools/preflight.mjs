@@ -141,7 +141,14 @@ for (const app of apps) {
       fail(app, `function "${fn.key}" → ${handler}, but src/index.ts exports no ${exported}`);
   }
 
-  // 2. Every module that names a resolver must name a declared function key.
+  // 2. Every module that names a resolver — or, in the current (non-legacy)
+  //    consumer form, a bare `function:` — must name a declared function key.
+  //    Both forms are checked because a manifest can silently mix them: the
+  //    `resolver: {function, method}` shape is what @forge/events v1.x
+  //    wanted, and the flat `function:` shape is what v2+ wants. Both parse
+  //    as valid YAML and both pass Atlassian's schema, so nothing catches a
+  //    manifest written for the wrong major version except running it live —
+  //    which is how this check came to exist at all.
   const functionKeys = new Set(functions.map((fn) => fn.key));
   for (const [type, entries] of Object.entries(manifest.modules)) {
     if (type === 'function') continue;
@@ -150,6 +157,12 @@ for (const app of apps) {
         fail(
           app,
           `${type} "${entry.key}" uses resolver "${entry.resolver}", which no function declares`,
+        );
+      }
+      if (entry.function && !functionKeys.has(entry.function)) {
+        fail(
+          app,
+          `${type} "${entry.key}" uses function "${entry.function}", which no function declares`,
         );
       }
     }
