@@ -4,15 +4,20 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 735 tests, 97.8% statements, lint/typecheck/build green, secret-scanned. **All five
-apps are deployed and installed** on the developer site, and — new — **a real report has been
-opened inside real Jira and shown real data for the first time**: `issue-history` backfilled 9
-live issues and rendered "104 field changes" with real timestamps and authors. Getting there took
-six SDK-shape fixes nothing local could have caught, none discoverable without a live tenant — see
-ROADMAP 1.5. `pnpm run e2e:live` separately runs the real engine against that site and agrees with
-Jira on every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past
-5,000 issues synthetically (ROADMAP 1.7). What has still never happened: a `forge tunnel` session,
-a backfill at 5,000-issue scale against a real instance, the Control Chart comparison, and a listing.
+reviewed — 780 tests, lint/typecheck/build green, secret-scanned. **All five apps are deployed and
+installed** on the developer site, real reports have rendered real data inside real Jira
+(`issue-history` on 9 issues, then `pnpm run seed:bulk` past 300), and **the Control Chart hand-check
+is done** (ROADMAP 1.8): the app's cumulative time-in-status figures were checked against raw Jira
+changelog data pulled independently, on both a simple single-visit issue and three re-entry cases,
+and matched exactly. Getting all of this working took nine SDK-shape or scale-only bugs nothing
+local could have caught — six from the first live open (ROADMAP 1.5), three more from testing at
+300-issue scale (ROADMAP 1.7a) — plus a real, still-open Jira-side pagination bug at that same scale
+(TECHNICAL-SPEC § 11 item 11) and an unresolved question about whether Jira's dashboard-gadget
+picker actually exposes the project-configuration screen this repo built for it (§ 11 item 7).
+`pnpm run e2e:live` separately runs the real engine against the dev site and agrees with Jira on
+every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past 5,000 issues
+synthetically (ROADMAP 1.7). **What has still never happened:** a `forge tunnel` session (hot-reload
+local dev is unverified, though the production `forge deploy` path is proven live), and a listing.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
 **Atlassian identity**, roughly **half a day at a terminal with a tunnel open**, and **one week of
@@ -127,14 +132,22 @@ own Control Chart by hand for a handful of issues. Cumulative must be ≥ the na
 difference explained by the visit count. **If it disagrees on an issue with a simple history, stop
 everything and fix the engine.** Every downstream step is worthless if the arithmetic is wrong.
 
+✔ **Already done, ahead of the tunnel session, on 2026-09-11** — see ROADMAP 1.8. The dev site
+was already deployed and installed, so the comparison did not need to wait for a tunnel: raw
+changelog data was pulled straight from the Jira REST API for a simple single-visit issue and
+three re-entry cases, hand-computed, and checked against the app's rendered figures. It passed.
+This does not make the tunnel session optional — hot-reload local dev, the 5,000-issue-scale real
+backfill, and everything else on this checklist are still unverified — but the one item that could
+have ended the project here did not.
+
 ### Week 1–2 — fix what the session found
 
-| Known before you start                                                                                                                                                                     | Where                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| **Dashboard gadgets probably refuse.** Resolvers read `extension.project.id`; a dashboard is not project-scoped. Fix is manifest configuration or dropping the module — not resolver code. | `RUNBOOK.md` item 2a; pinned by `apps/time-in-status/test/end-to-end-ui.test.tsx` |
-| **CSV export is implemented, tested, documented — and unreachable.** No frontend calls `exportCsv`.                                                                                        | `ROADMAP.md` step 1.3a; pinned by `test/resolver-wiring.test.ts`                  |
-| **The WIP-aging histogram promised in `PRODUCT-SPEC.md` § 6 is not built.**                                                                                                                | Either build it or cut the promise before the listing goes out.                   |
-| **`timeBudgetMs` is a guess.** 40,000 ms, set without reading the current platform limit.                                                                                                  | `apps/*/src/runtime.ts`; calibrate to ~70% of the published limit.                |
+| Known before you start                                                                                                                                                                                                                                                                                                                                                                                                                          | Where                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Dashboard gadgets refused, confirmed live — a project picker is built, whether Jira exposes it is not.** Resolvers read `extension.project.id`; a dashboard is not project-scoped, and never was. A manifest `edit` module plus a `gadgetConfiguration.projectId` fallback is deployed to all five apps, but Jira's own "Configure" menu item rendered disabled on every attempt in this account. First thing to check in the tunnel session. | TECHNICAL-SPEC.md § 11 item 7; pinned by `apps/time-in-status/test/end-to-end-ui.test.tsx` |
+| **CSV export is implemented, tested, documented — and unreachable.** No frontend calls `exportCsv`.                                                                                                                                                                                                                                                                                                                                             | `ROADMAP.md` step 1.3a; pinned by `test/resolver-wiring.test.ts`                           |
+| **The WIP-aging histogram promised in `PRODUCT-SPEC.md` § 6 is not built.**                                                                                                                                                                                                                                                                                                                                                                     | Either build it or cut the promise before the listing goes out.                            |
+| **`timeBudgetMs` is a guess.** 40,000 ms, set without reading the current platform limit.                                                                                                                                                                                                                                                                                                                                                       | `apps/*/src/runtime.ts`; calibrate to ~70% of the published limit.                         |
 
 Every fix follows the repo protocol: failing test first, then the fix, then `pnpm run verify`.
 

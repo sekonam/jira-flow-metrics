@@ -6,6 +6,9 @@ coverage/
 # Forge CLI artefacts — never commit; they can contain app ids and credentials
 .forge/
 forge-logs*.txt
+# Written by `forge tunnel` per app — holds a live tunnel proxy JWT, a real
+# credential, not merely an id.
+.container-service-assets/
 
 # Environment
 .env
