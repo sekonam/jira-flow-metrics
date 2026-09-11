@@ -5,13 +5,14 @@
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
 reviewed — 735 tests, 97.8% statements, lint/typecheck/build green, secret-scanned. **All five
-apps are now deployed and installed** on the developer site, processing real Jira issue events
-without error — getting there took four fixes nothing local could have caught, see ROADMAP 1.5.
-`pnpm run e2e:live` separately runs the real engine against that site and agrees with Jira on
-every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past 5,000
-issues (synthetically — see ROADMAP 1.7, which found and fixed a real cursor bug on the way).
-What has still never happened: any UI opened inside Jira (no `forge tunnel` session has run), a
-backfill at that scale against a real instance, the Control Chart comparison, and a listing.
+apps are deployed and installed** on the developer site, and — new — **a real report has been
+opened inside real Jira and shown real data for the first time**: `issue-history` backfilled 9
+live issues and rendered "104 field changes" with real timestamps and authors. Getting there took
+six SDK-shape fixes nothing local could have caught, none discoverable without a live tenant — see
+ROADMAP 1.5. `pnpm run e2e:live` separately runs the real engine against that site and agrees with
+Jira on every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past
+5,000 issues synthetically (ROADMAP 1.7). What has still never happened: a `forge tunnel` session,
+a backfill at 5,000-issue scale against a real instance, the Control Chart comparison, and a listing.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
 **Atlassian identity**, roughly **half a day at a terminal with a tunnel open**, and **one week of
