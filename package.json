@@ -22,6 +22,7 @@
     "ui:screens": "node packages/ui-harness/scripts/build-scenarios.mjs && node packages/ui-harness/scripts/screens.mjs",
     "verify": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run preflight && pnpm run coverage && pnpm run build",
     "seed:dev-site": "node tools/seed-dev-site.mjs",
+    "seed:bulk": "node tools/seed-bulk.mjs",
     "e2e:live": "node packages/ui-harness/scripts/live-e2e.mjs",
     "preflight": "node tools/preflight.mjs",
     "backfill:scale": "node packages/ui-harness/scripts/scale-backfill.mjs",

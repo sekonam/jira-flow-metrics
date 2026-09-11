@@ -231,7 +231,7 @@ export class ListingRuntime {
     const report = await buildStatusReport(this.deps.store, {
       projectId: request.projectId,
       basis: request.basis ?? settings.defaultBasis,
-      limit: clamp(request.limit ?? 50, 1, 500),
+      limit: clamp(request.limit ?? 500, 1, 500),
       offset: Math.max(0, request.offset ?? 0),
       ...(request.assigneeAccountIds === undefined
         ? {}

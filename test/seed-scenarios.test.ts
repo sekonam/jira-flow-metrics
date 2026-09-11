@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isoDaysFromNow, parseArgs } from '../tools/seed-dev-site.mjs';
+import { parseArgs } from '../tools/seed-dev-site.mjs';
+import { isoDaysFromNow } from '../tools/jira-seed-lib.mjs';
 import {
   SCENARIOS,
   VISIBLE_EXCESS_MS,

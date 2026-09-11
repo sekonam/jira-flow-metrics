@@ -105,7 +105,12 @@ export const App = (): React.JSX.Element => {
         other.
       */}
       {state === 'loading' || state === 'error' ? null : (
-        <IndexingBanner banner={toProgressBanner(progress)} />
+        <IndexingBanner
+          banner={toProgressBanner(progress)}
+          onRetry={() => {
+            void startIndexing();
+          }}
+        />
       )}
 
       {state === 'loading' ? <LoadingSurface label="Loading report" /> : null}

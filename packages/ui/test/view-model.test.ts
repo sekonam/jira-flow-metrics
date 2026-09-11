@@ -309,6 +309,18 @@ describe('indexing banner', () => {
     expect(toProgressBanner(progress({ state: 'failed' }))?.body).toContain('No error detail');
   });
 
+  it('offers a retry only on failure — a failed backfill has no other way back', () => {
+    // Found live: a backfill that fails after indexing some issues leaves the
+    // report non-empty, so `EmptySurface`'s "Start indexing" button (the only
+    // other place this action lives — see `IndexingBanner`'s docstring) never
+    // renders either. Without this, a failed project is stuck permanently.
+    expect(toProgressBanner(progress({ state: 'failed' }))?.showRetry).toBe(true);
+    for (const state of ['not_started', 'running', 'paused'] as const) {
+      expect(toProgressBanner(progress({ state }))?.showRetry).toBe(false);
+    }
+    expect(toProgressBanner(null)?.showRetry).toBe(false);
+  });
+
   it('does not invent a percentage when Jira gave no total', () => {
     const banner = toProgressBanner(progress({ fraction: null, issuesTotal: null }));
     expect(banner?.body).toContain('500 issues indexed.');

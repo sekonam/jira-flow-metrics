@@ -272,6 +272,41 @@ describe('SqlMetricsStore statement generation', () => {
     expect(sql.sql.length).toBeGreaterThanOrEqual(8);
   });
 
+  it('migrates once per store instance, not once per call', async () => {
+    // Found bulk-seeding 300 real issues into one project: every resolver
+    // method and every issue event calls `store.migrate()` unconditionally
+    // (see runtime.ts), and the warm-container runtime caches one store
+    // instance across events — so a burst of Jira activity fired `migrate()`
+    // once per event. `forgeSqlMigrator`'s own docstring assumed repeating it
+    // was "cheap and idempotent" because Forge records applied migrations by
+    // name; what actually happened live was every one of those calls still
+    // counted against the installation's Forge SQL rate limit, and a few
+    // hundred events in a few minutes was enough to trip
+    // `ForgeSQLError: RATE_LIMIT_EXCEEDED` and fail the backfill outright.
+    const sql = new RecordingSqlExecutor();
+    const store = new SqlMetricsStore(sql);
+    await store.migrate();
+    await store.migrate();
+    await store.migrate();
+    expect(sql.sql.length).toBeGreaterThanOrEqual(8);
+    expect(sql.sql.length).toBeLessThan(16); // one round of CREATEs, not three
+  });
+
+  it('retries migration on the next call if it failed', async () => {
+    let calls = 0;
+    const failingMigrator = {
+      migrate: () => {
+        calls += 1;
+        if (calls === 1) return Promise.reject(new Error('boom'));
+        return Promise.resolve();
+      },
+    };
+    const store = new SqlMetricsStore(new RecordingSqlExecutor(), failingMigrator);
+    await expect(store.migrate()).rejects.toThrow('boom');
+    await expect(store.migrate()).resolves.toBeUndefined();
+    expect(calls).toBe(2);
+  });
+
   it('writes a batch as one upsert, one delete and one insert', async () => {
     const sql = new RecordingSqlExecutor();
     await new SqlMetricsStore(sql).putIssueAggregates([
@@ -876,6 +911,51 @@ describe('ListingRuntime', () => {
     const { runtime } = build();
     const envelope = await runtime.statusReport({ projectId: '10000', limit: 100_000, offset: -3 });
     expect(envelope.report.rows.length).toBeLessThanOrEqual(500);
+  });
+
+  it('defaults to a limit generous enough for a real project, not a demo one', async () => {
+    // Found live against a 150-issue bulk-seeded project: the frontend never
+    // sends a `limit` (see apps/time-in-status/src/frontend/index.tsx), so
+    // whatever this resolver defaults to IS the report's real ceiling. Every
+    // other report resolver defaults to 500 or more; this one silently
+    // defaulted to 50, so a project past that size looked complete —
+    // "Issues: 50", two full pages, no truncation notice — while three
+    // quarters of its issues were simply never fetched.
+    const { runtime, store } = build();
+    for (let i = 0; i < 60; i += 1) {
+      const issueId = `9${String(i).padStart(3, '0')}`;
+      await store.putIssueAggregate(
+        {
+          issueId,
+          issueKey: `FLOW-${i}`,
+          projectId: '10000',
+          issueTypeId: null,
+          priorityId: null,
+          assigneeAccountId: null,
+          currentStatusId: '3',
+          createdAt: NOW,
+          resolvedAt: null,
+          dueAt: null,
+          historyThroughAt: NOW,
+          truncated: false,
+          updatedAt: NOW,
+        },
+        [
+          {
+            issueId,
+            statusId: '3',
+            elapsedMs: 1000,
+            businessMs: 1000,
+            entries: 1,
+            lastEnteredAt: NOW,
+            lastExitedAt: null,
+            updatedAt: NOW,
+          },
+        ],
+      );
+    }
+    const envelope = await runtime.statusReport({ projectId: '10000' });
+    expect(envelope.report.rows).toHaveLength(60);
   });
 
   it('exports the same report as CSV', async () => {

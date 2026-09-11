@@ -146,8 +146,14 @@ export interface ForgeMigrationRunnerLike {
  * ✔ **Verified against the live platform** on 2026-09-10: the first deployed
  * build failed every issue event with `ForgeSQLError: Unknown SQL execution
  * error` because `migrate()` pushed `CREATE TABLE` through the query path.
- * Forge records applied migrations by name, so running this on every cold
- * start is cheap and idempotent.
+ *
+ * Forge records applied migrations by name, so calling this repeatedly never
+ * re-applies DDL — but it is **not free to call repeatedly**: verified live
+ * on 2026-09-11 bulk-seeding 300 issues into one project, where every event
+ * calling this once each tripped `ForgeSQLError: RATE_LIMIT_EXCEEDED` within
+ * minutes. Each call still costs a real platform request regardless of
+ * whether it does anything. `SqlMetricsStore.migrate` is what actually keeps
+ * this cheap, by calling in here at most once per store instance.
  */
 export function forgeSqlMigrator(runner: ForgeMigrationRunnerLike): SqlMigrator {
   return {

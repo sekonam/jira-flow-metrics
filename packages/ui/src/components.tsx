@@ -113,18 +113,28 @@ export function EmptySurface({
 }
 
 /**
- * The indexing banner. Informational only, deliberately.
+ * The indexing banner. Informational only, except on failure.
  *
- * It used to carry its own "Start indexing" button. Looking at the rendered
- * screen showed why that was wrong: a project with no index has no rows, so
- * the empty state is on screen at the same time — and the empty state's
- * centred primary action is the same action. Every unindexed project showed
- * the button twice. One action, one place.
+ * It used to carry its own "Start indexing" button unconditionally. Looking
+ * at the rendered screen showed why that was wrong: a project with no index
+ * has no rows, so the empty state is on screen at the same time — and the
+ * empty state's centred primary action is the same action. Every unindexed
+ * project showed the button twice. One action, one place — for every state
+ * except `failed`.
+ *
+ * A failed backfill breaks that assumption: it fails after processing some
+ * issues, not before, so the report is not empty and `EmptySurface`'s button
+ * never renders. Found live bulk-seeding past 300 issues — a project whose
+ * backfill failed partway had no way back on screen at all. `onRetry` is
+ * only rendered when `banner.showRetry` is set, which is only ever true for
+ * `failed`, so every other state still shows exactly the one button it did.
  */
 export function IndexingBanner({
   banner,
+  onRetry,
 }: {
   banner: ProgressBanner | null;
+  onRetry?: (() => void) | undefined;
 }): React.JSX.Element | null {
   if (banner === null) return null;
   return (
@@ -133,6 +143,11 @@ export function IndexingBanner({
         {banner.showSpinner ? <Spinner size="small" label="Indexing" /> : null}
         <Text>{banner.body}</Text>
       </Inline>
+      {banner.showRetry && onRetry !== undefined ? (
+        <Button appearance="warning" onClick={onRetry}>
+          Retry indexing
+        </Button>
+      ) : null}
     </SectionMessage>
   );
 }

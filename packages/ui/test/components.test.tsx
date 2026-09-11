@@ -253,6 +253,52 @@ describe('IndexingBanner', () => {
     expect(screen.getByText(/HTTP 500 from Jira/)).toBeDefined();
     await expectNoA11yViolations();
   });
+
+  it('offers a retry button on failure, and calls it back on click', async () => {
+    const failed: BackfillProgress = {
+      state: 'failed',
+      issuesProcessed: 3,
+      issuesTotal: 9,
+      fraction: 1 / 3,
+      lastError: 'HTTP 500 from Jira',
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    const onRetry = vi.fn();
+    render(<IndexingBanner banner={toProgressBanner(failed)} onRetry={onRetry} />);
+    const button = screen.getByRole('button', { name: 'Retry indexing' });
+    fireEvent.click(button);
+    expect(onRetry).toHaveBeenCalledOnce();
+    await expectNoA11yViolations();
+  });
+
+  it('renders no retry button when the caller gives none, even on failure', () => {
+    const failed: BackfillProgress = {
+      state: 'failed',
+      issuesProcessed: 3,
+      issuesTotal: 9,
+      fraction: 1 / 3,
+      lastError: 'HTTP 500 from Jira',
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    render(<IndexingBanner banner={toProgressBanner(failed)} />);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('never shows a retry button on a non-failed banner, even if one is given', () => {
+    const running: BackfillProgress = {
+      state: 'running',
+      issuesProcessed: 1,
+      issuesTotal: 4,
+      fraction: 0.25,
+      lastError: null,
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    render(<IndexingBanner banner={toProgressBanner(running)} onRetry={vi.fn()} />);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });
 
 describe('SummaryTiles', () => {

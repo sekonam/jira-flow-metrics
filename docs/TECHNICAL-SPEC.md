@@ -405,6 +405,23 @@ the real `invoke`, its payload validation and its rate limiter all run.
 1. **Report filtering happens partly in memory.** `buildStatusReport` over-fetches issue metadata
    and filters in the resolver. At the page sizes the UI uses this is not the bottleneck; pushing
    the filters into SQL is the first optimisation if a large instance is slow.
+
+   **A 50-issue default limit — fixed.** Found bulk-seeding 150 real issues into one project and
+   watching Time in Status render exactly 50 of them with no indication anything was missing:
+   `ListingRuntime.statusReport` defaulted `limit` to 50 when the frontend sent none (which it
+   never does — `apps/time-in-status/src/frontend/index.tsx` calls `getReport` with no `limit` at
+   all), while every sibling report resolver defaults to 500 or more. Raised to 500 to match; see
+   `packages/forge-runtime/test/forge-runtime.test.ts` "defaults to a limit generous enough for a
+   real project, not a demo one".
+
+   **The 500-issue ceiling itself is real and still silent.** `issueCount` is `filtered.length`
+   computed _after_ `queryIssueMeta` already capped its fetch to `limit + offset` rows — it is a
+   page size, not an independent total. A project past 500 issues would still render a report that
+   looks complete (no truncation banner, `partial` unaffected) while quietly dropping the rest. A
+   true fix needs a separate `COUNT(*)`-style query the resolver doesn't have; not built here
+   because 500 real issues is well past what any of the five listings have been proven against, and
+   inventing that query now would be scope beyond the bug this section is otherwise about.
+
 2. **WIP aging in working hours is approximate.** The stored `business_ms` covers the completed
    portion of the current visit; the still-running remainder is elapsed. Shown as two separate
    numbers rather than one blended one.
@@ -456,6 +473,30 @@ the real `invoke`, its payload validation and its rate limiter all run.
 10. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
     instance-wide row counts and has no project scope, so no app registers it as a resolver. It
     stays as an internal method until there is an admin surface that can authorise it properly.
+
+11. **★ A backfill can stall on a corrupted Jira pagination cursor — not our bug, confirmed live,
+    unresolved.** Bulk-seeding 300 real issues into one project inside about ten minutes
+    (`pnpm run seed:bulk`), every listing's backfill fails **deterministically at exactly 100
+    issues** — two full 50-item pages — with `Jira responded 400 for /rest/api/3/search/jql`.
+    Decoding the rejected `nextPageToken` shows it is not garbage: it is a structured Jira
+    cursor whose payload literally contains the string `TENANT_NOT_FOUND_IN_TENANT_STORE`,
+    Jira's own backend error, baked into what an _earlier, successful_ page-2 response handed
+    back to us as the token to use next. Reproduced independently across two different listings
+    (Worklog Reports, Issue History) against the same project, both stopping at the identical
+    page boundary; retried after several minutes with no change, so this is not resolving on its
+    own the way a transient index-lag issue would. `encodeCursor`/`decodeCursor`
+    (`packages/engine/src/ingest/backfill.ts`) round-trip the raw token unmodified whenever no
+    skip is pending, which rules out our own cursor handling as the cause — the corruption is in
+    what Jira itself returned. The working theory: this free developer site's search index can
+    fall behind badly under a synthetic write burst this fast (300 issues plus hundreds of
+    transitions and worklogs in minutes), and paginating deep into results while that index is
+    still catching up can hand back a broken cursor instead of a 5xx. A real customer project
+    that grows by hundreds of issues in one sitting — a bulk import, a migration — could hit the
+    same wall on its first backfill. No fix is built: the honest options are (a) treat this exact
+    error shape as retryable by restarting the affected page from a computed offset rather than
+    trusting the rejected cursor, or (b) throttle pagination speed after detecting a high-velocity
+    write burst — both are real engineering work, not a one-line patch, and neither has been
+    designed yet.
 
 ---
 

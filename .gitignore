@@ -28,3 +28,7 @@ packages/ui-harness/dist-harness/
 # issues — working notes for one developer's dev site, not sources.
 tools/.seed-state.json
 tools/seed-report.md
+
+# Written by `pnpm run seed:bulk` — same reasoning, the bulk-load sibling.
+tools/.seed-bulk-state.json
+tools/seed-bulk-report.md

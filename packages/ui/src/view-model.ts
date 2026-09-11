@@ -264,6 +264,16 @@ export interface ProgressBanner {
   readonly title: string;
   readonly body: string;
   readonly showSpinner: boolean;
+  /**
+   * Only `failed` sets this. Every other incomplete state either resolves on
+   * its own (`paused` resumes automatically, `running`/`not_started` are
+   * already moving) or coincides with an empty report, where `EmptySurface`
+   * already offers the same action — see `IndexingBanner`'s docstring. A
+   * failed backfill can leave real rows on screen (it fails after processing
+   * some issues, not before), so that empty-state button never renders, and
+   * without this the project has no way back short of reinstalling the app.
+   */
+  readonly showRetry: boolean;
 }
 
 /**
@@ -280,6 +290,7 @@ export function toProgressBanner(progress: BackfillProgress | null): ProgressBan
       title: 'Not indexed yet',
       body: 'Start indexing to build the report for this project.',
       showSpinner: false,
+      showRetry: false,
     };
   }
   switch (progress.state) {
@@ -292,6 +303,7 @@ export function toProgressBanner(progress: BackfillProgress | null): ProgressBan
         title: 'Indexing in progress',
         body: `${describeProgress(progress)} Numbers below cover only the issues indexed so far.`,
         showSpinner: true,
+        showRetry: false,
       };
     case 'paused':
       return {
@@ -301,6 +313,7 @@ export function toProgressBanner(progress: BackfillProgress | null): ProgressBan
           `${describeProgress(progress)} Indexing will resume automatically; ` +
           'this happens on large instances and needs no action.',
         showSpinner: false,
+        showRetry: false,
       };
     case 'failed':
       return {
@@ -308,6 +321,7 @@ export function toProgressBanner(progress: BackfillProgress | null): ProgressBan
         title: 'Indexing failed',
         body: `${describeProgress(progress)} ${progress.lastError ?? 'No error detail was recorded.'}`,
         showSpinner: false,
+        showRetry: true,
       };
     default: {
       const exhaustive: never = progress.state;

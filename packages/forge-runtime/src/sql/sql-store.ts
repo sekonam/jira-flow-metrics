@@ -65,14 +65,30 @@ export class SqlMetricsStore implements MetricsStore {
     private readonly migrator?: SqlMigrator,
   ) {}
 
+  /**
+   * Every resolver method and every issue event calls this unconditionally,
+   * and the composition root in each app caches one runtime — and one store
+   * — per warm container (see each app's `src/runtime.ts`). Without this flag, a
+   * burst of Jira activity re-runs the full migration once per event: Forge
+   * SQL's own migration runner records applied migrations by name, so no DDL
+   * is repeated, but each call still costs a real platform request, and
+   * enough of them in a short window trips `ForgeSQLError: RATE_LIMIT_EXCEEDED`
+   * — observed live bulk-seeding 300 issues into one project. Memoised per
+   * instance, not globally: a failed attempt must be retried on the next
+   * call, not remembered as done.
+   */
+  private migrated = false;
+
   async migrate(): Promise<void> {
+    if (this.migrated) return;
     if (this.migrator !== undefined) {
       await this.migrator.migrate(MIGRATIONS);
-      return;
+    } else {
+      for (const statement of CREATE_STATEMENTS) {
+        await this.sql.execute(statement);
+      }
     }
-    for (const statement of CREATE_STATEMENTS) {
-      await this.sql.execute(statement);
-    }
+    this.migrated = true;
   }
 
   putIssueAggregate(meta: IssueMetaRow, rows: readonly StatusAggregateRow[]): Promise<void> {
