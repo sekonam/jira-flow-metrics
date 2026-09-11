@@ -11,6 +11,8 @@ import AdsLozenge from '@atlaskit/lozenge';
 import AdsSectionMessage from '@atlaskit/section-message';
 import AdsSpinner from '@atlaskit/spinner';
 import AdsDynamicTable from '@atlaskit/dynamic-table';
+import AdsSelect from '@atlaskit/select';
+import { Label as AdsLabel } from '@atlaskit/form/label';
 
 /**
  * A stand-in for the Forge **host** renderer.
@@ -193,6 +195,47 @@ export const Button = ({
 
 export const ButtonGroup = ({ children }: { children?: React.ReactNode }): React.JSX.Element => (
   <AdsButtonGroup>{children}</AdsButtonGroup>
+);
+
+export interface LabelProps {
+  readonly children?: React.ReactNode;
+  readonly labelFor: string;
+}
+
+export const Label = ({ children, labelFor }: LabelProps): React.JSX.Element => (
+  <AdsLabel htmlFor={labelFor}>{children}</AdsLabel>
+);
+
+export interface SelectOption {
+  readonly label: string;
+  readonly value: string;
+}
+
+export interface SelectProps {
+  readonly inputId?: string;
+  readonly options?: readonly SelectOption[];
+  readonly placeholder?: string;
+  readonly isDisabled?: boolean;
+  readonly isLoading?: boolean;
+  readonly onChange?: (option: SelectOption | null) => void;
+}
+
+export const Select = ({
+  inputId,
+  options,
+  placeholder,
+  isDisabled,
+  isLoading,
+  onChange,
+}: SelectProps): React.JSX.Element => (
+  <AdsSelect
+    inputId={inputId ?? 'select'}
+    {...(options === undefined ? {} : { options })}
+    {...(placeholder === undefined ? {} : { placeholder })}
+    {...(isDisabled === undefined ? {} : { isDisabled })}
+    {...(isLoading === undefined ? {} : { isLoading })}
+    {...(onChange === undefined ? {} : { onChange })}
+  />
 );
 
 export interface LozengeProps {

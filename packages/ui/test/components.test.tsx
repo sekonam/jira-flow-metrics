@@ -36,6 +36,7 @@ const {
   CsvExport,
   EmptySurface,
   ErrorSurface,
+  GadgetConfigForm,
   IndexingBanner,
   LoadingSurface,
   PageHeader,
@@ -298,6 +299,46 @@ describe('IndexingBanner', () => {
     };
     render(<IndexingBanner banner={toProgressBanner(running)} onRetry={vi.fn()} />);
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('GadgetConfigForm', () => {
+  const OPTIONS = [
+    { label: 'Abc Project', value: '1' },
+    { label: 'Zed Project', value: '2' },
+  ];
+
+  it('shows a loading state while the project list is still in flight', () => {
+    render(<GadgetConfigForm options={null} saving={false} onSave={vi.fn()} />);
+    expect(screen.getByText('Loading projects')).toBeDefined();
+  });
+
+  it("shows the picker's own error surface when the project list failed", () => {
+    render(<GadgetConfigForm options={null} error="boom" saving={false} onSave={vi.fn()} />);
+    expect(screen.getByText('boom')).toBeDefined();
+  });
+
+  it('disables Save until a project is picked', async () => {
+    render(<GadgetConfigForm options={OPTIONS} saving={false} onSave={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+    await expectNoA11yViolations();
+  });
+
+  it('calls onSave with the selected project id', () => {
+    const onSave = vi.fn();
+    render(<GadgetConfigForm options={OPTIONS} saving={false} onSave={onSave} />);
+    // react-select renders its listbox on focus/open rather than as plain
+    // options in the DOM up front, so this drives it the way a user would:
+    // open the menu, then select an option out of what react-select shows.
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByText('Zed Project'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledWith('2');
+  });
+
+  it('disables the picker and Save while a save is in flight', () => {
+    render(<GadgetConfigForm options={OPTIONS} saving={true} onSave={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
   });
 });
 

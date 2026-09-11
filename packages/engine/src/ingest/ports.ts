@@ -1,5 +1,6 @@
 import type {
   JiraChangelogPage,
+  JiraProjectRef,
   JiraSearchPage,
   JiraWorklogPage,
   JiraIssue,
@@ -49,6 +50,18 @@ export interface JiraApi {
   getWorklogs(issueIdOrKey: string, page: PageParams): Promise<JiraWorklogPage>;
   /** `/rest/api/3/status`, used to resolve status categories and names. */
   getStatuses(): Promise<readonly StatusMeta[]>;
+
+  /**
+   * Projects the **current user** may browse.
+   *
+   * For the dashboard gadget's project picker: a `jira:dashboardGadget`
+   * context carries no project of its own, so the gadget owner chooses one
+   * explicitly. Read as the user for the same reason as
+   * {@link JiraApi.canBrowseProject} — offering a project the picker's own
+   * viewer cannot see would be a permission leak at the point of configuration
+   * rather than at read time.
+   */
+  listProjects(): Promise<readonly JiraProjectRef[]>;
 }
 
 export interface Clock {

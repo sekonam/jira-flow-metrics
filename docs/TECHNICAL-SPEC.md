@@ -440,17 +440,41 @@ the real `invoke`, its payload validation and its rate limiter all run.
    viewer, because doing so would mean an as-user query on every report render, which the
    consumption-priced platform makes prohibitive. **This must be stated in the Marketplace privacy
    statement rather than left for a reviewer to find.**
-7. **★★ The dashboard gadgets probably refuse on a real tenant.** Every project-scoped resolver
-   takes its project from `extension.project.id` in the platform context and fails closed without
-   it — deliberately, because taking it from the payload would let any user read any project. A
-   `jira:projectPage` context carries `extension.project`; a **`jira:dashboardGadget` context is
-   not known to**, because a Jira dashboard is not project-scoped. If that is right, all five
-   gadgets show "This report can only be opened from inside a Jira project." instead of a report.
-   This cannot be settled without a tenant, so the behaviour is pinned by a test rather than
-   guessed at (`apps/time-in-status/test/end-to-end-ui.test.tsx`), and it is item 2a of the tunnel
-   checklist. The likely fix is a project id on the gadget — a configuration field — not a change
-   to the gadget components, which the same test demonstrates by giving the same gadget a context
-   that does carry a project.
+7. **★★ The dashboard gadgets refused on a real tenant — confirmed, and half-fixed.** Every
+   project-scoped resolver takes its project from `extension.project.id` in the platform context
+   and fails closed without it. Confirmed live on 2026-09-11: adding the Time in Status gadget to
+   a real dashboard rendered "This report can only be opened from inside a Jira project." every
+   time — a `jira:dashboardGadget` context genuinely carries no project of its own, unlike
+   `jira:projectPage`.
+
+   **The fix that's done:** an `edit` module (`resource: gadget`, per Forge's own manifest
+   reference) lets the gadget owner choose a project explicitly; `gadget.tsx` checks
+   `context.extension.entryPoint === 'edit'` and renders a picker (`GadgetConfigForm`, backed by a
+   new `listProjects` resolver reading Jira as the calling user) instead of the report; the chosen
+   `projectId` is submitted via `view.submit` and read back through
+   `extension.gadgetConfiguration.projectId` — a second, equally-trustworthy fallback in
+   `projectIdFromContext` (`packages/forge-runtime/src/handlers.ts`), since it arrives through the
+   platform context, never the client payload, exactly like `extension.project.id` does. All of
+   this is unit-tested and deployed.
+
+   **What's still unconfirmed:** whether a person can actually _reach_ that picker. The gadget's
+   own body correctly says "not yet configured — click Edit at the top of the dashboard," but the
+   per-gadget "Настроить" (Configure) menu item that should open edit mode renders **disabled** in
+   this account, on every attempt — before and after redeploying with the corrected manifest shape,
+   before and after deleting and re-adding the gadget instance, and again after a five-minute wait
+   for any Jira-side gadget-definition cache to clear. `forge lint` accepts the manifest, and the
+   shape matches Forge's own documented example verbatim, so the declaration itself is not obviously
+   wrong — but nothing here proves Jira's gadget picker is actually honouring it. Two explanations
+   are equally plausible without more to go on: a longer-lived cache on Atlassian's side than five
+   minutes covers, or a real gap in Forge's `jira:dashboardGadget` + `edit` support that its own
+   docs don't surface. **Only `time-in-status` carries this change as deployed** — the other four
+   apps' manifests and `gadget.tsx` files were updated identically (same `edit` module, same
+   `GadgetConfigForm` wiring) and redeployed, on the reasoning that the code is mechanically
+   identical across all five, but none of the other four were independently re-tested against a
+   live dashboard. Treat all five as equally unconfirmed until "Настроить" is seen enabled in a
+   real session — the fastest next step is trying it from a different Atlassian account, or after a
+   longer wait, before assuming the manifest itself needs more work.
+
 8. **CSV export is reachable — resolved.** `exportCsv` had been defined by all five resolvers,
    implemented in `packages/engine/src/export/csv.ts`, defused against formula injection, covered
    by tests, listed as a v1 feature of every listing — and invoked by nothing, so no user could

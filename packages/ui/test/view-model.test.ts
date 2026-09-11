@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BackfillProgress, StatusReport } from '@jfm/engine';
+import type { BackfillProgress, JiraProjectRef, StatusReport } from '@jfm/engine';
 import {
   formatBytes,
   formatCell,
@@ -9,6 +9,7 @@ import {
   isIndexIncomplete,
   surfaceStateOf,
   toProgressBanner,
+  toProjectOptions,
   toReportTable,
   toSummaryTiles,
 } from '../src/view-model.js';
@@ -329,5 +330,33 @@ describe('indexing banner', () => {
 
   it('treats not_started as indexing in progress', () => {
     expect(toProgressBanner(progress({ state: 'not_started' }))?.showSpinner).toBe(true);
+  });
+});
+
+describe('toProjectOptions', () => {
+  const projects: JiraProjectRef[] = [
+    { id: '2', key: 'ZED', name: 'Zed Project' },
+    { id: '1', key: 'ABC', name: 'Abc Project' },
+  ];
+
+  it('maps id to value and name to label, sorted by label', () => {
+    expect(toProjectOptions(projects)).toEqual([
+      { label: 'Abc Project', value: '1' },
+      { label: 'Zed Project', value: '2' },
+    ]);
+  });
+
+  it('falls back to key, then id, when name is missing', () => {
+    expect(toProjectOptions([{ id: '1', key: 'ABC' }])).toEqual([{ label: 'ABC', value: '1' }]);
+    expect(toProjectOptions([{ id: '1' }])).toEqual([{ label: '1', value: '1' }]);
+  });
+
+  it('drops a project with no id — nothing view.submit could use', () => {
+    expect(toProjectOptions([{ key: 'ABC', name: 'Abc' }])).toEqual([]);
+    expect(toProjectOptions([{ id: '', name: 'Abc' }])).toEqual([]);
+  });
+
+  it('returns an empty list for an empty input', () => {
+    expect(toProjectOptions([])).toEqual([]);
   });
 });

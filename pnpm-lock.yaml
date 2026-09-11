@@ -304,6 +304,9 @@ importers:
       '@atlaskit/dynamic-table':
         specifier: ^19.3.2
         version: 19.3.2(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@atlaskit/form':
+        specifier: ^17.2.0
+        version: 17.2.0(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@atlaskit/heading':
         specifier: ^7.2.0
         version: 7.2.0(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -319,6 +322,9 @@ importers:
       '@atlaskit/section-message':
         specifier: ^10.2.1
         version: 10.2.1(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@atlaskit/select':
+        specifier: ^22.11.1
+        version: 22.11.1(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@atlaskit/spinner':
         specifier: ^20.4.0
         version: 20.4.0(react@18.3.1)

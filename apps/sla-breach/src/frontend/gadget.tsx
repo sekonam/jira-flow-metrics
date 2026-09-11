@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import ForgeReconciler, { Heading, Stack, Text } from '@forge/react';
-import { invoke } from '@forge/bridge';
-import type { SlaReport } from '@jfm/forge-runtime';
-import type { BackfillProgress } from '@jfm/engine';
+import { invoke, view } from '@forge/bridge';
+import { NOT_IN_PROJECT, type SlaReport } from '@jfm/forge-runtime';
+import type { BackfillProgress, JiraProjectRef } from '@jfm/engine';
 import {
   ErrorSurface,
+  GadgetConfigForm,
   LoadingSurface,
   SummaryTiles,
   isIndexIncomplete,
   surfaceStateOf,
+  toProjectOptions,
   toSlaTiles,
+  type ProjectOption,
 } from '@jfm/ui';
 
 /**
@@ -19,13 +22,59 @@ import {
  * app, which is the only organic distribution a Marketplace app has inside a
  * customer. That is why every listing ships one.
  *
+ * ✔ **Confirmed live** (on `time-in-status`) on 2026-09-11: a
+ * `jira:dashboardGadget` context carries no project of its own, unlike
+ * `jira:projectPage`. Adding that gadget to a real dashboard rendered "This
+ * report can only be opened from inside a Jira project" every time, with no
+ * configuration option anywhere on screen — `edit` was not declared in the
+ * manifest. This file carries the same fix, applied identically rather than
+ * independently re-verified — see TECHNICAL-SPEC.md § 11 item 7 for what is
+ * and is not confirmed for this specific app.
+ *
  * ⚠️ Rendered in tests only against the harness's stand-in host renderer, never
  * on Forge; see `docs/RUNBOOK.md`.
  */
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
-export const Gadget = (): React.JSX.Element => {
+/** Edit mode: choose which project this gadget reports on. */
+const GadgetEdit = (): React.JSX.Element => {
+  const [options, setOptions] = useState<ProjectOption[] | null>(null);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = (await invoke('listProjects', {})) as Result<readonly JiraProjectRef[]>;
+        if (cancelled) return;
+        if (result.ok) setOptions(toProjectOptions(result.data));
+        else setError(result.error);
+      } catch {
+        if (!cancelled) setError('Could not load your projects.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <GadgetConfigForm
+      options={options}
+      error={error}
+      saving={saving}
+      onSave={(projectId) => {
+        setSaving(true);
+        void view.submit({ projectId });
+      }}
+    />
+  );
+};
+
+/** View mode: the report itself, for whichever project was configured. */
+const GadgetView = (): React.JSX.Element => {
   const [report, setReport] = useState<SlaReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +118,18 @@ export const Gadget = (): React.JSX.Element => {
   const state = surfaceStateOf({ loading, error, rowCount });
 
   if (state === 'loading') return <LoadingSurface label="Loading" />;
-  if (state === 'error') return <ErrorSurface message={error ?? 'Unknown error'} />;
+  if (state === 'error') {
+    // NOT_IN_PROJECT here means "configured with a project this gadget could
+    // not read" rather than the page-context failure the message describes —
+    // by the time this runs, the gadget has always been configured (edit
+    // mode is the only other state), so a friendlier, actionable message
+    // beats repeating the generic one.
+    const message =
+      error === NOT_IN_PROJECT
+        ? 'This gadget could not read its configured project. Edit the gadget and choose it again.'
+        : (error ?? 'Unknown error');
+    return <ErrorSurface message={message} />;
+  }
   if (report === null || state === 'empty')
     return <Text>Nothing to show for this project yet.</Text>;
 
@@ -80,6 +140,25 @@ export const Gadget = (): React.JSX.Element => {
       {partial ? <Text size="small">Indexing is still in progress.</Text> : null}
     </Stack>
   );
+};
+
+export const Gadget = (): React.JSX.Element => {
+  const [entryPoint, setEntryPoint] = useState<'edit' | 'view' | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void view.getContext().then((context) => {
+      if (cancelled) return;
+      const extension = context.extension as { entryPoint?: string } | undefined;
+      setEntryPoint(extension?.entryPoint === 'edit' ? 'edit' : 'view');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (entryPoint === null) return <LoadingSurface label="Loading" />;
+  return entryPoint === 'edit' ? <GadgetEdit /> : <GadgetView />;
 };
 
 ForgeReconciler.render(

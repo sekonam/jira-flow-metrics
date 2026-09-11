@@ -7,6 +7,7 @@ import {
   type JiraChangelogEntry,
   type JiraChangelogPage,
   type JiraIssue,
+  type JiraProjectRef,
   type JiraSearchPage,
   type JiraWorklogEntry,
   type JiraWorklogPage,
@@ -290,6 +291,10 @@ export class FixtureJira implements JiraApi {
   getStatuses(): Promise<readonly StatusMeta[]> {
     this.requests.push('status');
     return Promise.resolve(this.statuses);
+  }
+
+  listProjects(): Promise<readonly JiraProjectRef[]> {
+    return Promise.resolve([]);
   }
 
   private find(issueIdOrKey: string): FixtureIssue {

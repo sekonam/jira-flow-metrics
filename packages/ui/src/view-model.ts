@@ -4,6 +4,7 @@ import {
   formatJiraDuration,
   type BackfillProgress,
   type DistributionSummary,
+  type JiraProjectRef,
   type Millis,
   type StatusReport,
   type StatusReportRow,
@@ -351,4 +352,26 @@ export function formatBytes(bytes: number): string {
   }
   const rounded = value >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
   return `${rounded} ${units[unit] ?? 'B'}`;
+}
+
+/** One selectable entry in the dashboard gadget's project picker. */
+export interface ProjectOption {
+  readonly label: string;
+  readonly value: string;
+}
+
+/**
+ * Turn `listProjects` results into `Select` options, sorted by name.
+ *
+ * A project missing an id is not offerable — `view.submit` needs a real
+ * value to configure the gadget with — so it is dropped rather than shown
+ * with a broken selection. `key`/`name` are both optional in Jira's own
+ * type; when `name` is absent the key stands in, and when both are absent
+ * the id does, so the picker never renders a blank row.
+ */
+export function toProjectOptions(projects: readonly JiraProjectRef[]): ProjectOption[] {
+  return projects
+    .filter((p): p is JiraProjectRef & { id: string } => typeof p.id === 'string' && p.id !== '')
+    .map((p) => ({ label: p.name ?? p.key ?? p.id, value: p.id }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }

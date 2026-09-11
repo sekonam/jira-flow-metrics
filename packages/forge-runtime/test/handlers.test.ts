@@ -5,6 +5,7 @@ import {
   MemoryStore,
   type JiraApi,
   type JiraIssue,
+  type JiraProjectRef,
   type JiraSearchPage,
   type StatusMeta,
 } from '@jfm/engine';
@@ -20,6 +21,7 @@ import {
   handleExportCsv,
   handleGetReport,
   handleIssueEvent,
+  handleListProjects,
   handleStartIndexing,
   handleStorageEstimate,
   NOT_IN_PROJECT,
@@ -68,6 +70,10 @@ class StubJira implements JiraApi {
   getStatuses(): Promise<readonly StatusMeta[]> {
     return Promise.resolve([{ id: '3', name: 'In Progress', category: 'inprogress' }]);
   }
+  projects: JiraProjectRef[] = [];
+  listProjects(): Promise<readonly JiraProjectRef[]> {
+    return Promise.resolve(this.projects);
+  }
 }
 
 function build() {
@@ -101,6 +107,25 @@ describe('resolver context', () => {
     expect(projectIdFromContext({ extension: { project: { id: '' } } })).toBeNull();
     expect(projectIdFromContext(null)).toBeNull();
     expect(projectIdFromContext('nope')).toBeNull();
+  });
+
+  it('falls back to the gadget configuration when there is no project page context', () => {
+    // A jira:dashboardGadget context carries no project of its own — confirmed
+    // live, every gadget refused until this fallback existed — so the
+    // gadget's own configured project id is the only source it has.
+    expect(
+      projectIdFromContext({ extension: { gadgetConfiguration: { projectId: '10033' } } }),
+    ).toBe('10033');
+    // extension.project still wins when both are somehow present.
+    expect(
+      projectIdFromContext({
+        extension: { project: { id: '1' }, gadgetConfiguration: { projectId: '2' } },
+      }),
+    ).toBe('1');
+    expect(
+      projectIdFromContext({ extension: { gadgetConfiguration: { projectId: '' } } }),
+    ).toBeNull();
+    expect(projectIdFromContext({ extension: { gadgetConfiguration: {} } })).toBeNull();
   });
 
   it('refuses to serve a report without a project context', async () => {
@@ -374,6 +399,24 @@ describe('listing-specific resolvers', () => {
     const { runtime, store } = build();
     store.estimateBytes = () => Promise.reject(new Error('disk on fire'));
     const result = await handleStorageEstimate(runtime);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toContain('fire');
+  });
+
+  it('lists the projects the gadget picker offers, from the calling user', async () => {
+    const { runtime, jira } = build();
+    jira.projects = [{ id: '10033', key: 'JFMB', name: 'Flow Metrics Bulk Seed' }];
+    const result = await handleListProjects(runtime);
+    expect(result).toEqual({
+      ok: true,
+      data: [{ id: '10033', key: 'JFMB', name: 'Flow Metrics Bulk Seed' }],
+    });
+  });
+
+  it('reports a project-listing failure without leaking the cause', async () => {
+    const { runtime, jira } = build();
+    jira.listProjects = () => Promise.reject(new Error('tenant store on fire'));
+    const result = await handleListProjects(runtime);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).not.toContain('fire');
   });

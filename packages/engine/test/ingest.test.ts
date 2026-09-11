@@ -784,6 +784,7 @@ describe('issue security levels', () => {
       getChangelog: () => Promise.resolve({ values: [], total: 0, isLast: true }),
       getWorklogs: () => Promise.resolve({ worklogs: [], total: 0 }),
       getStatuses: () => Promise.resolve([]),
+      listProjects: () => Promise.resolve([]),
     };
     const d = {
       api,
@@ -808,6 +809,7 @@ describe('issue security levels', () => {
       getChangelog: () => Promise.resolve({ values: [], total: 0, isLast: true }),
       getWorklogs: () => Promise.resolve({ worklogs: [], total: 0 }),
       getStatuses: () => Promise.resolve([]),
+      listProjects: () => Promise.resolve([]),
     };
     const d = {
       api,

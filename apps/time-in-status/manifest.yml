@@ -26,6 +26,16 @@ modules:
       render: native
       resolver:
         function: resolver
+      # Lets the gadget owner pick a project — a jira:dashboardGadget context
+      # carries no project of its own, confirmed live 2026-09-11 (every
+      # gadget refused with "This report can only be opened from inside a
+      # Jira project" until this existed, with no way to fix it from the
+      # dashboard). Reuses the same resource: gadget.tsx checks
+      # `context.extension.entryPoint` and renders the picker instead of the
+      # report. Exact shape unverified against Forge's manifest schema until
+      # `forge lint` runs.
+      edit:
+        resource: gadget
       title: Time in Status
       description: Cumulative time each issue has spent in every status, including
         re-entries.

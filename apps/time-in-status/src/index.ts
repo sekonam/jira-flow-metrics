@@ -5,6 +5,7 @@ import {
   handleGetReport,
   handleIndexProgress,
   handleIssueEvent,
+  handleListProjects,
   handleStartIndexing,
   projectIdFromEvent,
 } from '@jfm/forge-runtime';
@@ -29,6 +30,9 @@ resolver.define('startIndexing', (req) => handleStartIndexing(getRuntime(), req)
 // need only "is indexing finished?" — asking `getReport` for that ran a whole
 // aggregation on the surface that renders most often.
 resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), req));
+// The dashboard gadget's edit-mode project picker. No project context exists
+// yet at this point — that is what the picker is for.
+resolver.define('listProjects', () => handleListProjects(getRuntime()));
 
 export const handler = resolver.getDefinitions();
 

@@ -5,6 +5,7 @@ import type {
   JiraChangelogEntry,
   JiraChangelogPage,
   JiraIssue,
+  JiraProjectRef,
   JiraSearchPage,
   JiraWorklogPage,
 } from '../src/jira/types.js';
@@ -83,6 +84,7 @@ export interface FakeJiraOptions {
   readonly changelogPageSize?: number;
   /** What `canBrowseProject` answers. Defaults to true. */
   readonly canBrowse?: boolean;
+  readonly projects?: readonly JiraProjectRef[];
 }
 
 /** Fixture-backed `JiraApi`. Records every call for assertions. */
@@ -156,6 +158,10 @@ export class FakeJiraApi implements JiraApi {
 
   getStatuses(): Promise<readonly StatusMeta[]> {
     return Promise.resolve(this.options.statuses ?? TEST_STATUSES);
+  }
+
+  listProjects(): Promise<readonly JiraProjectRef[]> {
+    return Promise.resolve(this.options.projects ?? []);
   }
 }
 

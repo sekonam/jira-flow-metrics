@@ -36,11 +36,13 @@
   "dependencies": {
     "@atlaskit/button": "^25.3.2",
     "@atlaskit/dynamic-table": "^19.3.2",
+    "@atlaskit/form": "^17.2.0",
     "@atlaskit/heading": "^7.2.0",
     "@atlaskit/lozenge": "^15.4.1",
     "@atlaskit/platform-feature-flags": "^2.2.0",
     "@atlaskit/primitives": "^22.5.0",
     "@atlaskit/section-message": "^10.2.1",
+    "@atlaskit/select": "^22.11.1",
     "@atlaskit/spinner": "^20.4.0",
     "@atlaskit/tokens": "^1.61.0",
     "@forge/bridge": "^6.3.1",

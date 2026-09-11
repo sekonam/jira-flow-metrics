@@ -15,6 +15,7 @@ import {
   type IngestDatasets,
   type JiraApi,
   type JiraIssueUpdatedEvent,
+  type JiraProjectRef,
   type Logger,
   type MetricsStore,
   type Millis,
@@ -309,6 +310,11 @@ export class ListingRuntime {
         'Estimated from row counts and per-row size constants, not measured on disk. ' +
         'Check the real figure against your Forge usage dashboard.',
     };
+  }
+
+  /** Projects the calling user may browse — the dashboard gadget's picker. */
+  async listProjects(): Promise<readonly JiraProjectRef[]> {
+    return this.deps.api.listProjects();
   }
 
   get listingId(): string {

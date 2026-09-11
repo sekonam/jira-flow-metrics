@@ -5,6 +5,8 @@ import {
   type JiraApi,
   type JiraChangelogPage,
   type JiraIssue,
+  type JiraProjectRef,
+  type JiraProjectSearchPage,
   type JiraSearchPage,
   type JiraStatusRef,
   type JiraWorklogPage,
@@ -171,6 +173,22 @@ export class JiraRestClient implements JiraApi {
         name: s.name ?? s.id,
         category: toStatusCategory(s.statusCategory?.key),
       }));
+  }
+
+  /**
+   * Scoped by Jira itself to what the calling user may browse — same
+   * `fetchAsUser` transport as {@link canBrowseProject}, for the same reason:
+   * this is the project picker in the dashboard gadget's config screen, and
+   * offering a project its own viewer cannot see would leak at configuration
+   * time rather than at read time.
+   */
+  async listProjects(): Promise<readonly JiraProjectRef[]> {
+    const query = new URLSearchParams({ maxResults: '50' });
+    const page = await this.request<JiraProjectSearchPage>(
+      `/rest/api/3/project/search?${query.toString()}`,
+      this.fetchAsUser,
+    );
+    return page.values ?? [];
   }
 
   private get<T>(path: string): Promise<T> {

@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import ForgeReconciler, { Heading, Stack, Text } from '@forge/react';
-import { invoke } from '@forge/bridge';
-import type { ReportEnvelope } from '@jfm/forge-runtime';
+import { invoke, view } from '@forge/bridge';
+import type { JiraProjectRef } from '@jfm/engine';
+import { NOT_IN_PROJECT, type ReportEnvelope } from '@jfm/forge-runtime';
 import {
   ErrorSurface,
+  GadgetConfigForm,
   LoadingSurface,
   SummaryTiles,
   isIndexIncomplete,
   surfaceStateOf,
+  toProjectOptions,
   toSummaryTiles,
+  type ProjectOption,
 } from '@jfm/ui';
 
 /**
@@ -20,13 +24,61 @@ import {
  * gets seen by people who did not install the app, which is the only organic
  * distribution a Marketplace app gets inside a customer.
  *
- * ⚠️ Rendered in tests only against the harness's stand-in host renderer, never
- * on Forge; see `docs/RUNBOOK.md`.
+ * ✔ **Confirmed live** on 2026-09-11: a `jira:dashboardGadget` context carries
+ * no project of its own, unlike `jira:projectPage`. Adding this gadget to a
+ * real dashboard rendered "This report can only be opened from inside a Jira
+ * project" every time, with no configuration option anywhere on screen —
+ * `edit` was not declared in the manifest, so Jira offered no way to fix it.
+ * The two things below exist because of that: `edit-mode` config screen, and
+ * `NOT_IN_PROJECT` read from `context.extension.gadgetConfiguration.projectId`
+ * server-side (see `projectIdFromContext` in `packages/forge-runtime`).
+ *
+ * ⚠️ The edit screen itself is unverified beyond one manual pass: Forge's own
+ * docs do not show the full config data flow (what `view.submit` accepts, how
+ * `gadgetConfiguration` reaches the resolver), so treat this file's two
+ * components as the acceptance test for that contract, not as proven.
  */
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
-export const Gadget = (): React.JSX.Element => {
+/** Edit mode: choose which project this gadget reports on. */
+const GadgetEdit = (): React.JSX.Element => {
+  const [options, setOptions] = useState<ProjectOption[] | null>(null);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = (await invoke('listProjects', {})) as Result<readonly JiraProjectRef[]>;
+        if (cancelled) return;
+        if (result.ok) setOptions(toProjectOptions(result.data));
+        else setError(result.error);
+      } catch {
+        if (!cancelled) setError('Could not load your projects.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <GadgetConfigForm
+      options={options}
+      error={error}
+      saving={saving}
+      onSave={(projectId) => {
+        setSaving(true);
+        void view.submit({ projectId });
+      }}
+    />
+  );
+};
+
+/** View mode: the report itself, for whichever project was configured. */
+const GadgetView = (): React.JSX.Element => {
   const [envelope, setEnvelope] = useState<ReportEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +105,18 @@ export const Gadget = (): React.JSX.Element => {
   const state = surfaceStateOf({ loading, error, rowCount: envelope?.report.rows.length ?? 0 });
 
   if (state === 'loading') return <LoadingSurface label="Loading" />;
-  if (state === 'error') return <ErrorSurface message={error ?? 'Unknown error'} />;
+  if (state === 'error') {
+    // NOT_IN_PROJECT here means "configured with a project this gadget could
+    // not read" rather than the page-context failure the message describes —
+    // by the time this runs, the gadget has always been configured (edit
+    // mode is the only other state), so a friendlier, actionable message
+    // beats repeating the generic one.
+    const message =
+      error === NOT_IN_PROJECT
+        ? 'This gadget could not read its configured project. Edit the gadget and choose it again.'
+        : (error ?? 'Unknown error');
+    return <ErrorSurface message={message} />;
+  }
   if (state === 'empty' || envelope === null) {
     return <Text>No indexed issues in this project yet.</Text>;
   }
@@ -73,6 +136,25 @@ export const Gadget = (): React.JSX.Element => {
       ) : null}
     </Stack>
   );
+};
+
+export const Gadget = (): React.JSX.Element => {
+  const [entryPoint, setEntryPoint] = useState<'edit' | 'view' | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void view.getContext().then((context) => {
+      if (cancelled) return;
+      const extension = context.extension as { entryPoint?: string } | undefined;
+      setEntryPoint(extension?.entryPoint === 'edit' ? 'edit' : 'view');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (entryPoint === null) return <LoadingSurface label="Loading" />;
+  return entryPoint === 'edit' ? <GadgetEdit /> : <GadgetView />;
 };
 
 ForgeReconciler.render(

@@ -22,6 +22,14 @@ modules:
       render: native
       resolver:
         function: resolver
+      # Lets the gadget owner pick a project — a jira:dashboardGadget context
+      # carries no project of its own. See TECHNICAL-SPEC.md § 11 item 7 for
+      # the live finding this responds to, and its unresolved status: the
+      # manifest shape matches Forge's own docs and passes forge lint, but
+      # whether Jira's gadget picker actually exposes a working Configure
+      # affordance for it has not been independently confirmed for this app.
+      edit:
+        resource: gadget
       title: Field changes
       description: Filterable, exportable field-change history across every issue in a
         project.

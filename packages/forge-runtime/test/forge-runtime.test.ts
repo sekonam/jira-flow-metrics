@@ -9,6 +9,7 @@ import {
   type IssueMetaRow,
   type JiraApi,
   type JiraIssue,
+  type JiraProjectRef,
   type JiraSearchPage,
   type Sleeper,
   type StatusAggregateRow,
@@ -627,6 +628,31 @@ describe('JiraRestClient', () => {
     ]);
   });
 
+  it('lists projects as the calling user, not the app', async () => {
+    const asAppCalls: string[] = [];
+    const asUserPaths: string[] = [];
+    const client = new JiraRestClient(
+      (path) => {
+        asAppCalls.push(path);
+        return Promise.reject(new Error('listProjects must not read as the app'));
+      },
+      (path) => {
+        asUserPaths.push(path);
+        return Promise.resolve(
+          respond(200, {
+            values: [{ id: '10000', key: 'FLOW', name: 'Flow' }],
+            isLast: true,
+          }),
+        );
+      },
+    );
+    const projects = await client.listProjects();
+    expect(asAppCalls).toEqual([]);
+    expect(asUserPaths[0]).toContain('/rest/api/3/project/search?');
+    expect(asUserPaths[0]).toContain('maxResults=50');
+    expect(projects).toEqual([{ id: '10000', key: 'FLOW', name: 'Flow' }]);
+  });
+
   it('turns an HTTP failure into a retryable HttpError with Retry-After', async () => {
     const client = new JiraRestClient(
       () => Promise.resolve(respond(429, 'too many', { 'Retry-After': '30' })),
@@ -812,6 +838,9 @@ describe('ListingRuntime', () => {
         { id: '10000', name: 'To Do', category: 'todo' },
         { id: '3', name: 'In Progress', category: 'inprogress' },
       ]);
+    }
+    listProjects(): Promise<readonly JiraProjectRef[]> {
+      return Promise.resolve([{ id: '10000', key: 'FLOW', name: 'Flow' }]);
     }
   }
 

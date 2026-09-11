@@ -167,7 +167,7 @@ describe('end to end: recorded Jira payloads to pixels', () => {
 });
 
 /**
- * ★ The dashboard gadget's context, and an unresolved risk.
+ * ★ The dashboard gadget's context — confirmed live, and half-fixed.
  *
  * Every project-scoped resolver takes its project from the platform context,
  * never from the payload — `projectIdFromContext` reads `extension.project.id`
@@ -176,20 +176,25 @@ describe('end to end: recorded Jira payloads to pixels', () => {
  * project.
  *
  * A `jira:projectPage` context carries `extension.project`. **A
- * `jira:dashboardGadget` context is not known to.** A Jira dashboard is not
- * project-scoped, and Atlassian's documented gadget context describes
- * `gadgetConfiguration`, `dashboard` and `gadget` — no project. If that is
- * right, every gadget in this repository refuses on a real tenant and shows
- * the message below instead of a report.
+ * `jira:dashboardGadget` context does not** — confirmed live on 2026-09-11,
+ * not just documented: adding this gadget to a real dashboard rendered "This
+ * report can only be opened from inside a Jira project" every time, exactly
+ * as this suite had pinned it.
  *
- * It cannot be settled from here: no Forge tenant, no way to print a real
- * context. So the behaviour is pinned rather than guessed at. This test is the
- * evidence for `docs/RUNBOOK.md` § 3 item 2a and TECHNICAL-SPEC § 11, and it
- * fails the moment someone makes the gadget resolve a project some other way —
- * which is the fix, not this assertion.
+ * The fix: `projectIdFromContext` also reads
+ * `extension.gadgetConfiguration.projectId`, populated by a manifest `edit`
+ * module (`gadget.tsx` branches on `context.extension.entryPoint === 'edit'`
+ * to render a project picker instead of the report). That data still arrives
+ * through the platform context, never the client payload, so the security
+ * boundary above is unchanged. What is **not** confirmed live: whether Jira's
+ * gadget picker actually exposes a working "Configure" action for this
+ * `edit` module — see TECHNICAL-SPEC.md § 11 item 7. This suite covers the
+ * part that is provably correct from here: given a context carrying
+ * `gadgetConfiguration.projectId`, the resolver resolves it and the report
+ * renders; given neither source, it refuses and says so.
  */
 describe('★ a gadget context without a project', () => {
-  const DASHBOARD_CONTEXT = {
+  const UNCONFIGURED_CONTEXT = {
     extension: {
       type: 'jira:dashboardGadget',
       gadgetConfiguration: {},
@@ -201,13 +206,19 @@ describe('★ a gadget context without a project', () => {
   it('is refused, and the gadget says so instead of showing numbers', async () => {
     const { runtime } = await runPipeline();
     setBridgeResolvers({
-      getReport: (payload) => handleGetReport(runtime, { context: DASHBOARD_CONTEXT, payload }),
+      getReport: (payload) => handleGetReport(runtime, { context: UNCONFIGURED_CONTEXT, payload }),
     });
     const { Gadget } = await import('../src/frontend/gadget.js');
     render(<Gadget />);
 
+    // The friendlier, actionable message a *view*-mode gadget shows once it
+    // has been through edit mode at least once — by construction the only
+    // other state this component has — rather than the generic
+    // page-context refusal `NOT_IN_PROJECT` was written to describe.
     expect(
-      await screen.findByText('This report can only be opened from inside a Jira project.'),
+      await screen.findByText(
+        'This gadget could not read its configured project. Edit the gadget and choose it again.',
+      ),
     ).toBeDefined();
     // And emphatically not the report it would show on a project page.
     expect(screen.queryByText(/In Progress · median/)).toBeNull();
@@ -222,6 +233,29 @@ describe('★ a gadget context without a project', () => {
           // So the fix is a project id on the gadget — a configuration field,
           // or a different module — not a change to the gadget's code.
           context: { extension: { type: 'jira:dashboardGadget', project: { id: '10000' } } },
+          payload,
+        }),
+    });
+    const { Gadget } = await import('../src/frontend/gadget.js');
+    render(<Gadget />);
+    expect(await screen.findByText(/In Progress · median/)).toBeDefined();
+  });
+
+  it('resolves the project from the gadget configuration once one has been chosen', async () => {
+    const { runtime } = await runPipeline();
+    setBridgeResolvers({
+      // No `extension.project` at all — only what edit mode would have
+      // submitted via `view.submit({ projectId })`. This is the real path a
+      // configured dashboard gadget takes; `extension.project` never exists
+      // on a `jira:dashboardGadget` context in the first place.
+      getReport: (payload) =>
+        handleGetReport(runtime, {
+          context: {
+            extension: {
+              type: 'jira:dashboardGadget',
+              gadgetConfiguration: { projectId: '10000' },
+            },
+          },
           payload,
         }),
     });

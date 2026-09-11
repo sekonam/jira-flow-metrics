@@ -7,7 +7,7 @@ import type {
   SlaReport,
   WorklogReportRequest,
 } from './reports.js';
-import type { BackfillProgress, WorklogAggregateResult } from '@jfm/engine';
+import type { BackfillProgress, JiraProjectRef, WorklogAggregateResult } from '@jfm/engine';
 
 /**
  * Handler bodies, shared by all five listings.
@@ -35,19 +35,46 @@ export interface ResolverInvocation {
  * any user of the instance read any project's metrics regardless of their Jira
  * permissions. The context is set by the platform from the page the user is
  * actually on, so it is the only trustworthy source.
+ *
+ * Two sources, tried in order:
+ *
+ * 1. `extension.project.id` — a `jira:projectPage` context carries this
+ *    directly, because the page itself is inside a project.
+ * 2. `extension.gadgetConfiguration.projectId` — a `jira:dashboardGadget`
+ *    context carries no project of its own (confirmed live: every gadget
+ *    refused with "This report can only be opened from inside a Jira
+ *    project" the first time one was added to a real dashboard), so the
+ *    gadget owner chooses one explicitly through its edit mode. This is
+ *    still context, not payload — Forge stores the submitted configuration
+ *    itself and injects it server-side, so the trust boundary this function
+ *    exists to enforce is unchanged. `authoriseProject` still checks the
+ *    *viewer's* permission afterwards regardless of who configured it.
  */
 export function projectIdFromContext(context: unknown): string | null {
   if (typeof context !== 'object' || context === null) return null;
-  const record = context as Record<string, unknown>;
-  const extension = record['extension'];
-  if (typeof extension === 'object' && extension !== null) {
-    const project = (extension as Record<string, unknown>)['project'];
-    if (typeof project === 'object' && project !== null) {
-      const id = (project as Record<string, unknown>)['id'];
-      if (typeof id === 'string' && id !== '') return id;
-      if (typeof id === 'number') return String(id);
-    }
+  const extension = (context as Record<string, unknown>)['extension'];
+  if (typeof extension !== 'object' || extension === null) return null;
+  const record = extension as Record<string, unknown>;
+
+  const project = record['project'];
+  if (typeof project === 'object' && project !== null) {
+    const id = idOf(project as Record<string, unknown>);
+    if (id !== null) return id;
   }
+
+  const gadgetConfiguration = record['gadgetConfiguration'];
+  if (typeof gadgetConfiguration === 'object' && gadgetConfiguration !== null) {
+    const id = (gadgetConfiguration as Record<string, unknown>)['projectId'];
+    if (typeof id === 'string' && id !== '') return id;
+  }
+
+  return null;
+}
+
+function idOf(record: Record<string, unknown>): string | null {
+  const id = record['id'];
+  if (typeof id === 'string' && id !== '') return id;
+  if (typeof id === 'number') return String(id);
   return null;
 }
 
@@ -236,6 +263,25 @@ export async function handleStorageEstimate(
   runtime.beginInvocation();
   try {
     return { ok: true, data: await runtime.storageEstimate() };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
+ * The dashboard gadget's project picker.
+ *
+ * No project-scoped authorisation here — there is no project yet, that is
+ * the whole point of this call. `listProjects` itself asks Jira as the
+ * calling user, which is what keeps the picker from ever offering a project
+ * that user cannot see.
+ */
+export async function handleListProjects(
+  runtime: ListingRuntime,
+): Promise<HandlerResult<readonly JiraProjectRef[]>> {
+  runtime.beginInvocation();
+  try {
+    return { ok: true, data: await runtime.listProjects() };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }

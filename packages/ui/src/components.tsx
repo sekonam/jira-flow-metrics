@@ -14,14 +14,16 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
+  Label,
   ModalTransition,
   SectionMessage,
+  Select,
   Spinner,
   Stack,
   Strong,
   Text,
 } from '@forge/react';
-import type { ProgressBanner, ReportTableModel, SummaryTile } from './view-model.js';
+import type { ProgressBanner, ProjectOption, ReportTableModel, SummaryTile } from './view-model.js';
 import type { SimpleTable } from './listing-models.js';
 
 /**
@@ -109,6 +111,58 @@ export function EmptySurface({
         ) : undefined
       }
     />
+  );
+}
+
+/**
+ * The dashboard gadget's edit-mode project picker.
+ *
+ * A `jira:dashboardGadget` context carries no project of its own — confirmed
+ * live, every gadget refused with "This report can only be opened from
+ * inside a Jira project" the first time one was added to a real dashboard —
+ * so the gadget owner chooses one explicitly here, once, through Jira's own
+ * edit-mode chrome. `onSave` is expected to call `view.submit`, which is a
+ * bridge API this package does not depend on directly, keeping the picker
+ * testable without Forge.
+ */
+export function GadgetConfigForm({
+  options,
+  error,
+  saving,
+  onSave,
+}: {
+  options: readonly ProjectOption[] | null;
+  error?: string | undefined;
+  saving: boolean;
+  onSave: (projectId: string) => void;
+}): React.JSX.Element {
+  const [selected, setSelected] = React.useState<ProjectOption | null>(null);
+
+  if (error !== undefined) return <ErrorSurface message={error} />;
+  if (options === null) return <LoadingSurface label="Loading projects" />;
+
+  return (
+    <Stack space="space.150">
+      <Text>Choose the project this gadget reports on.</Text>
+      <Label labelFor="gadget-config-project">Project</Label>
+      <Select
+        inputId="gadget-config-project"
+        options={options}
+        placeholder="Select a project"
+        isLoading={saving}
+        isDisabled={saving}
+        onChange={(option) => setSelected(option as ProjectOption | null)}
+      />
+      <Button
+        appearance="primary"
+        isDisabled={selected === null || saving}
+        onClick={() => {
+          if (selected !== null) onSave(selected.value);
+        }}
+      >
+        Save
+      </Button>
+    </Stack>
   );
 }
 

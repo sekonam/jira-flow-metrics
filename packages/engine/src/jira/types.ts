@@ -126,6 +126,18 @@ export interface JiraSearchPage {
   readonly total?: number;
 }
 
+export interface JiraProjectRef {
+  readonly id?: string;
+  readonly key?: string;
+  readonly name?: string;
+}
+
+/** `/rest/api/3/project/search` — scoped by Jira to what the caller may browse. */
+export interface JiraProjectSearchPage {
+  readonly values?: readonly JiraProjectRef[];
+  readonly isLast?: boolean;
+}
+
 /** Payload shape of the `avi:jira:updated:issue` Forge product event. */
 export interface JiraIssueUpdatedEvent {
   readonly eventType?: string;
