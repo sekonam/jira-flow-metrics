@@ -146,10 +146,17 @@ export class SqlMetricsStore implements MetricsStore {
   }
 
   async queryIssueMeta(projectId: string, limit: number, offset: number): Promise<IssueMetaRow[]> {
+    // LIMIT/OFFSET are inlined, not bound, and that is deliberate: this is the
+    // fourth Forge SQL call shape this repository has had to learn is unsafe
+    // to assume from the docs rather than confirm live (see `settings.ts` and
+    // `executor.ts` for the other three). `clampLimit`/`clampOffset` guarantee
+    // a `Math.trunc`ed, range-bound plain integer, so inlining carries no
+    // injection risk — the same reasoning `placeholders()` already relies on
+    // elsewhere in this file for a parameter *count*.
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_meta WHERE project_id = ?
-       ORDER BY created_at ASC, issue_id ASC LIMIT ? OFFSET ?`,
-      [projectId, clampLimit(limit), clampOffset(offset)],
+       ORDER BY created_at ASC, issue_id ASC LIMIT ${String(clampLimit(limit))} OFFSET ${String(clampOffset(offset))}`,
+      [projectId],
     );
     return rows.map(issueMetaFromRow);
   }
@@ -165,10 +172,11 @@ export class SqlMetricsStore implements MetricsStore {
       clauses.push(`status_id IN (${placeholders(query.statusIds.length)})`);
       params.push(...query.statusIds);
     }
-    params.push(clampLimit(query.limit ?? 10_000), clampOffset(query.offset ?? 0));
+    const limit = clampLimit(query.limit ?? 10_000);
+    const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_status_agg WHERE ${clauses.join(' AND ')}
-       ORDER BY issue_id ASC, status_id ASC LIMIT ? OFFSET ?`,
+       ORDER BY issue_id ASC, status_id ASC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
       params,
     );
     return rows.map(statusAggregateFromRow);
@@ -246,10 +254,11 @@ export class SqlMetricsStore implements MetricsStore {
       clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
       params.push(...query.authorAccountIds);
     }
-    params.push(clampLimit(query.limit ?? 10_000), clampOffset(query.offset ?? 0));
+    const limit = clampLimit(query.limit ?? 10_000);
+    const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM worklog WHERE ${clauses.join(' AND ')}
-       ORDER BY started_at ASC, worklog_id ASC LIMIT ? OFFSET ?`,
+       ORDER BY started_at ASC, worklog_id ASC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
       params,
     );
     return rows.map(worklogFromRow);
@@ -288,10 +297,11 @@ export class SqlMetricsStore implements MetricsStore {
       clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
       params.push(...query.authorAccountIds);
     }
-    params.push(clampLimit(query.limit ?? 10_000), clampOffset(query.offset ?? 0));
+    const limit = clampLimit(query.limit ?? 10_000);
+    const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_history WHERE ${clauses.join(' AND ')}
-       ORDER BY changed_at ASC, change_id ASC LIMIT ? OFFSET ?`,
+       ORDER BY changed_at ASC, change_id ASC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
       params,
     );
     return rows.map(historyFromRow);

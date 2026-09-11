@@ -316,10 +316,13 @@ describe('SqlMetricsStore statement generation', () => {
   });
 
   it('clamps limits so no query can read the whole table', async () => {
+    // LIMIT/OFFSET are inlined into the statement text, not bound — see the
+    // comment on queryIssueMeta for why — so the clamp is asserted there.
     const sql = new RecordingSqlExecutor();
     const store = new SqlMetricsStore(sql);
     await store.queryIssueMeta('10000', 10_000_000, -5);
-    expect(sql.statements[0]?.params).toEqual(['10000', 10_000, 0]);
+    expect(sql.statements[0]?.params).toEqual(['10000']);
+    expect(sql.sql[0]).toContain('LIMIT 10000 OFFSET 0');
   });
 
   it('deletes an issue from every table', async () => {
@@ -968,7 +971,9 @@ describe('SqlMetricsStore read and write paths not covered above', () => {
     expect(statement.statement).toContain('started_at >= ?');
     expect(statement.statement).toContain('started_at < ?');
     expect(statement.statement).toContain('author_account_id IN (?, ?)');
-    expect(statement.params).toEqual(['10000', 100, 200, 'a', 'b', 25, 5]);
+    // LIMIT/OFFSET are inlined, not bound — see queryIssueMeta's comment.
+    expect(statement.statement).toContain('LIMIT 25 OFFSET 5');
+    expect(statement.params).toEqual(['10000', 100, 200, 'a', 'b']);
   });
 
   it('lower-cases history field filters to match how they are stored', async () => {
