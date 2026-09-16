@@ -23,13 +23,17 @@ modules:
       resolver:
         function: resolver
       # Lets the gadget owner pick a project — a jira:dashboardGadget context
-      # carries no project of its own. See TECHNICAL-SPEC.md § 11 item 7 for
-      # the live finding this responds to, and its unresolved status: the
-      # manifest shape matches Forge's own docs and passes forge lint, but
-      # whether Jira's gadget picker actually exposes a working Configure
-      # affordance for it has not been independently confirmed for this app.
+      # carries no project of its own. See TECHNICAL-SPEC.md § 11 item 7.
+      #
+      # `render: native` is required here too, not just at the module's top
+      # level — without it Jira's own "Configure" menu item on the gadget
+      # renders permanently disabled. Confirmed live 2026-09-15 on
+      # time-in-status (both the admin system-default dashboard and a fresh
+      # personal one); this app carried the identical gap and gets the
+      # identical fix, verified by forge lint + a development deploy.
       edit:
         resource: gadget
+        render: native
       title: Field changes
       description: Filterable, exportable field-change history across every issue in a
         project.
@@ -51,6 +55,11 @@ modules:
       handler: index.onIssueEvent
     - key: backfill-consumer
       handler: index.backfillHandler
+      # Raised from the 55s async-events default to the manifest schema's max
+      # (developer.atlassian.com, checked 2026-09-15) — see time-in-status's
+      # manifest for the full rationale. `timeBudgetMs` in
+      # packages/engine/src/ingest/backfill.ts is 70% of this; keep them paired.
+      timeoutSeconds: 900
 
   trigger:
     - key: issue-events

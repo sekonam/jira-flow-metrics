@@ -11,6 +11,7 @@ export default tseslint.config(
       '**/.forge/**',
       '**/*.d.ts',
       '**/static/**/build/**',
+      '.claude/worktrees/**',
     ],
   },
   js.configs.recommended,

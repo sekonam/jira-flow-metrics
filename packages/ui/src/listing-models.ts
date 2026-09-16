@@ -5,6 +5,7 @@ import {
   formatDate,
   formatDateTime,
   formatDurationForHumans,
+  type ChartPoint,
   type SummaryTile,
 } from './view-model.js';
 
@@ -129,7 +130,7 @@ export function toAgingTiles(report: AgingReport): SummaryTile[] {
 }
 
 /** Bar-chart series for the aging histogram. */
-export function toAgingChartData(report: AgingReport): { label: string; value: number }[] {
+export function toAgingChartData(report: AgingReport): ChartPoint[] {
   return report.buckets.map((bucket) => ({ label: bucket.label, value: bucket.count }));
 }
 

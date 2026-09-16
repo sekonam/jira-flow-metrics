@@ -67,6 +67,19 @@ describe('wip-aging: the listing-specific behaviour', () => {
     cleanup();
   });
 
+  it('renders the age-bucket histogram alongside the table', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    await screen.findByText('FLOW-1');
+    expect(screen.getByText('Age distribution')).toBeDefined();
+    // Every bucket label renders even at zero — the histogram must not
+    // silently drop the buckets nothing has aged into.
+    for (const bucket of ['0-1d', '1-3d', '3-7d', '7-14d', '14-30d', '30d+']) {
+      expect(screen.getByText(bucket)).toBeDefined();
+    }
+    cleanup();
+  });
+
   it('excludes finished issues and says how many it excluded', async () => {
     setBridgeResolvers(resolversFor(scenarios.populated.responses));
     render(<App />);

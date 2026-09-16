@@ -33,6 +33,7 @@ import { auditA11y, describeFindings } from '@jfm/ui-harness';
 vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 
 const {
+  AgingHistogram,
   CsvExport,
   EmptySurface,
   ErrorSurface,
@@ -350,6 +351,31 @@ describe('SummaryTiles', () => {
     expect(screen.getByText('In Progress · median')).toBeDefined();
     expect(screen.getByRole('heading', { name: '12h' })).toBeDefined();
     expect(screen.getByText('85th percentile 20h, across 2 issues.')).toBeDefined();
+    await expectNoA11yViolations();
+  });
+});
+
+describe('AgingHistogram', () => {
+  it('renders every bucket label with its count, tallest bar proportional to the rest', async () => {
+    render(
+      <AgingHistogram
+        data={[
+          { label: '0-1d', value: 3 },
+          { label: '1-3d', value: 0 },
+          { label: '3-7d', value: 9 },
+          { label: '7-14d', value: 1 },
+          { label: '14-30d', value: 0 },
+          { label: '30d+', value: 2 },
+        ]}
+      />,
+    );
+    expect(screen.getByText('0-1d')).toBeDefined();
+    expect(screen.getByText('3-7d')).toBeDefined();
+    expect(screen.getByText('30d+')).toBeDefined();
+    // A bucket can legitimately be empty (nothing has sat that long) — the
+    // label and a "0" must still render, not disappear.
+    expect(screen.getAllByText('0')).toHaveLength(2);
+    expect(screen.getByText('9')).toBeDefined();
     await expectNoA11yViolations();
   });
 });

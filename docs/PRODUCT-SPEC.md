@@ -163,12 +163,9 @@ second listing off one engine works.
 ### In scope
 
 - Age of every **unfinished** issue in its current status, oldest first.
-- Age buckets (0-1d, 1-3d, 3-7d, 7-14d, 14-30d, 30d+) as a histogram.
-  ⚠️ **Not built.** The buckets are computed and the chart series is built by
-  `toAgingChartData`, but no component renders them — rendering every screen showed there is no
-  histogram anywhere. It is the same class of gap as the CSV export below, and § 4 of this
-  document already defers "charting beyond the gadget tiles" to v1.1; this bullet is the
-  contradiction. See TECHNICAL-SPEC § 11.
+- Age buckets (0-1d, 1-3d, 3-7d, 7-14d, 14-30d, 30d+) as a histogram. **Built.** `AgingHistogram`
+  renders `toAgingChartData`'s series via `@forge/react`'s native `BarChart`. See TECHNICAL-SPEC
+  § 11 item 9.
 - Total age since creation; count of work older than 14 days.
 - CSV export — reachable from every project page. Shown in a modal to copy rather than downloaded,
   because UI Kit 2 has no DOM and Chrome blocks `data:` navigation. TECHNICAL-SPEC § 11.

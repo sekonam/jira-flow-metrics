@@ -121,6 +121,7 @@ describe('the stand-in host renderer covers everything the product uses', () => 
 
 describe('the UI Kit sentinels are still plain strings named after themselves', () => {
   const SENTINELS = [
+    'BarChart',
     'Box',
     'Button',
     'ButtonGroup',

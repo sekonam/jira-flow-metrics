@@ -222,6 +222,12 @@ export interface SummaryTile {
   readonly hint: string;
 }
 
+/** One bar in a `BarChart`-shaped series — a category label and its count. */
+export interface ChartPoint {
+  readonly label: string;
+  readonly value: number;
+}
+
 /** The tiles above the table. Median and 85th percentile, never the mean alone —
  * cycle-time distributions are right-skewed and a mean misleads. */
 export function toSummaryTiles(report: StatusReport): SummaryTile[] {

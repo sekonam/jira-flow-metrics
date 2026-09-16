@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBackfillJql,
   DEFAULT_BACKFILL_OPTIONS,
+  decodeCursor,
+  encodeCursor,
   formatJqlInstant,
   initialIndexState,
+  isCorruptedCursor,
   quoteJql,
   runBackfillSlice,
   toProgress,
@@ -14,7 +17,14 @@ import {
   handleIssueUpdated,
   issueIdFromEvent,
 } from '../src/ingest/incremental.js';
-import { HttpError, silentLogger, systemClock, realSleeper } from '../src/ingest/ports.js';
+import {
+  HttpError,
+  silentLogger,
+  systemClock,
+  realSleeper,
+  type JiraApi,
+  type SearchParams,
+} from '../src/ingest/ports.js';
 import { backoffDelayMs, DEFAULT_RETRY, parseRetryAfter, withRetry } from '../src/ingest/retry.js';
 import {
   DATASETS_ALL,
@@ -381,8 +391,13 @@ describe('backfill', () => {
     // Stopped mid-page-one (it has two issues), so the cursor carries a skip
     // of 1 rather than staying bare null — otherwise the next slice would
     // re-fetch this page, reprocess the first issue, and stop at the same
-    // spot forever. See `encodeCursor` in `backfill.ts`.
-    expect(d.scheduler.jobs).toEqual([{ projectId: '10000', cursor: '::skip=1', slice: 1 }]);
+    // spot forever. See `encodeCursor` in `backfill.ts`. It also carries a
+    // `::seek=` marker with the one issue's `created` instant, so a later
+    // slice could recover by JQL bound if this cursor ever turned out to be
+    // corrupted — see `isCorruptedCursor`.
+    expect(d.scheduler.jobs).toEqual([
+      { projectId: '10000', cursor: '::skip=1::seek=1772438400000', slice: 1 },
+    ]);
 
     // The write happened before the cursor advanced, so the issue is persisted.
     expect(await d.store.getIssueMeta('20001')).not.toBeNull();
@@ -696,8 +711,12 @@ describe('backfill cursor advancement', () => {
     });
     expect(first.stoppedBecause).toBe('issue_budget');
     expect(first.issuesProcessed).toBe(4);
-    expect(first.nextCursor).toBe('P3');
-    expect((await d.store.getIndexState('10000'))?.backfillCursor).toBe('P3');
+    // Carries a `::seek=` marker (the last-written issue's `created`) even
+    // though no skip is pending — see `isCorruptedCursor`'s recovery
+    // path, which needs this on every persisted cursor, not only the ones
+    // that stopped mid-page.
+    expect(first.nextCursor).toBe('P3::seek=1772438400000');
+    expect((await d.store.getIndexState('10000'))?.backfillCursor).toBe('P3::seek=1772438400000');
 
     const second = await runBackfillSlice(d, {
       ...DEFAULT_BACKFILL_OPTIONS,
@@ -731,7 +750,9 @@ describe('backfill cursor advancement', () => {
     // re-read — Jira's page tokens are opaque, there is no other way to
     // resume it — but the "1" here is what makes the next slice skip past
     // issue 3 instead of reprocessing it and stopping at the same spot again.
-    expect(first.nextCursor).toBe('P2::skip=1');
+    // The trailing `::seek=` is issue 3's `created`, carried for a possible
+    // corrupted-cursor recovery later.
+    expect(first.nextCursor).toBe('P2::skip=1::seek=1772438400000');
 
     // Without that skip, this second call would re-fetch page 2, reprocess
     // issue 3, and stop again after issue 4 — never reaching page 3 at all.
@@ -758,6 +779,362 @@ describe('backfill cursor advancement', () => {
     });
     expect(result.done).toBe(true);
     expect((await d.store.getIndexState('10000'))?.state).toBe('complete');
+  });
+});
+
+describe('cursor encoding carries a seek marker alongside skip', () => {
+  it('round-trips a bare token untouched when nothing is pending', () => {
+    expect(encodeCursor('TOK', 0)).toBe('TOK');
+    expect(decodeCursor('TOK')).toEqual({
+      token: 'TOK',
+      skip: 0,
+      seekFrom: null,
+      attemptedSeek: null,
+    });
+  });
+
+  it('appends a seek marker even when no skip is pending', () => {
+    const encoded = encodeCursor('TOK', 0, T('2026-03-02T08:00:00Z'));
+    expect(encoded).toBe(`TOK::seek=${T('2026-03-02T08:00:00Z')}`);
+    expect(decodeCursor(encoded)).toEqual({
+      token: 'TOK',
+      skip: 0,
+      seekFrom: T('2026-03-02T08:00:00Z'),
+      attemptedSeek: null,
+    });
+  });
+
+  it('carries both a skip and a seek marker together', () => {
+    const encoded = encodeCursor('TOK', 3, T('2026-03-02T08:00:00Z'));
+    expect(decodeCursor(encoded)).toEqual({
+      token: 'TOK',
+      skip: 3,
+      seekFrom: T('2026-03-02T08:00:00Z'),
+      attemptedSeek: null,
+    });
+  });
+
+  it('carries a seek marker with no real token at all', () => {
+    const encoded = encodeCursor(null, 0, T('2026-03-02T08:00:00Z'));
+    expect(decodeCursor(encoded)).toEqual({
+      token: null,
+      skip: 0,
+      seekFrom: T('2026-03-02T08:00:00Z'),
+      attemptedSeek: null,
+    });
+  });
+
+  it('carries an attempted-seek marker independently of the seek bookmark', () => {
+    const encoded = encodeCursor('TOK', 0, T('2026-03-02T08:05:00Z'), T('2026-03-02T08:00:00Z'));
+    expect(encoded).toBe(
+      `TOK::seek=${T('2026-03-02T08:05:00Z')}::attempted=${T('2026-03-02T08:00:00Z')}`,
+    );
+    expect(decodeCursor(encoded)).toEqual({
+      token: 'TOK',
+      skip: 0,
+      seekFrom: T('2026-03-02T08:05:00Z'),
+      attemptedSeek: T('2026-03-02T08:00:00Z'),
+    });
+  });
+});
+
+describe('isCorruptedCursor', () => {
+  // Real captured token, decoded — confirmed live 2026-09-15 by pulling it
+  // straight out of a failed `forge logs` invocation and base64-decoding it.
+  const REAL_CAPTURED_TOKEN =
+    'EGQYotips4o0Iltwcm9qZWN0ID0gIjEwMDMzIiBBTkQgbGV2ZWwgSVMgRU1QVFkgQU5EIGNyZWF0ZWQgPj0gIjIwMjUvMDkvMjAgMTg6NTIiIE9SREVSIEJZIGNyZWF0ZWQgQVNDKgJbXTIgVEVOQU5UX05PVF9GT1VORF9JTl9URU5BTlRfU1RPUkU=';
+
+  it('recognises a real captured corrupted token, decoded', () => {
+    expect(isCorruptedCursor(REAL_CAPTURED_TOKEN)).toBe(true);
+  });
+
+  it('recognises any base64 token whose decoded payload carries the marker', () => {
+    expect(isCorruptedCursor(btoa('...TENANT_NOT_FOUND_IN_TENANT_STORE...'))).toBe(true);
+  });
+
+  it('does not misclassify a healthy base64 token', () => {
+    expect(isCorruptedCursor(btoa('a perfectly ordinary opaque page token'))).toBe(false);
+  });
+
+  it('does not misclassify null', () => {
+    expect(isCorruptedCursor(null)).toBe(false);
+  });
+
+  it('does not throw on a non-base64 token — a plain opaque string is not corrupted just because it fails to decode', () => {
+    expect(isCorruptedCursor('not-plausibly-base64-!!!')).toBe(false);
+  });
+
+  it('is not fooled by the marker appearing in the raw, un-encoded token text', () => {
+    // Confirmed live 2026-09-15: Jira's actual rejection response and the
+    // request path never carry the marker in plain text — only the decoded
+    // token payload does. A literal, un-encoded occurrence of the string is
+    // not the failure mode this guards against, so it must not match.
+    expect(isCorruptedCursor('TENANT_NOT_FOUND_IN_TENANT_STORE')).toBe(false);
+  });
+});
+
+describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 11 item 11)', () => {
+  /**
+   * A minimal `JiraApi` driven by a fixed script of successful pages, one per
+   * call to `searchIssues`, in order. Corruption is never simulated as a
+   * rejected call here — detection is proactive (`isCorruptedCursor`, run on
+   * the token *before* it is ever sent), confirmed live 2026-09-15 to be the
+   * only place the marker is actually findable: Jira's real rejection
+   * response for a poisoned token is a generic, localized "invalid or
+   * expired" message with no trace of it. So a corrupted token in these
+   * fixtures is simply a page whose `nextPageToken` decodes to the marker —
+   * the search that *would* use it never happens. Every other method throws
+   * if called, since nothing in these tests should reach them (changelog is
+   * inlined and already `isLast: true`).
+   */
+  class ScriptedSearchApi implements JiraApi {
+    readonly searchCalls: SearchParams[] = [];
+    private cursor = 0;
+
+    constructor(private readonly script: readonly JiraSearchPage[]) {}
+
+    searchIssues(params: SearchParams): Promise<JiraSearchPage> {
+      this.searchCalls.push(params);
+      const next = this.script[this.cursor];
+      this.cursor += 1;
+      if (next === undefined) {
+        throw new Error('ScriptedSearchApi: ran out of scripted responses');
+      }
+      return Promise.resolve(next);
+    }
+
+    canBrowseProject(): Promise<boolean> {
+      throw new Error('not used by this test');
+    }
+    getIssue(): Promise<JiraIssue> {
+      throw new Error('not used by this test');
+    }
+    getChangelog(): Promise<JiraChangelogPage> {
+      throw new Error('not used by this test');
+    }
+    getWorklogs(): Promise<JiraWorklogPage> {
+      throw new Error('not used by this test');
+    }
+    getStatuses(): Promise<readonly never[]> {
+      throw new Error('not used by this test');
+    }
+    listProjects(): Promise<readonly never[]> {
+      throw new Error('not used by this test');
+    }
+  }
+
+  /** created ASC, one minute apart, so each carries a distinct seek bound. */
+  function issue(n: number): JiraIssue {
+    return {
+      id: String(n),
+      key: `SEEK-${n}`,
+      fields: {
+        created: new Date(T('2026-03-02T08:00:00Z') + n * 60_000).toISOString(),
+        status: { id: '10001', name: 'Done' },
+        project: { id: '10000', key: 'FLOW' },
+      },
+      changelog: { total: 0, values: [], isLast: true },
+    };
+  }
+
+  /** A `nextPageToken` that decodes to Jira's corrupted-cursor marker. */
+  function corruptToken(label: string): string {
+    return btoa(`...${label}...TENANT_NOT_FOUND_IN_TENANT_STORE...`);
+  }
+
+  function deps(api: ScriptedSearchApi) {
+    return {
+      api,
+      store: new MemoryStore(),
+      scheduler: new RecordingScheduler(),
+      clock: new FakeClock(NOW),
+      config: config(),
+      logger: silentLogger,
+    };
+  }
+
+  it('reseeks by created date instead of trusting a corrupted token, and finishes', async () => {
+    // Page 1 ok, page 2 ok (hands back a token that decodes to corrupted).
+    // The *next* iteration detects that before sending it — no third call
+    // ever carries the poisoned token. Recovery drops it and reseeks from
+    // issue 4's `created`.
+    const api = new ScriptedSearchApi([
+      { issues: [issue(1), issue(2)], isLast: false, nextPageToken: 'P2', total: 6 },
+      { issues: [issue(3), issue(4)], isLast: false, nextPageToken: corruptToken('P3'), total: 6 },
+      { issues: [issue(5), issue(6)], isLast: true, nextPageToken: null, total: 6 },
+    ]);
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.done).toBe(true);
+    expect(result.stoppedBecause).toBe('complete');
+    // All 6 issues indexed despite the corrupted token in the middle — none
+    // silently dropped, none needed a human to notice and restart anything.
+    expect(result.issuesProcessed).toBe(6);
+    expect((await d.store.getIndexState('10000'))?.state).toBe('complete');
+
+    // Three calls: P1, P2 (whose response is the poisoned one, never sent
+    // back), and the recovered reseek — which must ask fresh (no token) and
+    // must bound by issue 4's `created`, not restart from the beginning of
+    // history. No call is ever made with the corrupted token itself.
+    expect(api.searchCalls).toHaveLength(3);
+    expect(api.searchCalls.some((c) => c.nextPageToken === corruptToken('P3'))).toBe(false);
+    const recoveryCall = api.searchCalls[2]!;
+    expect(recoveryCall.nextPageToken).toBeUndefined();
+    expect(recoveryCall.jql).toContain(formatJqlInstant(T(issue(4).fields!.created!)));
+  });
+
+  it('recovers twice in one continuous backfill, at different, unpredictable positions', async () => {
+    // Mirrors what was actually observed live: the corrupted-cursor marker is
+    // not fixed to one page or slice — it can recur later in the same run,
+    // and each recovery must recompute its bound from whatever has been
+    // written *since* the last one, not from a fixed starting point.
+    const api = new ScriptedSearchApi([
+      { issues: [issue(1), issue(2)], isLast: false, nextPageToken: 'P2', total: 8 },
+      {
+        issues: [issue(3), issue(4)],
+        isLast: false,
+        nextPageToken: corruptToken('A'),
+        total: 8,
+      },
+      // first corruption, recovering from issue 4
+      {
+        issues: [issue(5), issue(6)],
+        isLast: false,
+        nextPageToken: corruptToken('B'),
+        total: 8,
+      },
+      // second corruption, recovering from issue 6 — a later, different bound
+      { issues: [issue(7), issue(8)], isLast: true, nextPageToken: null, total: 8 },
+    ]);
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.done).toBe(true);
+    expect(result.issuesProcessed).toBe(8);
+
+    const jqlBounds = api.searchCalls
+      .filter((c) => c.nextPageToken === undefined)
+      .map((c) => c.jql);
+    // The very first call also has no token, so two *recoveries* means three
+    // token-less calls total, and the second and third carry different,
+    // strictly later bounds — proof the seek value is recomputed each time,
+    // not replayed from the first recovery.
+    expect(jqlBounds).toHaveLength(3);
+    expect(jqlBounds[1]).toContain(formatJqlInstant(T(issue(4).fields!.created!)));
+    expect(jqlBounds[2]).toContain(formatJqlInstant(T(issue(6).fields!.created!)));
+    expect(jqlBounds[1]).not.toBe(jqlBounds[2]);
+  });
+
+  it('does not attempt recovery when nothing has been processed yet to seek from', async () => {
+    // The very first page fetch of a backfill starts with no cursor at all
+    // (`cursor === null`), so there is nothing to decode and nothing to
+    // recover from — any failure here propagates exactly as it did before
+    // this recovery mechanism existed. Modelled here as a generic rejection,
+    // since a corrupted-cursor marker cannot even arise without a cursor.
+    class RejectingApi extends ScriptedSearchApi {
+      override searchIssues(params: SearchParams): Promise<JiraSearchPage> {
+        this.searchCalls.push(params);
+        return Promise.reject(new HttpError(400, 'Jira responded 400 for /rest/api/3/search/jql'));
+      }
+    }
+    const api = new RejectingApi([]);
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.done).toBe(false);
+    expect(result.stoppedBecause).toBe('error');
+    expect((await d.store.getIndexState('10000'))?.state).toBe('failed');
+    expect(api.searchCalls).toHaveLength(1);
+  });
+
+  it('persists the seek bound on the cursor so a later slice can recover too', async () => {
+    // The corrupted token can be handed back at the very end of a slice (the
+    // exact shape of the originally-observed bug: a clean page boundary,
+    // budget stops, and only the *next* slice ever tries the poisoned
+    // token). Detection at the very start of a later slice — before that
+    // slice's first request — is exactly what proactive checking is for.
+    const api = new ScriptedSearchApi([
+      { issues: [issue(1), issue(2)], isLast: false, nextPageToken: corruptToken('END'), total: 4 },
+    ]);
+    const d = deps(api);
+    const first = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+      issuesPerSlice: 2,
+    });
+    expect(first.stoppedBecause).toBe('issue_budget');
+    expect(first.nextCursor).toBe(`${corruptToken('END')}::seek=${T(issue(2).fields!.created!)}`);
+
+    // Second slice: starts from that persisted, already-corrupted cursor.
+    // Detected before any request — the first (and only) call this slice
+    // makes is already the tokenless reseek.
+    const api2 = new ScriptedSearchApi([
+      { issues: [issue(3), issue(4)], isLast: true, nextPageToken: null, total: 4 },
+    ]);
+    const d2 = { ...d, api: api2 };
+    const second = await runBackfillSlice(d2, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+      issuesPerSlice: 2,
+    });
+    expect(second.done).toBe(true);
+    expect(second.issuesProcessed).toBe(2);
+    expect(api2.searchCalls).toHaveLength(1);
+    expect(api2.searchCalls[0]!.nextPageToken).toBeUndefined();
+    expect(api2.searchCalls[0]!.jql).toContain(formatJqlInstant(T(issue(2).fields!.created!)));
+  });
+
+  it('fails loudly instead of looping when a reseek was already attempted from the same bound', async () => {
+    // Confirmed live 2026-09-15: a bulk-seeded project reseeked from the
+    // identical instant across many separate slices — `issuesProcessed`
+    // climbed past the real issue count while the same issues were
+    // repeatedly rewritten, an unbounded loop on a consumption-priced
+    // platform. This models the exact handoff that caused it: a slice
+    // attempts a reseek, the reseek's own response is corrupted *again* at
+    // exactly the same bound (no new `created` value written since), and the
+    // slice's budget runs out before a third attempt — persisting a cursor
+    // that already carries `attemptedSeek` equal to the seek bound. The next
+    // slice must recognise that inherited marker and fail immediately rather
+    // than trying the identical, already-failed reseek again.
+    const seekBound = T(issue(2).fields!.created!);
+    const api = new ScriptedSearchApi([
+      { issues: [issue(3), issue(4)], isLast: true, nextPageToken: null, total: 4 },
+    ]);
+    const d = deps(api);
+    // Persist a cursor as if an earlier slice already attempted and failed a
+    // reseek from `seekBound`, then ran out of budget before trying again.
+    await d.store.putIndexState({
+      ...initialIndexState('10000', NOW, null),
+      state: 'failed',
+      backfillCursor: `${corruptToken('STUCK')}::seek=${seekBound}::attempted=${seekBound}`,
+    });
+
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.done).toBe(false);
+    expect(result.stoppedBecause).toBe('error');
+    expect((await d.store.getIndexState('10000'))?.state).toBe('failed');
+    // Caught before ever calling the API with the doomed token or bound.
+    expect(api.searchCalls).toHaveLength(0);
   });
 });
 

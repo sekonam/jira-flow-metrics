@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  BarChart,
   Box,
   Button,
   CodeBlock,
@@ -23,7 +24,13 @@ import {
   Strong,
   Text,
 } from '@forge/react';
-import type { ProgressBanner, ProjectOption, ReportTableModel, SummaryTile } from './view-model.js';
+import type {
+  ChartPoint,
+  ProgressBanner,
+  ProjectOption,
+  ReportTableModel,
+  SummaryTile,
+} from './view-model.js';
 import type { SimpleTable } from './listing-models.js';
 
 /**
@@ -219,6 +226,27 @@ export function SummaryTiles({ tiles }: { tiles: readonly SummaryTile[] }): Reac
         </Box>
       ))}
     </Inline>
+  );
+}
+
+/**
+ * The WIP-aging bucket histogram — 0-1d, 1-3d, ... 30d+, oldest bucket last.
+ *
+ * Renders through `@forge/react`'s native `BarChart`, not a hand-rolled
+ * chart: the platform ships one, so building a second is the "beyond what
+ * the task requires" this repo avoids elsewhere. `xAccessor`/`yAccessor`
+ * name the fields on each `ChartPoint`; `BarChart` itself accepts an
+ * `unknown[]`, which is why the cast is here and nowhere else.
+ */
+export function AgingHistogram({ data }: { data: readonly ChartPoint[] }): React.JSX.Element {
+  return (
+    <BarChart
+      data={data as unknown[]}
+      xAccessor="label"
+      yAccessor="value"
+      title="Age distribution"
+      subtitle="Unfinished issues in flight, grouped by how long they've sat in their current status."
+    />
   );
 }
 

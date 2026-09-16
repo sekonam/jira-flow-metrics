@@ -11,9 +11,10 @@ is done** (ROADMAP 1.8): the app's cumulative time-in-status figures were checke
 changelog data pulled independently, on both a simple single-visit issue and three re-entry cases,
 and matched exactly. Getting all of this working took nine SDK-shape or scale-only bugs nothing
 local could have caught — six from the first live open (ROADMAP 1.5), three more from testing at
-300-issue scale (ROADMAP 1.7a) — plus a real, still-open Jira-side pagination bug at that same scale
-(TECHNICAL-SPEC § 11 item 11) and an unresolved question about whether Jira's dashboard-gadget
-picker actually exposes the project-configuration screen this repo built for it (§ 11 item 7).
+300-issue scale (ROADMAP 1.7a), and a tenth confirmed and fixed live on 2026-09-15: the dashboard
+gadget's "Configure" menu item rendered permanently disabled because the manifest's `edit:` block
+was missing `render: native` (§ 11 item 7 — now resolved on all five apps). What remains open is a
+real, still-open Jira-side pagination bug at 300-issue scale (TECHNICAL-SPEC § 11 item 11).
 `pnpm run e2e:live` separately runs the real engine against the dev site and agrees with Jira on
 every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past 5,000 issues
 synthetically (ROADMAP 1.7). **What has still never happened:** a `forge tunnel` session (hot-reload
@@ -142,12 +143,13 @@ have ended the project here did not.
 
 ### Week 1–2 — fix what the session found
 
-| Known before you start                                                                                                                                                                                                                                                                                                                                                                                                                          | Where                                                                                      |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| **Dashboard gadgets refused, confirmed live — a project picker is built, whether Jira exposes it is not.** Resolvers read `extension.project.id`; a dashboard is not project-scoped, and never was. A manifest `edit` module plus a `gadgetConfiguration.projectId` fallback is deployed to all five apps, but Jira's own "Configure" menu item rendered disabled on every attempt in this account. First thing to check in the tunnel session. | TECHNICAL-SPEC.md § 11 item 7; pinned by `apps/time-in-status/test/end-to-end-ui.test.tsx` |
-| **CSV export is implemented, tested, documented — and unreachable.** No frontend calls `exportCsv`.                                                                                                                                                                                                                                                                                                                                             | `ROADMAP.md` step 1.3a; pinned by `test/resolver-wiring.test.ts`                           |
-| **The WIP-aging histogram promised in `PRODUCT-SPEC.md` § 6 is not built.**                                                                                                                                                                                                                                                                                                                                                                     | Either build it or cut the promise before the listing goes out.                            |
-| **`timeBudgetMs` is a guess.** 40,000 ms, set without reading the current platform limit.                                                                                                                                                                                                                                                                                                                                                       | `apps/*/src/runtime.ts`; calibrate to ~70% of the published limit.                         |
+**Nothing left open here as of 2026-09-15.** Every item this checklist originally found — the
+dashboard-gadget Configure bug (TECHNICAL-SPEC § 11 item 7), the unreachable CSV export
+(ROADMAP 1.3a), the unbuilt WIP-aging histogram (§ 11 item 9), and the un-calibrated
+`timeBudgetMs` — is fixed, tested, and `pnpm run verify` is green. What remains open going into
+the tunnel session is the real, still-unresolved Jira-side pagination bug at scale
+(TECHNICAL-SPEC § 11 item 11) — that one is not a code gap in this repo, and is being worked as
+its own item.
 
 Every fix follows the repo protocol: failing test first, then the fix, then `pnpm run verify`.
 

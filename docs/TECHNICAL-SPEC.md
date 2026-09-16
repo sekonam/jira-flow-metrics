@@ -244,10 +244,16 @@ So backfill runs as a **sequence of slices**, each its own Forge invocation. One
        auto-retry  needs a human
 ```
 
-**Budgets.** `issuesPerSlice` defaults to 100; `timeBudgetMs` defaults to **40 000**.
-⚠️ The Forge asynchronous invocation limit is a platform quota that changes — **confirm the current
-value before release** and set `timeBudgetMs` from it. The default is chosen to be safe, not
-optimal.
+**Budgets — calibrated 2026-09-15.** `issuesPerSlice` defaults to 100; `timeBudgetMs` defaults to
+**630 000** (70% of 900 000). A backfill slice runs under an Async Events consumer function, whose
+manifest schema allows `timeoutSeconds` up to 900 (developer.atlassian.com/platform/forge/
+manifest-reference/modules/function/ and /platform/forge/limits-invocation/, both checked
+2026-09-15; the un-configured default for this function type is 55 s). All five apps' manifests now
+declare `timeoutSeconds: 900` on `backfill-consumer` to actually grant that ceiling — without it,
+the function would still be killed at 55 s regardless of what `timeBudgetMs` says. This is a
+manifest-schema ceiling, not a usage-based quota, so unlike the request-rate limits elsewhere in
+this document it does not need re-checking before every release — only if Atlassian changes the
+schema itself.
 
 **Rate limiting.** Every Jira call goes through `withRetry`: up to 5 attempts, exponential backoff
 with **full jitter**, and a server-supplied `Retry-After` always wins (padded by 250 ms). Full
@@ -440,15 +446,15 @@ the real `invoke`, its payload validation and its rate limiter all run.
    viewer, because doing so would mean an as-user query on every report render, which the
    consumption-priced platform makes prohibitive. **This must be stated in the Marketplace privacy
    statement rather than left for a reviewer to find.**
-7. **★★ The dashboard gadgets refused on a real tenant — confirmed, and half-fixed.** Every
+7. **★★ The dashboard gadgets refused on a real tenant — confirmed, and now fully fixed.** Every
    project-scoped resolver takes its project from `extension.project.id` in the platform context
    and fails closed without it. Confirmed live on 2026-09-11: adding the Time in Status gadget to
    a real dashboard rendered "This report can only be opened from inside a Jira project." every
    time — a `jira:dashboardGadget` context genuinely carries no project of its own, unlike
    `jira:projectPage`.
 
-   **The fix that's done:** an `edit` module (`resource: gadget`, per Forge's own manifest
-   reference) lets the gadget owner choose a project explicitly; `gadget.tsx` checks
+   **The fix:** an `edit` module (`resource: gadget`, per Forge's own manifest reference) lets the
+   gadget owner choose a project explicitly; `gadget.tsx` checks
    `context.extension.entryPoint === 'edit'` and renders a picker (`GadgetConfigForm`, backed by a
    new `listProjects` resolver reading Jira as the calling user) instead of the report; the chosen
    `projectId` is submitted via `view.submit` and read back through
@@ -457,23 +463,21 @@ the real `invoke`, its payload validation and its rate limiter all run.
    platform context, never the client payload, exactly like `extension.project.id` does. All of
    this is unit-tested and deployed.
 
-   **What's still unconfirmed:** whether a person can actually _reach_ that picker. The gadget's
-   own body correctly says "not yet configured — click Edit at the top of the dashboard," but the
-   per-gadget "Настроить" (Configure) menu item that should open edit mode renders **disabled** in
-   this account, on every attempt — before and after redeploying with the corrected manifest shape,
-   before and after deleting and re-adding the gadget instance, and again after a five-minute wait
-   for any Jira-side gadget-definition cache to clear. `forge lint` accepts the manifest, and the
-   shape matches Forge's own documented example verbatim, so the declaration itself is not obviously
-   wrong — but nothing here proves Jira's gadget picker is actually honouring it. Two explanations
-   are equally plausible without more to go on: a longer-lived cache on Atlassian's side than five
-   minutes covers, or a real gap in Forge's `jira:dashboardGadget` + `edit` support that its own
-   docs don't surface. **Only `time-in-status` carries this change as deployed** — the other four
-   apps' manifests and `gadget.tsx` files were updated identically (same `edit` module, same
-   `GadgetConfigForm` wiring) and redeployed, on the reasoning that the code is mechanically
-   identical across all five, but none of the other four were independently re-tested against a
-   live dashboard. Treat all five as equally unconfirmed until "Настроить" is seen enabled in a
-   real session — the fastest next step is trying it from a different Atlassian account, or after a
-   longer wait, before assuming the manifest itself needs more work.
+   **Root cause of the disabled "Настроить" (Configure) menu item, found and fixed 2026-09-15:**
+   the manifest's `edit:` block only declared `resource: gadget`. Forge's manifest reference lists
+   `edit.render: 'native'` as a valid sibling field alongside `edit.resource` — the module's
+   top-level `render: native` does not propagate down to `edit`, it needs its own. Without it, Jira
+   accepts the manifest (lint and deploy both pass — the shape isn't invalid, just incomplete) but
+   never wires up the edit affordance, so the "Настроить" item stays permanently disabled. Adding
+   `render: native` under `edit:` and redeploying fixed it immediately: confirmed live on both the
+   admin system-default dashboard and a fresh personal dashboard — the gadget now shows its project
+   picker automatically when unconfigured, saves a project, and renders a real report (`Issues: 181`
+   plus per-status medians against the seeded `JFMB` project, 2026-09-15). All five apps carry the
+   fix, were independently lint-checked and redeployed to `development`, and `wip-aging` was
+   independently re-verified live on the same dashboard (config screen → save → report render,
+   confirming the fix generalizes rather than being specific to `time-in-status`). `pnpm run verify`
+   is green after the change. This closes the last open question in this item — the manifest shape
+   needed one more field, not a Jira-side cache or an unfixable platform gap.
 
 8. **CSV export is reachable — resolved.** `exportCsv` had been defined by all five resolvers,
    implemented in `packages/engine/src/export/csv.ts`, defused against formula injection, covered
@@ -489,38 +493,84 @@ the real `invoke`, its payload validation and its rate limiter all run.
    to get it is a v1.1 question. Until then the export opens in a modal, selectable, with its
    filename, and says why.
 
-9. **★ The WIP aging histogram is not built either.** `AgingReport.buckets` is computed and
-   `toAgingChartData` turns it into a chart series, both tested — and no component renders it.
-   `docs/PRODUCT-SPEC.md` § 6 lists the histogram in scope for listing 3 while § 4 defers charting
-   to v1.1; the second is what the code does. Found the same way as the CSV gap: by rendering every
-   screen and noticing what was not on them.
+9. **The WIP aging histogram is built — resolved.** `AgingReport.buckets` and `toAgingChartData`
+   existed and were tested; no component rendered them. `AgingHistogram` in `@jfm/ui`
+   (`packages/ui/src/components.tsx`) now does, using `@forge/react`'s native `BarChart` rather
+   than a hand-rolled chart — the platform ships one. It sits on the `wip-aging` project page
+   between the summary tiles and the table, rendering all six buckets (0-1d through 30d+) even
+   when a bucket is empty, so the histogram cannot silently drop a category. The stand-in host
+   renderer (`packages/ui-harness/src/forge-host.tsx`) draws each bar as a plain proportional
+   `<div>` next to real label/value text nodes, since no `@atlaskit` chart package is installed in
+   this workspace to stand in for `@atlassian/viz-platform-charts` — like every other stand-in,
+   this proves the right data reaches the DOM in the right order, not that Forge's real chart
+   renders identically.
 10. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
     instance-wide row counts and has no project scope, so no app registers it as a resolver. It
     stays as an internal method until there is an admin surface that can authorise it properly.
 
-11. **★ A backfill can stall on a corrupted Jira pagination cursor — not our bug, confirmed live,
-    unresolved.** Bulk-seeding 300 real issues into one project inside about ten minutes
-    (`pnpm run seed:bulk`), every listing's backfill fails **deterministically at exactly 100
-    issues** — two full 50-item pages — with `Jira responded 400 for /rest/api/3/search/jql`.
-    Decoding the rejected `nextPageToken` shows it is not garbage: it is a structured Jira
-    cursor whose payload literally contains the string `TENANT_NOT_FOUND_IN_TENANT_STORE`,
-    Jira's own backend error, baked into what an _earlier, successful_ page-2 response handed
-    back to us as the token to use next. Reproduced independently across two different listings
-    (Worklog Reports, Issue History) against the same project, both stopping at the identical
-    page boundary; retried after several minutes with no change, so this is not resolving on its
-    own the way a transient index-lag issue would. `encodeCursor`/`decodeCursor`
-    (`packages/engine/src/ingest/backfill.ts`) round-trip the raw token unmodified whenever no
-    skip is pending, which rules out our own cursor handling as the cause — the corruption is in
-    what Jira itself returned. The working theory: this free developer site's search index can
-    fall behind badly under a synthetic write burst this fast (300 issues plus hundreds of
-    transitions and worklogs in minutes), and paginating deep into results while that index is
-    still catching up can hand back a broken cursor instead of a 5xx. A real customer project
-    that grows by hundreds of issues in one sitting — a bulk import, a migration — could hit the
-    same wall on its first backfill. No fix is built: the honest options are (a) treat this exact
-    error shape as retryable by restarting the affected page from a computed offset rather than
-    trusting the rejected cursor, or (b) throttle pagination speed after detecting a high-velocity
-    write burst — both are real engineering work, not a one-line patch, and neither has been
-    designed yet.
+11. **★★ A backfill can stall on a corrupted Jira pagination cursor — not our bug, took three
+    attempts to fix correctly, the third confirmed live.** Bulk-seeding 300 real issues into one
+    project inside about ten minutes (`pnpm run seed:bulk`), a listing's backfill fails with
+    `Jira responded 400 for /rest/api/3/search/jql`. Decoding the rejected `nextPageToken` shows
+    it is not garbage: it is a structured Jira cursor whose payload literally contains the string
+    `TENANT_NOT_FOUND_IN_TENANT_STORE`, Jira's own backend error, baked into what an _earlier,
+    successful_ page response handed back to us as the token to use next. The trigger position is
+    not fixed — reproduced at different page/slice positions across different attempts — only the
+    error shape is. `encodeCursor`/`decodeCursor` were confirmed innocent — they round-trip the raw
+    token unmodified — so the corruption is in what Jira itself returned. Working theory: this free
+    developer site's search index can fall behind under a synthetic write burst this fast, and
+    paginating while it catches up hands back a broken cursor instead of a 5xx.
+
+    **Attempt 1 (wrong):** classify the _error_ Jira returns when a corrupted token is presented
+    back to it — `isCorruptedCursorError`, checking `HttpError.body`/`.message` for the marker
+    string. Deployed, then confirmed live to never fire: calling `/rest/api/3/search/jql` directly
+    with a captured corrupted token showed Jira's real rejection is a generic, localized "invalid
+    or expired" message — the marker never appears in Jira's response, only in the _request_ path,
+    still base64-encoded, so a plain substring check can't find it there either. Every live
+    occurrence was missed.
+
+    **Attempt 2 (correct classification, incomplete guard):** move detection to the token itself —
+    `isCorruptedCursor(token)`, base64-decoding it and checking for the marker _before_ the request
+    that would fail is ever sent, not after. This is the right place to look, confirmed by
+    reproducing the rejection directly against Jira. On recovery, the token is discarded and the
+    search reissues fresh, bounded by `created >= <last durably-written issue's created>` — Jira's
+    enhanced search endpoint is token-only, no `startAt`/offset exists, so a JQL reseek is the only
+    way to "restart from a computed offset". The bound travels on the cursor string itself
+    (`::seek=`, alongside the existing `::skip=`), so it survives a slice boundary without a store
+    schema change. Deployed — and then **caused a live incident**: `formatJqlInstant` bounds by
+    _minute_, not millisecond (JQL's simple date literal has no finer grain), and a fast bulk seed
+    routinely puts dozens of issues in the same created-minute. The reseek kept landing on the
+    identical corrupted boundary within that minute, recovering "successfully" every time while
+    making zero forward progress — `issuesProcessed` climbed to over 5,000 against a 300-issue
+    project before the fix below stopped it, each cycle a real, billed Forge invocation.
+
+    **Attempt 3 (shipped, confirmed live 2026-09-15):** a same-bound reseek must never be attempted
+    twice. A fourth cursor marker, `::attempted=`, records the bound of the most recent reseek
+    _attempt_, kept deliberately separate from `::seek=` (which is attached to every persisted
+    cursor as a resume bookmark, corrupted or not — conflating the two was tried first and broke
+    the legitimate case where a fresh corruption is discovered right at a slice boundary and
+    deferred one slice, since the inherited bookmark looked identical to an already-failed attempt
+    and made a recoverable interruption fail immediately instead). If a corrupted cursor's
+    `lastCreatedAt` matches the persisted `::attempted=` bound — meaning a reseek from exactly this
+    point was already tried, by this slice or an earlier one, with nothing written since — the
+    slice throws and the backfill is marked `failed` rather than reseeking again. Confirmed live:
+    the guard fired with the exact expected message after 49 slices (the queue backlog already
+    in flight before the fix deployed), and `issuesProcessed` stopped climbing immediately.
+
+    **Tested:** `packages/engine/test/ingest.test.ts` — `isCorruptedCursor`'s token-decoding
+    classification (a real captured token, a synthetic one, a healthy token, null, non-base64
+    input, and the marker appearing un-encoded, which must **not** match), the cursor encoding
+    round-trip with all three optional markers present, and `runBackfillSlice` integration cases
+    covering: single recovery mid-backfill; two recoveries in one continuous run at different,
+    recomputed bounds; the no-prior-progress failure case; recovery deferred across a slice
+    boundary (the case attempt 3's redesign had to keep working); and the incident itself — a
+    slice inheriting an already-attempted, unresolved bound fails immediately with zero API calls,
+    rather than reseeking again. `pnpm run verify` is green; `backfill.ts` is at 100%
+    statement/line coverage.
+
+    **Confirmed, not just fixture-tested:** unlike the previous two attempts, this one was verified
+    against the actual failure on the actual dev site, not only against a reconstructed fixture —
+    the live incident it stops is the same live incident that motivated it.
 
 ---
 

@@ -32,10 +32,17 @@ modules:
       # Jira project" until this existed, with no way to fix it from the
       # dashboard). Reuses the same resource: gadget.tsx checks
       # `context.extension.entryPoint` and renders the picker instead of the
-      # report. Exact shape unverified against Forge's manifest schema until
-      # `forge lint` runs.
+      # report.
+      #
+      # `render: native` is required here too, not just at the module's top
+      # level — without it Jira's own "Configure" menu item on the gadget
+      # renders permanently disabled, confirmed live 2026-09-15 on both the
+      # admin system-default dashboard and a fresh personal one. Atlassian's
+      # manifest reference lists `edit.render: 'native'` as valid but never
+      # states it is required for the menu item to be clickable.
       edit:
         resource: gadget
+        render: native
       title: Time in Status
       description: Cumulative time each issue has spent in every status, including
         re-entries.
@@ -57,6 +64,15 @@ modules:
       handler: index.onIssueEvent
     - key: backfill-consumer
       handler: index.backfillHandler
+      # Async-events consumer functions default to a 55s timeout; the manifest
+      # schema allows up to 900s via `timeoutSeconds` (developer.atlassian.com
+      # /platform/forge/manifest-reference/modules/function/, checked
+      # 2026-09-15). Forge bills by actual runtime, not the declared ceiling,
+      # so opting into the max costs nothing when a slice finishes early — it
+      # only matters on the slices that would otherwise be killed mid-page.
+      # `timeBudgetMs` in packages/engine/src/ingest/backfill.ts is set to 70%
+      # of this value; the two must move together.
+      timeoutSeconds: 900
 
   trigger:
     - key: issue-events

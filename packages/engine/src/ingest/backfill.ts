@@ -35,11 +35,20 @@ import { withRetry } from './retry.js';
  *    `putIssueAggregate` is idempotent by replacement);
  * 5. asks the scheduler to enqueue the next slice, or marks the state complete.
  *
- * The time budget defaults to 40 s. Forge's asynchronous invocation limit is
- * larger than that, but the exact figure is a platform quota that changes:
- * **confirm the current value in Atlassian's "Platform quotas and limits" page
- * before release and set `timeBudgetMs` accordingly.** The default is chosen to
- * be safe rather than optimal.
+ * The time budget defaults to 630 s (70% of 900 s). A backfill slice runs
+ * under an Async Events consumer function (`manifest.yml`'s `consumer`
+ * module), which the manifest schema caps at 900 s via `timeoutSeconds` —
+ * confirmed against developer.atlassian.com/platform/forge/manifest-reference
+ * /modules/function/ and /platform/forge/limits-invocation/ on 2026-09-15
+ * (async-events consumers default to a 55 s timeout otherwise; this is a
+ * manifest-schema ceiling, not a moving quota like the request-rate limits
+ * are, so it does not need re-checking before every release the way the
+ * comment this replaced assumed). All five apps' manifests declare
+ * `timeoutSeconds: 900` on `backfill-consumer` to match. Forge bills by
+ * actual runtime, not the declared ceiling, so raising it costs nothing on a
+ * slice that finishes early — it only matters on slices that would otherwise
+ * be killed mid-page. If `timeoutSeconds` ever changes, update this constant
+ * to 70% of the new value.
  */
 
 export interface BackfillOptions {
@@ -65,7 +74,7 @@ export interface BackfillOptions {
 export const DEFAULT_BACKFILL_OPTIONS: Omit<BackfillOptions, 'projectId'> = {
   issuesPerSlice: 100,
   pageSize: 50,
-  timeBudgetMs: 40_000,
+  timeBudgetMs: 630_000,
   throttleMs: 0,
   excludeRestrictedIssues: true,
 };
@@ -164,7 +173,7 @@ export function formatJqlInstant(instant: Millis): string {
  * concern; `{@link decodeCursor}` is the only place that ever has to know the
  * format.
  *
- * A mid-page stop is not a corner case: the 40s default time budget has
+ * A mid-page stop is not a corner case: the time budget has
  * nothing to do with `issuesPerSlice`/`pageSize` alignment, so on a real
  * instance under real network latency it will routinely fall in the middle of
  * a page. Before this, that stop left the cursor untouched, so the next slice
@@ -178,17 +187,116 @@ export function formatJqlInstant(instant: Millis): string {
  */
 const CURSOR_SKIP_MARKER = '::skip=';
 
-export function encodeCursor(token: string | null, skip: number): string | null {
-  if (skip <= 0) return token;
-  return `${token ?? ''}${CURSOR_SKIP_MARKER}${String(skip)}`;
+/**
+ * Second marker on the same cursor string, carrying the `created` instant of
+ * the last issue this backfill has successfully written — regardless of
+ * whether a skip is also pending. It exists so a later slice can recover from
+ * a corrupted Jira pagination token (see {@link isCorruptedCursor} and
+ * TECHNICAL-SPEC § 11 item 11) without a store schema change: the token is
+ * opaque and cannot be trusted once Jira has handed back a bad one, but a
+ * `created >=` JQL bound reconstructed from this value lets the search resume
+ * from scratch without reprocessing everything from the start of history.
+ */
+const CURSOR_SEEK_MARKER = '::seek=';
+
+/**
+ * Third marker, carrying the bound of the most recent corrupted-cursor
+ * *reseek attempt* — distinct from {@link CURSOR_SEEK_MARKER}, which is
+ * attached to every persisted cursor as a resume bookmark regardless of
+ * whether a reseek ever happened. Conflating the two was tried first and
+ * confirmed live 2026-09-15 to be wrong in both directions: reusing the
+ * bookmark as a loop guard made a legitimate first-time recovery (deferred
+ * across a slice boundary, never yet attempted) fail immediately, while
+ * guarding only within one invocation let the same corrupted bound recur
+ * across many separate slices — `issuesProcessed` climbed past the whole
+ * project's real issue count while a consumption-priced platform kept
+ * billing for it. This marker exists solely so a slice can tell "a reseek
+ * from this exact bound was already tried, possibly by an earlier slice,
+ * with nothing written since" from "this bound has never been attempted" —
+ * see its use in `runBackfillSlice`.
+ */
+const CURSOR_ATTEMPTED_MARKER = '::attempted=';
+
+export function encodeCursor(
+  token: string | null,
+  skip: number,
+  seekFrom?: Millis | null,
+  attemptedSeek?: Millis | null,
+): string | null {
+  let encoded = skip > 0 ? `${token ?? ''}${CURSOR_SKIP_MARKER}${String(skip)}` : token;
+  if (seekFrom !== undefined && seekFrom !== null) {
+    encoded = `${encoded ?? ''}${CURSOR_SEEK_MARKER}${String(seekFrom)}`;
+  }
+  if (attemptedSeek !== undefined && attemptedSeek !== null) {
+    encoded = `${encoded ?? ''}${CURSOR_ATTEMPTED_MARKER}${String(attemptedSeek)}`;
+  }
+  return encoded;
 }
 
-export function decodeCursor(raw: string | null): { token: string | null; skip: number } {
-  if (raw === null) return { token: null, skip: 0 };
-  const at = raw.indexOf(CURSOR_SKIP_MARKER);
-  if (at === -1) return { token: raw, skip: 0 };
-  const skip = Number(raw.slice(at + CURSOR_SKIP_MARKER.length));
-  return { token: raw.slice(0, at) || null, skip: Number.isFinite(skip) && skip > 0 ? skip : 0 };
+export function decodeCursor(raw: string | null): {
+  token: string | null;
+  skip: number;
+  seekFrom: Millis | null;
+  attemptedSeek: Millis | null;
+} {
+  if (raw === null) return { token: null, skip: 0, seekFrom: null, attemptedSeek: null };
+  let rest = raw;
+  let attemptedSeek: Millis | null = null;
+  const attemptedAt = rest.indexOf(CURSOR_ATTEMPTED_MARKER);
+  if (attemptedAt !== -1) {
+    const parsed = Number(rest.slice(attemptedAt + CURSOR_ATTEMPTED_MARKER.length));
+    attemptedSeek = Number.isFinite(parsed) ? parsed : null;
+    rest = rest.slice(0, attemptedAt);
+  }
+  let seekFrom: Millis | null = null;
+  const seekAt = rest.indexOf(CURSOR_SEEK_MARKER);
+  if (seekAt !== -1) {
+    const parsed = Number(rest.slice(seekAt + CURSOR_SEEK_MARKER.length));
+    seekFrom = Number.isFinite(parsed) ? parsed : null;
+    rest = rest.slice(0, seekAt);
+  }
+  const skipAt = rest.indexOf(CURSOR_SKIP_MARKER);
+  if (skipAt === -1) return { token: rest || null, skip: 0, seekFrom, attemptedSeek };
+  const skip = Number(rest.slice(skipAt + CURSOR_SKIP_MARKER.length));
+  return {
+    token: rest.slice(0, skipAt) || null,
+    skip: Number.isFinite(skip) && skip > 0 ? skip : 0,
+    seekFrom,
+    attemptedSeek,
+  };
+}
+
+/**
+ * Jira can hand back a `nextPageToken` in an otherwise-successful response
+ * whose own payload is corrupt — confirmed live, TECHNICAL-SPEC § 11 item 11.
+ * The token is opaque base64; decoded, its payload embeds this exact marker
+ * string, Jira's own internal error.
+ *
+ * Detection has to run on the *token*, not on the error a failed request
+ * produces with it. Confirmed live 2026-09-15 by calling
+ * `/rest/api/3/search/jql` directly with a captured corrupted token: Jira's
+ * real response body is a generic, localized "invalid or expired" message —
+ * the marker never appears there, and it never appears in plain text in the
+ * request path either, since the token sits in the URL still base64-encoded.
+ * An earlier version of this fix checked the caught error's `body`/`message`
+ * for the literal marker string and missed every live occurrence for exactly
+ * this reason. The only place the marker is ever findable as text is inside
+ * the decoded token itself — which this backfill already holds in memory
+ * before ever sending it, so the request that would fail can be skipped
+ * entirely rather than sent and then classified.
+ */
+const CORRUPTED_CURSOR_MARKER = 'TENANT_NOT_FOUND_IN_TENANT_STORE';
+
+export function isCorruptedCursor(token: string | null): boolean {
+  if (!token) return false;
+  try {
+    const normalized = token.replace(/-/g, '+').replace(/_/g, '/');
+    return atob(normalized).includes(CORRUPTED_CURSOR_MARKER);
+  } catch {
+    // Not valid base64 — cannot be the corrupted token this guards against,
+    // whatever else it might be.
+    return false;
+  }
 }
 
 /**
@@ -233,7 +341,7 @@ export async function runBackfillSlice(
   // Only ever applied to the very first page fetched by this slice — every
   // page after that starts fresh, because the loop only continues past a page
   // it did not fully consume by breaking out first.
-  const pendingSkip = initialCursor.skip;
+  let pendingSkip = initialCursor.skip;
   let firstIteration = true;
   let processedCount = 0;
   let skipped = 0;
@@ -241,9 +349,71 @@ export async function runBackfillSlice(
   let stoppedBecause: BackfillSliceResult['stoppedBecause'] = 'complete';
   let done = false;
   let issuesTotal = state.issuesTotal;
+  // `created` of the last issue this backfill has actually written, carried
+  // across slices on the cursor itself (`CURSOR_SEEK_MARKER`). The only input
+  // a corrupted-cursor recovery has to work with, since the token it would
+  // otherwise resume from cannot be trusted — see `isCorruptedCursor`.
+  let lastCreatedAt: Millis | null = initialCursor.seekFrom;
+  // The bound of the most recent reseek *attempt*, carried forward on the
+  // persisted cursor (`CURSOR_ATTEMPTED_MARKER`) independently of the resume
+  // bookmark above — see that marker's docstring for why the two must not be
+  // conflated. Guards against looping forever without forward progress,
+  // across slices, not just within one: confirmed live 2026-09-15, a
+  // bulk-seeded project reseeking from the identical instant across many
+  // separate slice invocations, `issuesProcessed` climbing past the whole
+  // project's real issue count while the same issues were repeatedly
+  // rewritten — safe (idempotent), but unbounded and billed for on a
+  // consumption-priced platform, which is worse than failing loudly.
+  let lastAttemptedSeek: Millis | null = initialCursor.attemptedSeek;
 
   try {
     outer: for (;;) {
+      const usingUnrestrictedJql = jql === buildBackfillJql(unrestricted(options));
+
+      if (cursor !== null && isCorruptedCursor(cursor) && lastCreatedAt !== null) {
+        if (lastCreatedAt === lastAttemptedSeek) {
+          throw new Error(
+            `Backfill stuck: Jira handed back a corrupted pagination cursor and a reseek from ` +
+              `the same bound (${String(lastCreatedAt)}) was already attempted, with nothing ` +
+              `written since. Likely too many issues share this created-minute for a ` +
+              `minute-grained JQL bound to skip past the corrupted boundary — see ` +
+              `TECHNICAL-SPEC § 11 item 11.`,
+          );
+        }
+        // Jira handed back this `nextPageToken` in an earlier *successful*
+        // response whose own payload is corrupt (TECHNICAL-SPEC § 11 item
+        // 11) — confirmed to recur at different, unpredictable page/slice
+        // positions across backfill attempts, not just one fixed spot.
+        // Checked here, before the request that would fail with it, rather
+        // than by classifying the failure afterward: Jira's actual rejection
+        // response is a generic, localized "invalid token" message with no
+        // trace of the marker, confirmed live by calling the endpoint
+        // directly — the marker is only ever findable in the decoded token,
+        // which this backfill already holds. The token itself cannot be
+        // trusted or repaired; the only way to resume is to drop pagination
+        // state and re-issue the search bounded to what has not been written
+        // yet, using the last successfully written issue's `created` as the
+        // new lower bound. Safe because writes are idempotent — a few issues
+        // sharing that same minute (`formatJqlInstant`'s resolution) may be
+        // reprocessed, wasting a little request budget, not corrupting
+        // anything.
+        deps.logger?.log(
+          'warn',
+          'jira handed back a corrupted pagination cursor; reseeking by created date instead of trusting it',
+          { projectId: options.projectId, slice, seekFrom: lastCreatedAt },
+        );
+        lastAttemptedSeek = lastCreatedAt;
+        jql = buildBackfillJql({
+          ...(usingUnrestrictedJql ? unrestricted(options) : options),
+          historyFrom: lastCreatedAt,
+        });
+        cursor = null;
+        // Any skip pending from a previous mid-page stop was keyed to the
+        // now-abandoned token's page; it means nothing against this fresh,
+        // differently-bounded query.
+        pendingSkip = 0;
+      }
+
       const search = (): Promise<JiraSearchPage> =>
         deps.api.searchIssues({
           jql,
@@ -264,18 +434,19 @@ export async function runBackfillSlice(
         // issue security scheme. Where it is not, the clause is rejected — and
         // an instance with no security scheme has no restricted issues, so
         // dropping the clause there loses nothing and hides nothing.
-        if (!isUnknownLevelFieldError(error) || jql === buildBackfillJql(unrestricted(options))) {
+        if (isUnknownLevelFieldError(error) && !usingUnrestrictedJql) {
+          deps.logger?.log('info', 'issue security level is not searchable; indexing without it', {
+            projectId: options.projectId,
+          });
+          jql = buildBackfillJql(unrestricted(options));
+          page = await withRetry(search, {
+            ...deps.config.retry,
+            label: `search ${options.projectId} (unrestricted)`,
+          });
+          requests += 1;
+        } else {
           throw error;
         }
-        deps.logger?.log('info', 'issue security level is not searchable; indexing without it', {
-          projectId: options.projectId,
-        });
-        jql = buildBackfillJql(unrestricted(options));
-        page = await withRetry(search, {
-          ...deps.config.retry,
-          label: `search ${options.projectId} (unrestricted)`,
-        });
-        requests += 1;
       }
       requests += 1;
       if (typeof page.total === 'number') issuesTotal = page.total;
@@ -319,6 +490,12 @@ export async function runBackfillSlice(
 
       // Step 4: write results *before* advancing the cursor.
       await writeProcessed(deps.store, batch, deps.config.datasets);
+      if (batch.length > 0) {
+        // `batch` preserves the fetch order, which the JQL guarantees is
+        // `created ASC` — its last element is the latest `created` this
+        // backfill has durably written so far.
+        lastCreatedAt = batch[batch.length - 1]!.meta.createdAt;
+      }
 
       const nextToken = page.nextPageToken ?? null;
       const pageWasLast = page.isLast === true || nextToken === null || issues.length === 0;
@@ -340,10 +517,16 @@ export async function runBackfillSlice(
         // that, a slice landing here twice in a row would stop at the exact
         // same position both times and never advance.
         if (pageFullyConsumed) {
-          cursor = nextToken;
+          // `nextToken` is what a corrupted-cursor recovery has to work
+          // around later — carry `lastCreatedAt` alongside it now, while it's
+          // known, rather than lose it the moment this bare token gets
+          // persisted. `lastAttemptedSeek` travels too, so a next slice that
+          // inherits an already-corrupted `nextToken` can tell whether this
+          // exact bound was tried and failed already.
+          cursor = encodeCursor(nextToken, 0, lastCreatedAt, lastAttemptedSeek);
           if (pageWasLast) done = true;
         } else {
-          cursor = encodeCursor(cursor, skipNow + handledInPage);
+          cursor = encodeCursor(cursor, skipNow + handledInPage, lastCreatedAt, lastAttemptedSeek);
         }
         break outer;
       }
@@ -370,7 +553,12 @@ export async function runBackfillSlice(
     // precisely (the retry falls back to reprocessing that page from its
     // start), which is safe, only slightly wasteful, and not the failure mode
     // this cursor scheme exists to close — see `encodeCursor`'s docstring.
-    const cursorToPersist = encodeCursor(cursor, firstIteration ? pendingSkip : 0);
+    const cursorToPersist = encodeCursor(
+      cursor,
+      firstIteration ? pendingSkip : 0,
+      lastCreatedAt,
+      lastAttemptedSeek,
+    );
     await deps.store.putIndexState({
       ...state,
       state: rateLimited ? 'paused' : 'failed',

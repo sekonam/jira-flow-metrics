@@ -168,6 +168,66 @@ export const Heading = ({ children, as }: HeadingProps): React.JSX.Element => (
   </AdsHeading>
 );
 
+/**
+ * `BarChart` has no ADS equivalent installed in this workspace — Forge's real
+ * host renders it via `@atlassian/viz-platform-charts`, a package this repo
+ * never depends on directly. This stand-in draws each bar as a plain
+ * proportional `<div>` next to its own label and value, both real text nodes
+ * (not baked into the bar, which stays undecorated and unlabelled so an
+ * a11y audit has no false image content to complain about). It proves the
+ * same three things every other stand-in proves — the right data reaches the
+ * DOM, in the right order, accessibly — and nothing about Forge's actual
+ * chart rendering; see the module doc comment.
+ */
+export interface BarChartProps {
+  readonly data?: readonly Record<string, unknown>[];
+  readonly xAccessor?: string;
+  readonly yAccessor?: string;
+  readonly title?: string;
+  readonly subtitle?: string;
+}
+
+export const BarChart = ({
+  data,
+  xAccessor,
+  yAccessor,
+  title,
+  subtitle,
+}: BarChartProps): React.JSX.Element => {
+  const rows = data ?? [];
+  const xKey = xAccessor ?? 'label';
+  const yKey = yAccessor ?? 'value';
+  const values = rows.map((row) => Number(row[yKey]) || 0);
+  const max = Math.max(1, ...values);
+  return (
+    <Stack space="space.100">
+      {title === undefined ? null : <Heading as="h3">{title}</Heading>}
+      {subtitle === undefined ? null : <Text size="small">{subtitle}</Text>}
+      <Stack space="space.050">
+        {rows.map((row, index) => {
+          const label = String(row[xKey]);
+          const value = Number(row[yKey]) || 0;
+          return (
+            <Inline key={`${label}-${index}`} space="space.100" alignBlock="center">
+              <Text size="small">{label}</Text>
+              <div
+                style={{
+                  width: `${(value / max) * 160}px`,
+                  minWidth: value === 0 ? 0 : 4,
+                  height: 10,
+                  background: token('color.background.brand.bold'),
+                  borderRadius: 2,
+                }}
+              />
+              <Text size="small">{String(value)}</Text>
+            </Inline>
+          );
+        })}
+      </Stack>
+    </Stack>
+  );
+};
+
 export interface ButtonProps {
   readonly children?: React.ReactNode;
   readonly onClick?: (() => void) | undefined;

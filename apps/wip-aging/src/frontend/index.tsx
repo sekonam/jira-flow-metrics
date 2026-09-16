@@ -4,6 +4,7 @@ import { invoke } from '@forge/bridge';
 import type { AgingReport } from '@jfm/forge-runtime';
 import type { BackfillProgress } from '@jfm/engine';
 import {
+  AgingHistogram,
   CsvExport,
   EmptySurface,
   ErrorSurface,
@@ -14,6 +15,7 @@ import {
   SummaryTiles,
   surfaceStateOf,
   toProgressBanner,
+  toAgingChartData,
   toAgingTable,
   toAgingTiles,
 } from '@jfm/ui';
@@ -135,6 +137,7 @@ export const App = (): React.JSX.Element => {
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
           <SummaryTiles tiles={toAgingTiles(report)} />
+          <AgingHistogram data={toAgingChartData(report)} />
           <SimpleReportTable model={toAgingTable(report)} />
         </Stack>
       ) : null}
