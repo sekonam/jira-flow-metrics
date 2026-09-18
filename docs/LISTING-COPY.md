@@ -83,27 +83,46 @@ Free for teams up to 10 users — the whole product, not a limited trial. Above 
 
 ---
 
+## Privacy and security
+
+Paste into the Marketplace's privacy and security statement field, not the description. Every
+line is backed by a manifest test or a stated design decision — see `PRODUCT-SPEC.md` § 9 and
+`TECHNICAL-SPEC.md` § 11 item 6.
+
+- **No customer data leaves your Atlassian tenant.** Every aggregate is stored in Forge SQL, inside
+  your own installation — nothing is sent to a third party, nothing is logged externally.
+- **Read-only.** The app requests no Jira write scope. Scopes used: `read:jira-work`,
+  `read:jira-user`, `storage:app` — nothing else.
+- **Your own permissions are checked before anything is returned.** Every report verifies
+  `BROWSE_PROJECTS` for the person viewing it, as that person — not as the app, which reads Jira
+  under its own identity everywhere else.
+- **Issues under an issue security level are never indexed**, and worklogs restricted to a role or
+  group are dropped at ingest. Both choices under-report rather than over-disclose.
+- **The residual, stated here rather than left for a reviewer to find:** the `BROWSE_PROJECTS`
+  check establishes that a viewer may see the _project_. Within a project, the app does **not**
+  re-check per-issue visibility for each viewer on every render — for example a JQL-scoped board
+  filter, or a permission scheme that grants project browse but restricts a subset of issues, is
+  not modelled. Doing that check would mean an as-user Jira call on every report render, which a
+  consumption-priced platform makes prohibitive. The issue-security-level exclusion and the
+  project-level check happen on every read; this narrower, per-issue case does not.
+
+---
+
 ## Screenshots — 6, in this order
 
-**Both blockers cleared 2026-09-15.** The `forge tunnel`-era `localhost` routing artifact against
-the `time-in-status` project page is gone — a fresh `forge deploy -e development` after the gadget
-fix below was enough; no tunnel session was needed. The dashboard-gadget Configure bug (§ 11 item 7)
-is fixed. Raw proof screenshots exist locally for all six (captured in a real browser session against
-`sergiip180.atlassian.net`); none are cropped/polished for the actual listing upload yet.
+**Finalized 2026-09-18.** All six are cropped, chrome-free PNGs in `docs/listing-assets/`, ready to
+upload as-is. Source captures were taken against the seeded dev site (`sergiip180.atlassian.net`,
+project `JFM` — the hand-checked set, issue `JFM-11` named throughout). See `tools/seed-report.md`
+for which issues show the clearest re-entry margins.
 
-Captions included. Capture each against the seeded dev site (`sergiip180.atlassian.net`, project
-`JFMB` — 300 real issues with real re-entries — or `JFM` for the smaller hand-checked set where a
-specific issue like `JFM-11` is named). See `tools/seed-bulk-report.md` / `tools/seed-report.md` for
-which issues show the clearest re-entry margins.
-
-| #   | Shows                                                        | Caption                                                           | Status                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --- | ------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Report table with a visible `×2` badge and cumulative figure | "Every re-entry counted — not just the last one."                 | **raw capture done** — `JFM` project, `JFM-11` row shows `15h 29m ×3` in In Progress, matching this doc's own alt-text example exactly                                                                                                                                                                                                                                                                  |
-| 2   | The same issue next to Jira's own Control Chart figure       | "Check it yourself: open the same issue's History tab."           | **raw capture done, caption target changed** — used JFM-11's own History tab (3 To Do ↔ In Progress transitions, matching the ×3 badge); the classic per-project Control Chart URL 404s on this team-managed project, unconfirmed whether one exists in a different form                                                                                                                                |
-| 3   | Elapsed vs working-hours toggle, working calendar visible    | "Working hours, not wall-clock — holidays and weekends excluded." | **raw capture done** — toggle confirmed live (JFM-11 In Progress: `15h 29m` elapsed → `43m` working hours); no separate calendar UI is shown, only the recomputed numbers                                                                                                                                                                                                                               |
-| 4   | Summary tiles: median and 85th percentile per status         | "The numbers for your next review, already summarised."           | **raw capture done** — same screenshot as #1, tiles sit above the table                                                                                                                                                                                                                                                                                                                                 |
-| 5   | The dashboard gadget on a real dashboard                     | "Seen by your team, not just whoever installed it."               | **raw capture done** — Configure fixed (§ 11 item 7); gadget configured to `JFMB` on a real personal dashboard, rendering `Issues: 181` plus per-status medians                                                                                                                                                                                                                                         |
-| 6   | CSV export open in a spreadsheet                             | "For the QBR deck, not just the dashboard."                       | **caption does not match the real UX** — clicking Export CSV opens a copy-the-text modal (`time-in-status-10000.csv`), not a file download or a spreadsheet, because a Forge Custom UI sandbox cannot hand the browser a file (TECHNICAL-SPEC § 11 item 8). Either paste the copied text into a real spreadsheet before screenshotting, or rewrite the caption to describe the copy-paste flow honestly |
+| #   | Shows                                                                  | Caption                                                                     | Status                                                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Report table with a visible `×2` badge and cumulative figure           | "Every re-entry counted — not just the last one."                           | **finalized** — `docs/listing-assets/01-reentry-badge.png` — `JFM-11` row shows `15h 29m ×3` in In Progress, matching this doc's own alt-text example exactly                                                                                                                                                                                                                                |
+| 2   | The same issue's History tab, showing the re-entry transitions         | "Check it yourself: open the same issue's History tab."                     | **finalized** — `docs/listing-assets/02-history-tab-comparison.png` — `JFM-11`'s История tab, 3 To Do ↔ In Progress transitions matching the ×3 badge; the classic per-project Control Chart URL 404s on this team-managed project, unconfirmed whether one exists in a different form                                                                                                       |
+| 3   | Elapsed vs working-hours toggle, active state visible                  | "Working hours, not wall-clock — holidays and weekends excluded."           | **finalized** — `docs/listing-assets/03-working-hours-toggle.png` — toggle confirmed live (`JFM-11` In Progress: `15h 29m` elapsed → `43m` working hours); no separate calendar UI is shown, only the recomputed numbers                                                                                                                                                                     |
+| 4   | Summary tiles: median and 85th percentile per status                   | "The numbers for your next review, already summarised."                     | **finalized** — `docs/listing-assets/04-summary-tiles.png` — cropped tighter than #1 to the heading + tile row alone                                                                                                                                                                                                                                                                         |
+| 5   | The dashboard gadget on a real dashboard                               | "Seen by your team, not just whoever installed it."                         | **finalized, one caveat** — `docs/listing-assets/05-dashboard-gadget.png` — real gadget, real data (`Issues: 181` plus per-status medians); still carries the "СРЕДА РАЗРАБОТКИ" (development) badge and the test dashboard's name "TIS gadget test", both artifacts of pre-launch capture — re-shoot after publish on a properly named dashboard if the badge/name would read as unpolished |
+| 6   | Export CSV modal — filename and full CSV text ready to select and copy | "Copied in one click — paste it into whatever spreadsheet you already use." | **finalized** — `docs/listing-assets/06-csv-export-modal.png` — caption describes the real copy-paste flow (TECHNICAL-SPEC § 11 item 8), not a native download                                                                                                                                                                                                                               |
 
 Alt text: describe what the screenshot proves, not what it contains — e.g. "Table row for issue
 FLOW-142 showing 15h 29m cumulative time in In Progress across two visits, versus the single-visit
