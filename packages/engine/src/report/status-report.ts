@@ -42,6 +42,15 @@ export interface StatusReport {
   readonly issueCount: number;
   /** True when any row's history was incomplete. Surfaced in the UI, not hidden. */
   readonly anyTruncated: boolean;
+  /** Total issues stored for the project, from a real count, not a page length. */
+  readonly projectIssueCount: number;
+  /**
+   * True when the project holds more issues than the report could fetch, so
+   * `issueCount` is a lower bound and rows may be missing. The UI must say so —
+   * a capped page that looks complete is the silent-ceiling failure documented
+   * in `docs/TECHNICAL-SPEC.md` § 11.1.
+   */
+  readonly capped: boolean;
 }
 
 export interface StatusReportQuery {
@@ -67,6 +76,7 @@ export async function buildStatusReport(
   // planned optimisation (see docs/TECHNICAL-SPEC.md "known limitations");
   // at the page sizes the UI uses this is not the bottleneck.
   const metas = await store.queryIssueMeta(query.projectId, query.limit + query.offset, 0);
+  const projectIssueCount = await store.countIssueMeta(query.projectId);
   const filtered = metas.filter((m) => matchesFilters(m, query));
   const page = filtered.slice(query.offset, query.offset + query.limit);
 
@@ -125,6 +135,8 @@ export async function buildStatusReport(
     summaryByStatus,
     issueCount: filtered.length,
     anyTruncated: rows.some((r) => r.truncated),
+    projectIssueCount,
+    capped: projectIssueCount > metas.length,
   };
 }
 

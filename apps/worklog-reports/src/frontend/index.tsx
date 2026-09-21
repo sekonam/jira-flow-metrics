@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ForgeReconciler, { Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
-import type { BackfillProgress, WorklogAggregateResult } from '@jfm/engine';
+import type { BackfillProgress } from '@jfm/engine';
+import type { WorklogReport } from '@jfm/forge-runtime';
 import {
   CsvExport,
   EmptySurface,
@@ -12,6 +13,7 @@ import {
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
+  toCapBanner,
   toProgressBanner,
   toWorklogTable,
   toWorklogTiles,
@@ -38,7 +40,7 @@ import {
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export const App = (): React.JSX.Element => {
-  const [report, setReport] = useState<WorklogAggregateResult | null>(null);
+  const [report, setReport] = useState<WorklogReport | null>(null);
   const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +49,7 @@ export const App = (): React.JSX.Element => {
     setLoading(true);
     setError(null);
     try {
-      const result = (await invoke('getWorklogReport', {})) as Result<WorklogAggregateResult>;
+      const result = (await invoke('getWorklogReport', {})) as Result<WorklogReport>;
       if (result.ok) setReport(result.data);
       else setError(result.error);
       // The indexing banner is shared across all five listings. It reads the
@@ -91,7 +93,7 @@ export const App = (): React.JSX.Element => {
     <Stack space="space.200">
       <PageHeader
         title="Worklog Reports"
-        subtitle="Logged time grouped by person, issue or period. Totals are what people entered in Jira."
+        subtitle="Logged time totalled per person. Totals are what people entered in Jira."
         actions={<CsvExport onRequestCsv={requestCsv} />}
       />
 
@@ -133,6 +135,14 @@ export const App = (): React.JSX.Element => {
       ) : null}
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
+          <IndexingBanner
+            banner={toCapBanner({
+              capped: report.capped,
+              included: report.entries,
+              total: report.totalEntries,
+              noun: 'worklog entries',
+            })}
+          />
           <SummaryTiles tiles={toWorklogTiles(report)} />
           <SimpleReportTable model={toWorklogTable(report, 'Person')} />
         </Stack>

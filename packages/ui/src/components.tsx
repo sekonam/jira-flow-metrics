@@ -31,7 +31,12 @@ import type {
   ReportTableModel,
   SummaryTile,
 } from './view-model.js';
-import type { SimpleTable } from './listing-models.js';
+import {
+  SLA_TARGET_OPTIONS,
+  toggleCountedStatus,
+  type SimpleTable,
+  type SlaGoalChoice,
+} from './listing-models.js';
 
 /**
  * Shared Forge UI Kit components.
@@ -169,6 +174,60 @@ export function GadgetConfigForm({
       >
         Save
       </Button>
+    </Stack>
+  );
+}
+
+/**
+ * The SLA page's goal picker — the counted statuses and the working-time
+ * target every row is measured against.
+ *
+ * Status chips are toggle `Button`s rather than a multi-select because UI
+ * Kit 2's `Select` is single-value; the target is a preset `Select` (see
+ * `SLA_TARGET_OPTIONS`). An empty selection means every status counts, and
+ * the caption says so — the goal is a view choice, and the reader must be
+ * able to tell what the numbers on screen are measured against.
+ */
+export function SlaGoalForm({
+  statuses,
+  goal,
+  onChange,
+}: {
+  statuses: readonly { id: string; name: string }[];
+  goal: SlaGoalChoice;
+  onChange: (next: SlaGoalChoice) => void;
+}): React.JSX.Element {
+  const defaultTarget = SLA_TARGET_OPTIONS.find((o) => o.value === String(goal.targetMs));
+  return (
+    <Stack space="space.150">
+      <Label labelFor="sla-goal-target">Working-time target</Label>
+      <Select
+        inputId="sla-goal-target"
+        options={SLA_TARGET_OPTIONS}
+        {...(defaultTarget === undefined ? {} : { defaultValue: defaultTarget })}
+        onChange={(option) => {
+          const value = (option as { value?: string } | null)?.value;
+          if (value !== undefined) onChange({ ...goal, targetMs: Number(value) });
+        }}
+      />
+      <Text size="small">
+        {goal.countedStatusIds.length === 0
+          ? 'Counting time in every status. Select statuses to count only those.'
+          : 'Counting time only in the selected statuses.'}
+      </Text>
+      <Inline space="space.100" shouldWrap>
+        {statuses.map((status) => (
+          <Button
+            key={status.id}
+            isSelected={goal.countedStatusIds.includes(status.id)}
+            onClick={() => {
+              onChange(toggleCountedStatus(goal, status.id));
+            }}
+          >
+            {status.name}
+          </Button>
+        ))}
+      </Inline>
     </Stack>
   );
 }

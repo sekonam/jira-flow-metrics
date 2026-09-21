@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorklogAggregateResult } from '@jfm/engine';
 import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
 import {
+  DEFAULT_SLA_GOAL,
   toAgingChartData,
   toAgingTable,
   toAgingTiles,
@@ -11,6 +12,7 @@ import {
   toSlaTiles,
   toWorklogTable,
   toWorklogTiles,
+  toggleCountedStatus,
 } from '../src/listing-models.js';
 
 const HOUR = 3_600_000;
@@ -51,6 +53,8 @@ const aging: AgingReport = {
   ],
   evaluatedAt: NOW,
   excludedDone: 5,
+  projectIssueCount: 6,
+  capped: false,
 };
 
 const sla: SlaReport = {
@@ -95,6 +99,8 @@ const sla: SlaReport = {
   breachedCount: 1,
   attainment: 0.5,
   dueDateBreaches: 1,
+  projectIssueCount: 2,
+  capped: false,
 };
 
 const history: HistoryReport = {
@@ -117,6 +123,8 @@ const history: HistoryReport = {
   ],
   byField: [{ field: 'status', fieldLabel: 'status', changes: 1, issues: 1, authors: 1 }],
   total: 1,
+  totalMatching: 1,
+  capped: false,
 };
 
 describe('worklog view model', () => {
@@ -230,7 +238,7 @@ describe('history view model', () => {
   it('renders a change per row with em dashes for absent values', () => {
     const table = toHistoryTable(history);
     expect(table.rows[0]).toEqual(['9 Mar 2026 12:00', 'FLOW-1', 'status', '—', 'Done', 'Anna']);
-    expect(table.footnotes[0]).toContain('cross-issue, filterable and exportable');
+    expect(table.footnotes[0]).toContain('cross-issue and exportable');
   });
 
   /**
@@ -254,5 +262,19 @@ describe('history view model', () => {
   it('names the busiest field', () => {
     expect(toHistoryTiles(history)[1]?.value).toBe('status');
     expect(toHistoryTiles({ ...history, byField: [], total: 0 })[1]?.value).toBe('—');
+  });
+});
+
+describe('SLA goal choice', () => {
+  it('defaults to all statuses at 8 working hours', () => {
+    expect(DEFAULT_SLA_GOAL.countedStatusIds).toEqual([]);
+    expect(DEFAULT_SLA_GOAL.targetMs).toBe(8 * HOUR);
+  });
+
+  it('toggles a status in and out without touching the target', () => {
+    const counted = toggleCountedStatus(DEFAULT_SLA_GOAL, '3');
+    expect(counted.countedStatusIds).toEqual(['3']);
+    expect(counted.targetMs).toBe(DEFAULT_SLA_GOAL.targetMs);
+    expect(toggleCountedStatus(counted, '3').countedStatusIds).toEqual([]);
   });
 });

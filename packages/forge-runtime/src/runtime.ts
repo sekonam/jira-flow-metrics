@@ -21,6 +21,7 @@ import {
   type Millis,
   type Scheduler,
   type Sleeper,
+  type StatusMetaRow,
   type StatusReport,
 } from '@jfm/engine';
 import { type SettingsStore, type ProjectSettings } from './settings.js';
@@ -34,9 +35,9 @@ import {
   type HistoryReportRequest,
   type SlaCountedGoal,
   type SlaReport,
+  type WorklogReport,
   type WorklogReportRequest,
 } from './reports.js';
-import type { WorklogAggregateResult } from '@jfm/engine';
 
 /**
  * Per-listing runtime wiring.
@@ -277,7 +278,7 @@ export class ListingRuntime {
   }
 
   /** Listing 2 — worklog totals grouped by author, issue, day, week or month. */
-  async worklogReport(request: WorklogReportRequest): Promise<WorklogAggregateResult> {
+  async worklogReport(request: WorklogReportRequest): Promise<WorklogReport> {
     await this.deps.store.migrate();
     const settings = await this.deps.settings.get(request.projectId);
     return buildWorklogReport(this.deps.store, request, settings.calendar.timeZone);
@@ -315,6 +316,12 @@ export class ListingRuntime {
   /** Projects the calling user may browse — the dashboard gadget's picker. */
   async listProjects(): Promise<readonly JiraProjectRef[]> {
     return this.deps.api.listProjects();
+  }
+
+  /** Statuses the store has seen — the SLA goal picker's options. */
+  async listStatuses(): Promise<readonly StatusMetaRow[]> {
+    await this.deps.store.migrate();
+    return this.deps.store.getStatusMeta();
   }
 
   get listingId(): string {

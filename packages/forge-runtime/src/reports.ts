@@ -46,26 +46,35 @@ export interface WorklogReportRequest {
   readonly limit?: number;
 }
 
+export interface WorklogReport extends WorklogAggregateResult {
+  /** Matching worklog entries in the store, from a real count, not a page length. */
+  readonly totalEntries: number;
+  /** True when more entries match than were fetched, so every figure is a lower bound. */
+  readonly capped: boolean;
+}
+
 export async function buildWorklogReport(
   store: MetricsStore,
   request: WorklogReportRequest,
   timeZone: string,
-): Promise<WorklogAggregateResult> {
-  const records = await store.queryWorklogs({
+): Promise<WorklogReport> {
+  const worklogQuery = {
     projectId: request.projectId,
     ...(request.from === undefined ? {} : { from: request.from }),
     ...(request.to === undefined ? {} : { to: request.to }),
     ...(request.authorAccountIds === undefined
       ? {}
       : { authorAccountIds: request.authorAccountIds }),
-    limit: request.limit ?? 10_000,
-  });
-  return aggregateWorklogs(records, {
+  };
+  const records = await store.queryWorklogs({ ...worklogQuery, limit: request.limit ?? 10_000 });
+  const totalEntries = await store.countWorklogs(worklogQuery);
+  const result = aggregateWorklogs(records, {
     groupBy: request.groupBy ?? 'author',
     timeZone,
     ...(request.from === undefined ? {} : { from: request.from }),
     ...(request.to === undefined ? {} : { to: request.to }),
   });
+  return { ...result, totalEntries, capped: totalEntries > records.length };
 }
 
 // ------------------------------------------------------------- WIP aging ---
@@ -88,6 +97,10 @@ export interface AgingReport {
   readonly evaluatedAt: Millis;
   /** Issues excluded because they are already done. */
   readonly excludedDone: number;
+  /** Total issues stored for the project, from a real count, not a page length. */
+  readonly projectIssueCount: number;
+  /** True when the project holds more issues than the report could fetch. */
+  readonly capped: boolean;
 }
 
 const AGING_BUCKETS: readonly { label: string; fromDays: number; toDays: number | null }[] = [
@@ -114,6 +127,7 @@ export async function buildAgingReport(
   limit = 500,
 ): Promise<AgingReport> {
   const metas = await store.queryIssueMeta(projectId, limit, 0);
+  const projectIssueCount = await store.countIssueMeta(projectId);
   const statusMeta = await store.getStatusMeta();
   const byId = new Map(statusMeta.map((s) => [s.statusId, s]));
   const aggregates = await store.queryStatusDurations({
@@ -160,7 +174,14 @@ export async function buildAgingReport(
     }).length,
   }));
 
-  return { rows, buckets, evaluatedAt: now, excludedDone };
+  return {
+    rows,
+    buckets,
+    evaluatedAt: now,
+    excludedDone,
+    projectIssueCount,
+    capped: projectIssueCount > metas.length,
+  };
 }
 
 function isDone(meta: IssueMetaRow, byId: ReadonlyMap<StatusId, StatusMetaRow>): boolean {
@@ -199,6 +220,10 @@ export interface SlaReport {
   /** Share of measured issues that met the goal, 0-1. `null` when empty. */
   readonly attainment: number | null;
   readonly dueDateBreaches: number;
+  /** Total issues stored for the project, from a real count, not a page length. */
+  readonly projectIssueCount: number;
+  /** True when the project holds more issues than the report could fetch. */
+  readonly capped: boolean;
 }
 
 export async function buildSlaReport(
@@ -209,6 +234,7 @@ export async function buildSlaReport(
   limit = 500,
 ): Promise<SlaReport> {
   const metas = await store.queryIssueMeta(projectId, limit, 0);
+  const projectIssueCount = await store.countIssueMeta(projectId);
   const counted = new Set(goal.countedStatusIds);
   const aggregates = await store.queryStatusDurations({
     projectId,
@@ -256,6 +282,8 @@ export async function buildSlaReport(
     breachedCount,
     attainment: rows.length === 0 ? null : (rows.length - breachedCount) / rows.length,
     dueDateBreaches: rows.filter((r) => r.dueDate.breached).length,
+    projectIssueCount,
+    capped: projectIssueCount > metas.length,
   };
 }
 
@@ -274,14 +302,19 @@ export interface HistoryReportRequest {
 export interface HistoryReport {
   readonly records: readonly HistoryRecord[];
   readonly byField: readonly FieldChangeSummary[];
+  /** Changes on this page. */
   readonly total: number;
+  /** Matching changes in the store, from a real count, not a page length. */
+  readonly totalMatching: number;
+  /** True when more changes match than this page shows. */
+  readonly capped: boolean;
 }
 
 export async function buildHistoryReport(
   store: MetricsStore,
   request: HistoryReportRequest,
 ): Promise<HistoryReport> {
-  const records = await store.queryHistory({
+  const historyQuery = {
     projectId: request.projectId,
     ...(request.from === undefined ? {} : { from: request.from }),
     ...(request.to === undefined ? {} : { to: request.to }),
@@ -289,8 +322,19 @@ export async function buildHistoryReport(
     ...(request.authorAccountIds === undefined
       ? {}
       : { authorAccountIds: request.authorAccountIds }),
+  };
+  const offset = request.offset ?? 0;
+  const records = await store.queryHistory({
+    ...historyQuery,
     limit: request.limit ?? 500,
-    offset: request.offset ?? 0,
+    offset,
   });
-  return { records, byField: summariseByField(records), total: records.length };
+  const totalMatching = await store.countHistory(historyQuery);
+  return {
+    records,
+    byField: summariseByField(records),
+    total: records.length,
+    totalMatching,
+    capped: totalMatching > offset + records.length,
+  };
 }

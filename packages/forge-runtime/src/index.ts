@@ -14,5 +14,6 @@ export * from './jira/client.js';
 export * from './scheduler.js';
 export * from './settings.js';
 export * from './reports.js';
+export * from './report-csv.js';
 export * from './runtime.js';
 export * from './handlers.js';

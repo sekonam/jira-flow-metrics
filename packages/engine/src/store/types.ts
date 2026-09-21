@@ -139,6 +139,13 @@ export interface MetricsStore {
 
   getIssueMeta(issueId: string): Promise<IssueMetaRow | null>;
   queryIssueMeta(projectId: string, limit: number, offset: number): Promise<IssueMetaRow[]>;
+  /**
+   * Total `issue_meta` rows for a project, independent of any page size.
+   * Reports need this to say "showing 500 of 1,234" instead of rendering a
+   * capped page that looks complete — the silent-ceiling failure documented
+   * in `docs/TECHNICAL-SPEC.md` § 11.1.
+   */
+  countIssueMeta(projectId: string): Promise<number>;
   queryStatusDurations(query: StatusDurationQuery): Promise<StatusAggregateRow[]>;
 
   upsertStatusMeta(rows: readonly StatusMetaRow[]): Promise<void>;
@@ -148,9 +155,13 @@ export interface MetricsStore {
 
   putWorklogs(issueId: string, records: readonly WorklogRecord[]): Promise<void>;
   queryWorklogs(query: WorklogQuery): Promise<WorklogRecord[]>;
+  /** Matching worklog rows regardless of `limit`/`offset`, which are ignored. */
+  countWorklogs(query: WorklogQuery): Promise<number>;
 
   putHistory(issueId: string, records: readonly HistoryRecord[]): Promise<void>;
   queryHistory(query: HistoryQuery): Promise<HistoryRecord[]>;
+  /** Matching history rows regardless of `limit`/`offset`, which are ignored. */
+  countHistory(query: HistoryQuery): Promise<number>;
 
   getIndexState(projectId: string): Promise<IndexStateRow | null>;
   putIndexState(row: IndexStateRow): Promise<void>;

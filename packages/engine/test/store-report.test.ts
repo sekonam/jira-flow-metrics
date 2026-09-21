@@ -303,6 +303,69 @@ describe('MemoryStore — the reference store semantics', () => {
   });
 });
 
+describe('store counts — the real totals behind capped pages', () => {
+  it('counts issue meta per project regardless of any page size', async () => {
+    const store = await seededStore();
+    expect(await store.countIssueMeta('10000')).toBe(2);
+    expect(await store.countIssueMeta('99999')).toBe(0);
+  });
+
+  it('counts worklogs with the same filters the query applies', async () => {
+    const store = new MemoryStore();
+    const base = {
+      issueId: '1',
+      issueKey: 'FLOW-1',
+      projectId: '10000',
+      timeSpentMs: HOUR,
+      createdAt: null,
+      updatedAt: null,
+    };
+    await store.putWorklogs('1', [
+      {
+        ...base,
+        worklogId: 'a',
+        authorAccountId: 'anna',
+        authorDisplayName: 'Anna',
+        startedAt: NOW - HOUR,
+      },
+      {
+        ...base,
+        worklogId: 'b',
+        authorAccountId: 'ben',
+        authorDisplayName: 'Ben',
+        startedAt: NOW - 2 * HOUR,
+      },
+    ]);
+    expect(await store.countWorklogs({ projectId: '10000' })).toBe(2);
+    expect(await store.countWorklogs({ projectId: '10000', authorAccountIds: ['ben'] })).toBe(1);
+    // limit/offset are page concerns and must not change the total.
+    expect(await store.countWorklogs({ projectId: '10000', limit: 1 })).toBe(2);
+  });
+
+  it('counts history with the same filters the query applies', async () => {
+    const store = new MemoryStore();
+    const base = {
+      issueId: '1',
+      issueKey: 'FLOW-1',
+      projectId: '10000',
+      at: NOW - HOUR,
+      authorAccountId: 'anna',
+      authorDisplayName: 'Anna',
+      fromValue: null,
+      toValue: 'Done',
+      fromId: null,
+      toId: '10001',
+    };
+    await store.putHistory('1', [
+      { ...base, changeId: 'a', field: 'status', fieldLabel: 'status' },
+      { ...base, changeId: 'b', field: 'assignee', fieldLabel: 'assignee' },
+    ]);
+    expect(await store.countHistory({ projectId: '10000' })).toBe(2);
+    expect(await store.countHistory({ projectId: '10000', fields: ['status'] })).toBe(1);
+    expect(await store.countHistory({ projectId: '10000', limit: 1 })).toBe(2);
+  });
+});
+
 describe('status report assembly', () => {
   it('lays statuses out in workflow order and fills gaps with zero', async () => {
     const store = await seededStore();
@@ -342,6 +405,31 @@ describe('status report assembly', () => {
     });
     expect(business.rows[0]?.byStatus['3']).toBe(5 * HOUR);
     expect(business.basis).toBe('business');
+  });
+
+  it('★ says when the project holds more issues than the page could fetch', async () => {
+    const store = await seededStore();
+    const capped = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      limit: 1,
+      offset: 0,
+    });
+    // Two issues stored, a one-issue page: the report must say so, because a
+    // capped page that looks complete is the silent-ceiling failure of
+    // TECHNICAL-SPEC § 11.1.
+    expect(capped.projectIssueCount).toBe(2);
+    expect(capped.capped).toBe(true);
+    expect(capped.rows).toHaveLength(1);
+
+    const complete = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      limit: 10,
+      offset: 0,
+    });
+    expect(complete.projectIssueCount).toBe(2);
+    expect(complete.capped).toBe(false);
   });
 
   it('summarises each status across the result set', async () => {

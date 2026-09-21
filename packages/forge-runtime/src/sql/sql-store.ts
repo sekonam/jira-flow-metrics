@@ -177,6 +177,14 @@ export class SqlMetricsStore implements MetricsStore {
     return rows.map(issueMetaFromRow);
   }
 
+  async countIssueMeta(projectId: string): Promise<number> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      'SELECT COUNT(*) AS n FROM issue_meta WHERE project_id = ?',
+      [projectId],
+    );
+    return toNumber(rows[0]?.['n'] ?? 0);
+  }
+
   async queryStatusDurations(query: StatusDurationQuery): Promise<StatusAggregateRow[]> {
     const clauses = ['project_id = ?'];
     const params: unknown[] = [query.projectId];
@@ -256,20 +264,7 @@ export class SqlMetricsStore implements MetricsStore {
   }
 
   async queryWorklogs(query: WorklogQuery): Promise<WorklogRecord[]> {
-    const clauses = ['project_id = ?'];
-    const params: unknown[] = [query.projectId];
-    if (query.from !== undefined) {
-      clauses.push('started_at >= ?');
-      params.push(query.from);
-    }
-    if (query.to !== undefined) {
-      clauses.push('started_at < ?');
-      params.push(query.to);
-    }
-    if (query.authorAccountIds !== undefined) {
-      clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
-      params.push(...query.authorAccountIds);
-    }
+    const { clauses, params } = worklogClauses(query);
     const limit = clampLimit(query.limit ?? 10_000);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
@@ -278,6 +273,15 @@ export class SqlMetricsStore implements MetricsStore {
       params,
     );
     return rows.map(worklogFromRow);
+  }
+
+  async countWorklogs(query: WorklogQuery): Promise<number> {
+    const { clauses, params } = worklogClauses(query);
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT COUNT(*) AS n FROM worklog WHERE ${clauses.join(' AND ')}`,
+      params,
+    );
+    return toNumber(rows[0]?.['n'] ?? 0);
   }
 
   async putHistory(issueId: string, records: readonly HistoryRecord[]): Promise<void> {
@@ -295,24 +299,7 @@ export class SqlMetricsStore implements MetricsStore {
   }
 
   async queryHistory(query: HistoryQuery): Promise<HistoryRecord[]> {
-    const clauses = ['project_id = ?'];
-    const params: unknown[] = [query.projectId];
-    if (query.from !== undefined) {
-      clauses.push('changed_at >= ?');
-      params.push(query.from);
-    }
-    if (query.to !== undefined) {
-      clauses.push('changed_at < ?');
-      params.push(query.to);
-    }
-    if (query.fields !== undefined) {
-      clauses.push(`field IN (${placeholders(query.fields.length)})`);
-      params.push(...query.fields.map((f) => f.toLowerCase()));
-    }
-    if (query.authorAccountIds !== undefined) {
-      clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
-      params.push(...query.authorAccountIds);
-    }
+    const { clauses, params } = historyClauses(query);
     const limit = clampLimit(query.limit ?? 10_000);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
@@ -321,6 +308,15 @@ export class SqlMetricsStore implements MetricsStore {
       params,
     );
     return rows.map(historyFromRow);
+  }
+
+  async countHistory(query: HistoryQuery): Promise<number> {
+    const { clauses, params } = historyClauses(query);
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT COUNT(*) AS n FROM issue_history WHERE ${clauses.join(' AND ')}`,
+      params,
+    );
+    return toNumber(rows[0]?.['n'] ?? 0);
   }
 
   async getIndexState(projectId: string): Promise<IndexStateRow | null> {
@@ -401,4 +397,49 @@ function clampLimit(limit: number): number {
 function clampOffset(offset: number): number {
   if (!Number.isFinite(offset)) return 0;
   return Math.max(0, Math.trunc(offset));
+}
+
+/**
+ * WHERE clauses shared by a query and its COUNT twin, so the page and the
+ * total can never disagree about which rows match. `limit`/`offset` are not
+ * part of a WHERE clause and stay with the callers.
+ */
+function worklogClauses(query: WorklogQuery): { clauses: string[]; params: unknown[] } {
+  const clauses = ['project_id = ?'];
+  const params: unknown[] = [query.projectId];
+  if (query.from !== undefined) {
+    clauses.push('started_at >= ?');
+    params.push(query.from);
+  }
+  if (query.to !== undefined) {
+    clauses.push('started_at < ?');
+    params.push(query.to);
+  }
+  if (query.authorAccountIds !== undefined) {
+    clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
+    params.push(...query.authorAccountIds);
+  }
+  return { clauses, params };
+}
+
+function historyClauses(query: HistoryQuery): { clauses: string[]; params: unknown[] } {
+  const clauses = ['project_id = ?'];
+  const params: unknown[] = [query.projectId];
+  if (query.from !== undefined) {
+    clauses.push('changed_at >= ?');
+    params.push(query.from);
+  }
+  if (query.to !== undefined) {
+    clauses.push('changed_at < ?');
+    params.push(query.to);
+  }
+  if (query.fields !== undefined) {
+    clauses.push(`field IN (${placeholders(query.fields.length)})`);
+    params.push(...query.fields.map((f) => f.toLowerCase()));
+  }
+  if (query.authorAccountIds !== undefined) {
+    clauses.push(`author_account_id IN (${placeholders(query.authorAccountIds.length)})`);
+    params.push(...query.authorAccountIds);
+  }
+  return { clauses, params };
 }

@@ -337,6 +337,35 @@ export function toProgressBanner(progress: BackfillProgress | null): ProgressBan
   }
 }
 
+/**
+ * The banner for a capped report — a project or range bigger than the page
+ * the report could fetch.
+ *
+ * Rendered through the same `IndexingBanner` component as indexing progress:
+ * both are "the numbers below do not cover everything" messages, and a capped
+ * page that looks complete is the silent-ceiling failure documented in
+ * `docs/TECHNICAL-SPEC.md` § 11.1. `included`/`total` are counts of `noun`
+ * ("issues", "changes", "worklog entries"); `capped` comes from the report,
+ * which computed it against a real store count rather than a page length.
+ */
+export function toCapBanner(input: {
+  capped: boolean;
+  included: number;
+  total: number;
+  noun: string;
+}): ProgressBanner | null {
+  if (!input.capped) return null;
+  return {
+    appearance: 'warning',
+    title: `Report capped at ${input.included.toLocaleString('en-GB')} of ${input.total.toLocaleString('en-GB')} ${input.noun}`,
+    body:
+      `The rest are beyond this report's page size, so every figure on this page is a ` +
+      'lower bound. Narrow the filters to cover the remainder.',
+    showSpinner: false,
+    showRetry: false,
+  };
+}
+
 function describeProgress(progress: BackfillProgress): string {
   if (progress.fraction === null) {
     return `${progress.issuesProcessed.toLocaleString('en-GB')} issues indexed.`;

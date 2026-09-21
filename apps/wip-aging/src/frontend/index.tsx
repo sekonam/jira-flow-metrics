@@ -14,6 +14,7 @@ import {
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
+  toCapBanner,
   toProgressBanner,
   toAgingChartData,
   toAgingTable,
@@ -136,6 +137,14 @@ export const App = (): React.JSX.Element => {
       ) : null}
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
+          <IndexingBanner
+            banner={toCapBanner({
+              capped: report.capped,
+              included: report.rows.length + report.excludedDone,
+              total: report.projectIssueCount,
+              noun: 'issues',
+            })}
+          />
           <SummaryTiles tiles={toAgingTiles(report)} />
           <AgingHistogram data={toAgingChartData(report)} />
           <SimpleReportTable model={toAgingTable(report)} />

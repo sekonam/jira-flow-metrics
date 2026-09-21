@@ -4,10 +4,18 @@ import type {
   AgingReport,
   HistoryReport,
   HistoryReportRequest,
+  SlaCountedGoal,
   SlaReport,
+  WorklogReport,
   WorklogReportRequest,
 } from './reports.js';
-import type { BackfillProgress, JiraProjectRef, WorklogAggregateResult } from '@jfm/engine';
+import {
+  agingReportToCsv,
+  historyReportToCsv,
+  slaReportToCsv,
+  worklogReportToCsv,
+} from './report-csv.js';
+import type { BackfillProgress, JiraProjectRef, StatusMetaRow } from '@jfm/engine';
 
 /**
  * Handler bodies, shared by all five listings.
@@ -201,22 +209,58 @@ export async function handleGetReport(
   }
 }
 
+/**
+ * Which report an app's export button exports.
+ *
+ * Defaults to `'status'` — but four of the five listings show a different
+ * report, and until each app passed its own kind here, every export button
+ * produced the time-in-status CSV regardless of the page it sat on.
+ */
+export type CsvExportKind = 'status' | 'worklog' | 'aging' | 'sla' | 'history';
+
 export async function handleExportCsv(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
+  kind: CsvExportKind = 'status',
 ): Promise<HandlerResult<{ filename: string; csv: string }>> {
   runtime.beginInvocation();
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
   const projectId = auth.projectId;
   try {
-    const csv = await runtime.statusReportCsv(parseReportRequest(projectId, invocation.payload));
+    const csv = await buildCsvFor(runtime, kind, projectId, invocation.payload);
     return {
       ok: true,
       data: { filename: `${runtime.listingId}-${projectId}.csv`, csv },
     };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+async function buildCsvFor(
+  runtime: ListingRuntime,
+  kind: CsvExportKind,
+  projectId: string,
+  payload: unknown,
+): Promise<string> {
+  switch (kind) {
+    case 'worklog':
+      return worklogReportToCsv(await runtime.worklogReport({ projectId }), 'Person');
+    case 'aging':
+      return agingReportToCsv(await runtime.agingReport(projectId));
+    case 'sla':
+      // The same goal parsing as `handleSlaReport`, so the exported rows are
+      // measured against exactly the goal shown on screen.
+      return slaReportToCsv(await runtime.slaReport(projectId, parseSlaGoal(payload)));
+    case 'history':
+      return historyReportToCsv(await runtime.historyReport({ projectId, limit: 10_000 }));
+    case 'status':
+      return runtime.statusReportCsv(parseReportRequest(projectId, payload));
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
   }
 }
 
@@ -282,6 +326,27 @@ export async function handleListProjects(
   runtime.beginInvocation();
   try {
     return { ok: true, data: await runtime.listProjects() };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
+ * The SLA goal picker's status list.
+ *
+ * Project-authorised like every other report resolver: status metadata is
+ * stored instance-wide, and its names are information about projects the
+ * caller may not be allowed to see.
+ */
+export async function handleListStatuses(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<readonly StatusMetaRow[]>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  try {
+    return { ok: true, data: await runtime.listStatuses() };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }
@@ -371,7 +436,7 @@ function finiteNumber(value: unknown): number | null {
 export async function handleWorklogReport(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
-): Promise<HandlerResult<WorklogAggregateResult>> {
+): Promise<HandlerResult<WorklogReport>> {
   runtime.beginInvocation();
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -432,27 +497,33 @@ export async function handleSlaReport(
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
   const projectId = auth.projectId;
-  const record =
-    typeof invocation.payload === 'object' && invocation.payload !== null
-      ? (invocation.payload as Record<string, unknown>)
-      : {};
-  const counted = stringArray(record['countedStatusIds']) ?? [];
-  const rawTarget = finiteNumber(record['targetMs']);
-  const targetMs =
-    rawTarget === null ? 8 * 3_600_000 : Math.max(60_000, Math.min(365 * 86_400_000, rawTarget));
   try {
     return {
       ok: true,
-      data: await runtime.slaReport(projectId, {
-        id: 'default',
-        name: typeof record['name'] === 'string' ? record['name'] : 'Time to resolution',
-        countedStatusIds: counted,
-        targetMs,
-      }),
+      data: await runtime.slaReport(projectId, parseSlaGoal(invocation.payload)),
     };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }
+}
+
+/**
+ * The goal a client may choose on the page. Shared by the report resolver and
+ * the CSV export so both measure against the same goal. The target is clamped
+ * so a client cannot ask for an absurd number and get a table full of
+ * meaningless fractions.
+ */
+export function parseSlaGoal(payload: unknown): SlaCountedGoal {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  const rawTarget = finiteNumber(record['targetMs']);
+  return {
+    id: 'default',
+    name: typeof record['name'] === 'string' ? record['name'] : 'Time to resolution',
+    countedStatusIds: stringArray(record['countedStatusIds']) ?? [],
+    targetMs:
+      rawTarget === null ? 8 * 3_600_000 : Math.max(60_000, Math.min(365 * 86_400_000, rawTarget)),
+  };
 }
 
 /** Listing 5 — filtered field-change history. */

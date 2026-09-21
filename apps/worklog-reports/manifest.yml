@@ -35,7 +35,7 @@ modules:
         resource: gadget
         render: native
       title: Logged time
-      description: Logged time grouped by person, issue or period, over any date range.
+      description: Logged time totalled per person — exactly the durations people entered in Jira.
       # Required by the gadget schema, and must be a real, absolute, publicly
       # reachable HTTPS URL, confirmed to 255 characters max — both facts came
       # from testing against the live account, not the docs (which only say

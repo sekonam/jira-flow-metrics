@@ -420,19 +420,26 @@ the real `invoke`, its payload validation and its rate limiter all run.
    `packages/forge-runtime/test/forge-runtime.test.ts` "defaults to a limit generous enough for a
    real project, not a demo one".
 
-   **The 500-issue ceiling itself is real and still silent.** `issueCount` is `filtered.length`
-   computed _after_ `queryIssueMeta` already capped its fetch to `limit + offset` rows — it is a
-   page size, not an independent total. A project past 500 issues would still render a report that
-   looks complete (no truncation banner, `partial` unaffected) while quietly dropping the rest. A
-   true fix needs a separate `COUNT(*)`-style query the resolver doesn't have; not built here
-   because 500 real issues is well past what any of the five listings have been proven against, and
-   inventing that query now would be scope beyond the bug this section is otherwise about.
+   **The 500-issue ceiling — surfaced, no longer silent (2026-09-21).** `issueCount` used to be
+   `filtered.length` computed _after_ `queryIssueMeta` had already capped its fetch — a page size
+   posing as a total, so a project past 500 issues rendered a report that looked complete while
+   quietly dropping the rest. The `COUNT(*)` query now exists: `MetricsStore.countIssueMeta`
+   (with `countWorklogs`/`countHistory` for the record-shaped reports, sharing the query's own
+   WHERE clauses so page and total cannot disagree), every report carries a real total
+   (`projectIssueCount`/`totalEntries`/`totalMatching`) and a `capped` flag, and each of the five
+   pages renders a warning banner — `toCapBanner`, through the same `IndexingBanner` component as
+   the indexing states — naming "N of M" and stating that every figure is a lower bound. The
+   page size itself is unchanged; what changed is that exceeding it is now visible.
 
 2. **WIP aging in working hours is approximate.** The stored `business_ms` covers the completed
    portion of the current visit; the still-running remainder is elapsed. Shown as two separate
    numbers rather than one blended one.
 3. **The project-wide SLA report uses the counted-statuses model**, not the start/stop/pause timer.
-   See PRODUCT-SPEC §7.
+   See PRODUCT-SPEC §7. The on-page goal picker that section promises now ships (2026-09-21):
+   `SlaGoalForm` in `@jfm/ui` — status toggle chips backed by a new project-authorised
+   `listStatuses` resolver, and a preset working-time target `Select` — with the chosen goal sent
+   to `getSlaReport` and `exportCsv` alike. An empty selection counts every status, and the form
+   says so. Still a view choice, never stored configuration; the goal editor remains v1.1.
 4. **Backfill defaults to 12 months of history.** Older issues are absent until "extend history"
    is run.
 5. **Nothing has run on Forge.** The SQL executor, the Jira fetch adapter and every manifest are
@@ -492,6 +499,16 @@ the real `invoke`, its payload validation and its rate limiter all run.
    would have real DOM and a real download, and converting one surface away from `render: native`
    to get it is a v1.1 question. Until then the export opens in a modal, selectable, with its
    filename, and says why.
+
+   **Every listing now exports its own report (2026-09-21).** Drafting the four remaining
+   Marketplace listings surfaced that all five apps wired `exportCsv` to `statusReportCsv` — the
+   time-in-status table — so on listings 2–5 the button exported the wrong report (on
+   worklog-reports, whose ingest stores no status durations, an empty one). `handleExportCsv` now
+   takes a per-listing `CsvExportKind`; each app passes its own, and
+   `packages/forge-runtime/src/report-csv.ts` renders the worklog, aging, SLA and history tables
+   as CSV (hours as numbers, ISO timestamps, formula injection defused by the shared `csvCell`).
+   The SLA export parses the same goal payload as the report resolver (`parseSlaGoal`), so the
+   exported rows are measured against exactly the goal on screen.
 
 9. **The WIP aging histogram is built — resolved.** `AgingReport.buckets` and `toAgingChartData`
    existed and were tested; no component rendered them. `AgingHistogram` in `@jfm/ui`

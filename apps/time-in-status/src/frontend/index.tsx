@@ -12,6 +12,7 @@ import {
   ReportTable,
   SummaryTiles,
   surfaceStateOf,
+  toCapBanner,
   toProgressBanner,
   toReportTable,
   toSummaryTiles,
@@ -146,6 +147,14 @@ export const App = (): React.JSX.Element => {
       ) : null}
       {state === 'ready' && envelope !== null ? (
         <Stack space="space.200">
+          <IndexingBanner
+            banner={toCapBanner({
+              capped: envelope.report.capped,
+              included: envelope.report.issueCount,
+              total: envelope.report.projectIssueCount,
+              noun: 'issues',
+            })}
+          />
           <SummaryTiles tiles={toSummaryTiles(envelope.report)} />
           <Box>
             <Text size="small">

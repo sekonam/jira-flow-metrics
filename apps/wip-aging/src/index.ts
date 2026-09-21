@@ -24,7 +24,7 @@ import { getRuntime } from './runtime';
 const resolver = new Resolver();
 
 resolver.define('getReport', (req) => handleGetReport(getRuntime(), req));
-resolver.define('exportCsv', (req) => handleExportCsv(getRuntime(), req));
+resolver.define('exportCsv', (req) => handleExportCsv(getRuntime(), req, 'aging'));
 resolver.define('startIndexing', (req) => handleStartIndexing(getRuntime(), req));
 // The banner's data, without the report. Four of the five listings render the
 // banner beside a report they fetch from a different resolver, and the gadgets

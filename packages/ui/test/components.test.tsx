@@ -35,6 +35,7 @@ vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 const {
   AgingHistogram,
   CsvExport,
+  DEFAULT_SLA_GOAL,
   EmptySurface,
   ErrorSurface,
   GadgetConfigForm,
@@ -43,7 +44,9 @@ const {
   PageHeader,
   ReportTable,
   SimpleReportTable,
+  SlaGoalForm,
   SummaryTiles,
+  toCapBanner,
   toProgressBanner,
   toReportTable,
   toSummaryTiles,
@@ -70,6 +73,8 @@ const REPORT: StatusReport = {
   basis: 'elapsed',
   issueCount: 2,
   anyTruncated: true,
+  projectIssueCount: 2,
+  capped: false,
   columns: [
     { statusId: '10000', name: 'To Do' },
     { statusId: '3', name: 'In Progress' },
@@ -340,6 +345,69 @@ describe('GadgetConfigForm', () => {
   it('disables the picker and Save while a save is in flight', () => {
     render(<GadgetConfigForm options={OPTIONS} saving={true} onSave={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+  });
+});
+
+describe('SlaGoalForm', () => {
+  const STATUSES = [
+    { id: '3', name: 'In Progress' },
+    { id: '10200', name: 'In Review' },
+  ];
+
+  it('renders the target picker and one chip per status', async () => {
+    render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={vi.fn()} />);
+    expect(screen.getByText('Working-time target')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'In Progress' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'In Review' })).toBeDefined();
+    expect(screen.getByText(/Counting time in every status/)).toBeDefined();
+    await expectNoA11yViolations();
+  });
+
+  it('toggles a status into and out of the counted set', () => {
+    const onChange = vi.fn();
+    render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'In Review' }));
+    expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SLA_GOAL, countedStatusIds: ['10200'] });
+
+    cleanup();
+    onChange.mockClear();
+    const goal = { ...DEFAULT_SLA_GOAL, countedStatusIds: ['10200'] };
+    render(<SlaGoalForm statuses={STATUSES} goal={goal} onChange={onChange} />);
+    expect(screen.getByText(/only in the selected statuses/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'In Review' }));
+    expect(onChange).toHaveBeenCalledWith({ ...goal, countedStatusIds: [] });
+  });
+
+  it('reports a changed target through onChange', () => {
+    const onChange = vi.fn();
+    render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={onChange} />);
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByText('40 working hours'));
+    expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SLA_GOAL, targetMs: 40 * 3_600_000 });
+  });
+});
+
+describe('toCapBanner', () => {
+  it('is silent when the report covers everything', () => {
+    expect(toCapBanner({ capped: false, included: 500, total: 500, noun: 'issues' })).toBeNull();
+  });
+
+  it('names the counts when the report is capped', () => {
+    const banner = toCapBanner({ capped: true, included: 500, total: 1234, noun: 'issues' });
+    expect(banner).not.toBeNull();
+    expect(banner?.appearance).toBe('warning');
+    expect(banner?.title).toBe('Report capped at 500 of 1,234 issues');
+    expect(banner?.body).toContain('lower bound');
+    expect(banner?.showRetry).toBe(false);
+  });
+
+  it('renders through IndexingBanner like the indexing states do', () => {
+    render(
+      <IndexingBanner
+        banner={toCapBanner({ capped: true, included: 50, total: 80, noun: 'changes' })}
+      />,
+    );
+    expect(screen.getByText('Report capped at 50 of 80 changes')).toBeDefined();
   });
 });
 

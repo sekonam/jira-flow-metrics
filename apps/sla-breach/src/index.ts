@@ -8,6 +8,7 @@ import {
   handleListProjects,
   handleStartIndexing,
   projectIdFromEvent,
+  handleListStatuses,
   handleSlaReport,
 } from '@jfm/forge-runtime';
 import { getRuntime } from './runtime';
@@ -24,7 +25,7 @@ import { getRuntime } from './runtime';
 const resolver = new Resolver();
 
 resolver.define('getReport', (req) => handleGetReport(getRuntime(), req));
-resolver.define('exportCsv', (req) => handleExportCsv(getRuntime(), req));
+resolver.define('exportCsv', (req) => handleExportCsv(getRuntime(), req, 'sla'));
 resolver.define('startIndexing', (req) => handleStartIndexing(getRuntime(), req));
 // The banner's data, without the report. Four of the five listings render the
 // banner beside a report they fetch from a different resolver, and the gadgets
@@ -36,6 +37,8 @@ resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), r
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
 
 resolver.define('getSlaReport', (req) => handleSlaReport(getRuntime(), req));
+// The goal picker's options: statuses the store has seen for this instance.
+resolver.define('listStatuses', (req) => handleListStatuses(getRuntime(), req));
 
 export const handler = resolver.getDefinitions();
 

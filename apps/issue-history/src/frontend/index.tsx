@@ -13,6 +13,7 @@ import {
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
+  toCapBanner,
   toProgressBanner,
   toHistoryTable,
   toHistoryTiles,
@@ -92,7 +93,7 @@ export const App = (): React.JSX.Element => {
     <Stack space="space.200">
       <PageHeader
         title="Issue History"
-        subtitle="Cross-issue, filterable, exportable field-change history."
+        subtitle="Every field change across the whole project in one exportable table."
         actions={<CsvExport onRequestCsv={requestCsv} />}
       />
 
@@ -134,6 +135,14 @@ export const App = (): React.JSX.Element => {
       ) : null}
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
+          <IndexingBanner
+            banner={toCapBanner({
+              capped: report.capped,
+              included: report.total,
+              total: report.totalMatching,
+              noun: 'changes',
+            })}
+          />
           <SummaryTiles tiles={toHistoryTiles(report)} />
           <SimpleReportTable model={toHistoryTable(report)} />
         </Stack>

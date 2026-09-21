@@ -54,7 +54,7 @@ describe('issue-history: the listing-specific behaviour', () => {
     expect(screen.getAllByText('In Progress').length).toBeGreaterThan(0);
     expect(
       screen.getByText(
-        /Jira's own History tab is per-issue and cannot be filtered or exported; this view is cross-issue, filterable and exportable/,
+        /Jira's own History tab is per-issue and cannot be exported; this view is cross-issue and exportable/,
       ),
     ).toBeDefined();
     cleanup();

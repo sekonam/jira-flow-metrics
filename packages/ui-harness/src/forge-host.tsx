@@ -275,6 +275,7 @@ export interface SelectProps {
   readonly inputId?: string;
   readonly options?: readonly SelectOption[];
   readonly placeholder?: string;
+  readonly defaultValue?: SelectOption;
   readonly isDisabled?: boolean;
   readonly isLoading?: boolean;
   readonly onChange?: (option: SelectOption | null) => void;
@@ -284,6 +285,7 @@ export const Select = ({
   inputId,
   options,
   placeholder,
+  defaultValue,
   isDisabled,
   isLoading,
   onChange,
@@ -292,6 +294,7 @@ export const Select = ({
     inputId={inputId ?? 'select'}
     {...(options === undefined ? {} : { options })}
     {...(placeholder === undefined ? {} : { placeholder })}
+    {...(defaultValue === undefined ? {} : { defaultValue })}
     {...(isDisabled === undefined ? {} : { isDisabled })}
     {...(isLoading === undefined ? {} : { isLoading })}
     {...(onChange === undefined ? {} : { onChange })}

@@ -4,6 +4,7 @@ import {
   handleGetReport,
   handleIndexProgress,
   handleHistoryReport,
+  handleListStatuses,
   handleSlaReport,
   handleWorklogReport,
   type ListingRuntime,
@@ -39,6 +40,7 @@ export type ResolverKey =
   | 'getAgingReport'
   | 'getSlaReport'
   | 'getHistoryReport'
+  | 'listStatuses'
   | 'exportCsv'
   | 'startIndexing';
 
@@ -124,6 +126,8 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
       payload: { countedStatusIds: ['3', '10200'], targetMs: 8 * 3_600_000 },
     }),
     getHistoryReport: await handleHistoryReport(runtime, INVOCATION),
+    // The SLA goal picker's options — the statuses the pipeline stored.
+    listStatuses: await handleListStatuses(runtime, INVOCATION),
     // Produced by the real exporter, like everything else here, so the modal
     // shows the CSV a user would actually get rather than a sample of one.
     exportCsv: await handleExportCsv(runtime, INVOCATION),
@@ -193,6 +197,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getAgingReport',
   'getSlaReport',
   'getHistoryReport',
+  'listStatuses',
   'exportCsv',
   'startIndexing',
 ];

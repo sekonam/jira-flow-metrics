@@ -136,6 +136,46 @@ export function toAgingChartData(report: AgingReport): ChartPoint[] {
 
 // ------------------------------------------------------ listing 4: SLA ---
 
+/**
+ * The goal the user chooses on the SLA page — a *view* choice, not stored
+ * configuration; v1 deliberately ships no goal editor (PRODUCT-SPEC § 7).
+ * An empty `countedStatusIds` means every status counts, matching the
+ * resolver's semantics.
+ */
+export interface SlaGoalChoice {
+  readonly countedStatusIds: readonly string[];
+  readonly targetMs: number;
+}
+
+const HOUR_MS = 3_600_000;
+
+export const DEFAULT_SLA_GOAL: SlaGoalChoice = {
+  countedStatusIds: [],
+  targetMs: 8 * HOUR_MS,
+};
+
+/**
+ * Preset targets rather than a free-text field: UI Kit 2 has no numeric
+ * input validation worth trusting for the one number every figure on the
+ * page divides by, and these cover the spans SLA conversations actually use.
+ */
+export const SLA_TARGET_OPTIONS: readonly { label: string; value: string }[] = [
+  { label: '4 working hours', value: String(4 * HOUR_MS) },
+  { label: '8 working hours', value: String(8 * HOUR_MS) },
+  { label: '16 working hours', value: String(16 * HOUR_MS) },
+  { label: '24 working hours', value: String(24 * HOUR_MS) },
+  { label: '40 working hours', value: String(40 * HOUR_MS) },
+  { label: '80 working hours', value: String(80 * HOUR_MS) },
+];
+
+/** Toggle one status in or out of the counted set. */
+export function toggleCountedStatus(goal: SlaGoalChoice, statusId: string): SlaGoalChoice {
+  const counted = goal.countedStatusIds.includes(statusId)
+    ? goal.countedStatusIds.filter((id) => id !== statusId)
+    : [...goal.countedStatusIds, statusId];
+  return { ...goal, countedStatusIds: counted };
+}
+
 export function toSlaTable(report: SlaReport): SimpleTable {
   // Every duration in the SLA *columns* is working time, so none of them may
   // be rolled up into days — see `DurationFormat` in view-model.ts. The due
@@ -209,7 +249,7 @@ export function toHistoryTable(report: HistoryReport): SimpleTable {
     ]),
     footnotes: [
       `${report.total} changes shown. Jira's own History tab is per-issue and cannot be ` +
-        'filtered or exported; this view is cross-issue, filterable and exportable.',
+        'exported; this view is cross-issue and exportable.',
     ],
   };
 }
