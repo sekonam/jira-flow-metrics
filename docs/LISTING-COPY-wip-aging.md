@@ -104,6 +104,15 @@ one click.
   against the issue's own History tab.
 - **An aging histogram** — six buckets from 0–1d to 30d+, all six always rendered, so an empty
   bucket reads as a fact rather than disappearing.
+- **A cumulative flow diagram** — one line per status, one point per day, thirty days back. Built
+  from every recorded _visit_, so it says where each issue actually was on a past Tuesday rather
+  than inferring it from today's state. Each day counts every issue exactly once, in the status it
+  finished the day in, which is what makes the bands add up to the work in flight. When nothing has
+  been indexed for that range yet the chart is withheld rather than drawn flat at zero: "not
+  indexed" and "nothing was in flight for a month" are different answers.
+- **"Extend history"** — the first index covers twelve months; widen it whenever you want.
+- **An admin storage page** — the rows and megabytes this app holds in your tenant, readable
+  rather than taken on trust.
 - **Total age since creation** per issue, next to the age in status — different questions, both
   answered.
 - **Summary tiles**: how many issues are in flight, the single oldest one (named), and how many

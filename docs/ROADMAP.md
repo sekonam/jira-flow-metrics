@@ -113,6 +113,32 @@ Listings 2-5 are already implemented and tested. This stage is submission work, 
 
 Either answer being yes means dropping that listing, not shipping it anyway.
 
+### Both checks re-run 2026-09-22 — all five still SHIP
+
+No native Jira Cloud feature covering any of the five has shipped, and no free app has taken any
+of the niches. What the sweep did change:
+
+- **The near-term risk is consolidation, not a free entrant.** Four apps across the worklog and
+  issue-history niches changed hands — Everit's Timetracker is now STAGIL by catworkx, 7pace is
+  Appfire, Issue History Collector is Appfire, JXL is Appfire. **A free Appfire tier is a more
+  plausible 2027 threat than a startup launch**, and the same logic applies to Tempo in the
+  worklog niche, which already ships a free funnel app (Tempo Core, ~24k installs) that is project
+  tracking rather than worklog reporting — so it does not trip the gate today, and it is exactly
+  the shape that would.
+- **The cheapest paid competitor in both niches is lower than this plan assumed** — votazz at
+  $175/yr at 50 seats, $350 at 100, across its whole portfolio. The pricing table still clears it,
+  but it is the floor to argue against, not the $200–400 previously noted.
+- **The issue-history spread is the opportunity, confirmed**: SaaSJet holds roughly a 4× install
+  lead at about 4.3× the cheapest competitor's price.
+- **Three genuinely free apps exist in the worklog niche and none changes the verdict**: Clockify's
+  bridge (unmaintained on the Jira side since 2023), Tempo Core (not a reporting product), and
+  VIEW26 Worklog Reports (real, ~67 installs).
+
+⚠️ **One claim to keep out of the copy until it is verified.** A rollback of Jira's native
+reports is confirmed only for the Version Workload / Release Burndown / Epic Burndown trio;
+whether it covers the Time Tracking and User Workload reports could not be established. Do not
+write "Jira is retiring its native time reports" anywhere in listing ②.
+
 ---
 
 ## Stage 5 — v1.1 · **built, 2026-09-22**, ahead of the gate

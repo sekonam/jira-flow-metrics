@@ -119,6 +119,9 @@ Jira returns without a time-spent value is dropped rather than counted as zero.
   per-gadget project picker.
 - **An honest indexing banner** — visible for as long as the numbers are built from partial
   history, never silently hidden.
+- **A chart of hours logged per person** above the table, largest first, so the shape is readable
+  before the rows are.
+- **An admin storage page** — the rows and megabytes this app holds in your tenant.
 
 ### What it does not do
 

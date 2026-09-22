@@ -112,6 +112,8 @@ with the issue, the field, the old value, the new value, who made it, and when.
 - **12 months of history indexed by default** — stated here rather than discovered later: the
   backfill reads the most recent 12 months of changelog when a project is first indexed, and new
   changes are captured as they happen from then on.
+- **A chart of changes per field**, busiest first, so churn is visible before the rows are read.
+- **An admin storage page** — the rows and megabytes this app holds in your tenant.
 
 ### What it does not do
 

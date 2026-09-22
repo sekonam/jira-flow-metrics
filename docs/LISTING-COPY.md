@@ -53,6 +53,14 @@ exactly the time of the earlier visit — and says why.
   extra setup.
 - **Median and 85th-percentile summary tiles** per status — cycle-time distributions are
   right-skewed; a mean alone misleads a review meeting.
+- **A median-time-per-status chart** above the table, so the shape is readable before the rows are.
+- **A per-issue timeline**, as a tab beside Jira's own History on the issue itself: every visit in
+  order with its own duration, and the cumulative totals underneath. The place the product's claim
+  is easiest to check is the issue you are already looking at.
+- **"Extend history"** — the first index covers twelve months; widen it to five years or to
+  everything whenever you want, from the report page.
+- **An admin storage page** — exactly how many rows and how many megabytes this app holds in your
+  tenant, so "what is it storing?" has an answer you can read rather than one you have to trust.
 - **Filters** — assignee, issue type, creation window.
 - **CSV export** — for the finance and QBR audience that wants the export more than the chart.
 - **A dashboard gadget** — the report your team sees without anyone installing anything.
@@ -61,10 +69,15 @@ exactly the time of the earlier visit — and says why.
 
 ### What it does not do
 
-No predictive analytics or forecasting. No cross-project portfolio rollups. No Confluence
-embedding. No custom-field-based metrics — every instance's fields differ, and guessing at yours
-would be worse than not trying. If you need a goal/threshold editor or sprint-scoped reports, this
-is not that app yet. It does one report, properly, rather than many reports adequately.
+No predictive analytics or forecasting. No cross-project portfolio rollups. No custom-field-based
+metrics — every instance's fields differ, and guessing at yours would be worse than not trying. No
+sprint-scoped reports. It does one report, properly, rather than many reports adequately.
+
+**No Confluence embedding, and this one is a settled no rather than a not-yet.** Forge isolates an
+app's storage per product — Atlassian's own words: "data stored in Jira is not accessible from
+Confluence or vice versa" — so a Confluence macro could not read the aggregates this app already
+holds without building a second ingestion path into a second product. Multi-product apps also
+cannot be listed free, and this one is free under ten users.
 
 ### How it works
 
@@ -110,8 +123,16 @@ line is backed by a manifest test or a stated design decision — see `PRODUCT-S
 
 ## Screenshots — 6, in this order
 
-**Finalized 2026-09-18.** All six are cropped, chrome-free PNGs in `docs/listing-assets/`, ready to
-upload as-is. Source captures were taken against the seeded dev site (`sergiip180.atlassian.net`,
+> ⚠️ **Stale as of 2026-09-22 — re-shoot before submitting.** Every report page gained a chart in
+> v1.1, so screenshots 1, 3 and 4 no longer show the page a customer will see, and there is now a
+> seventh surface worth showing (the issue timeline tab beside Jira's own History) that is a
+> stronger #2 than the History-tab comparison currently is. An automated session could read every
+> new surface back from real Jira but could not capture one: screenshot capture and clicking both
+> fail against the Forge iframe specifically, and the known-good CSV modal fails identically. See
+> ROADMAP stage 6.
+
+**Finalized 2026-09-18, against v1.0.** All six are cropped, chrome-free PNGs in
+`docs/listing-assets/`. Source captures were taken against the seeded dev site (`sergiip180.atlassian.net`,
 project `JFM` — the hand-checked set, issue `JFM-11` named throughout). See `tools/seed-report.md`
 for which issues show the clearest re-entry margins.
 

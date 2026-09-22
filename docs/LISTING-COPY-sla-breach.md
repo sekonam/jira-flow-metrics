@@ -113,8 +113,16 @@ before you install is the point of this section.
 ### What you get
 
 - **Pick the goal on the page** — which statuses count and the working-time target (preset spans
-  from 4 to 80 working hours), chosen per view with status toggle chips. Leave every chip off and
-  every status counts. The exported CSV is measured against exactly the goal on screen.
+  from 4 to 80 working hours), chosen with status toggle chips. Leave every chip off and every
+  status counts. The exported CSV is measured against exactly the goal on screen.
+- **Save a goal and name it**, so everyone on the project opens the same report measured the same
+  way rather than each rebuilding it from chips. Up to twenty per project. A saved goal is resolved
+  by name on the server, never rebuilt from what the browser sent — the table cannot be headed with
+  one goal and computed from another. Edit any part of a saved goal and the page says plainly that
+  the selection on screen is no longer that goal.
+- **A chart of how close each issue is to its target** — banded under 50%, 50–80%, 80–100% and
+  breached. The 80–100% band is the one to act on, and a breached/not-breached pair cannot show it.
+- **An admin storage page** — the rows and megabytes this app holds in your tenant.
 - **Per-issue consumed / target / remaining working time** — sorted worst-first, so the issues
   that have consumed the most of their target are at the top.
 - **Overrun stated in words** — a breached issue reads "over by 22h", never a negative duration
