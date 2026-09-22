@@ -310,6 +310,14 @@ describe('store counts — the real totals behind capped pages', () => {
     expect(await store.countIssueMeta('99999')).toBe(0);
   });
 
+  it('lists the distinct status ids one project has actually used', async () => {
+    const store = await seededStore();
+    await store.putIssueAggregate(meta({ issueId: '9', projectId: '20000' }), [agg('9', '99', 1)]);
+    expect(await store.listProjectStatusIds('10000')).toEqual(['10000', '10001', '3']);
+    expect(await store.listProjectStatusIds('20000')).toEqual(['99']);
+    expect(await store.listProjectStatusIds('30000')).toEqual([]);
+  });
+
   it('counts worklogs with the same filters the query applies', async () => {
     const store = new MemoryStore();
     const base = {
@@ -505,6 +513,16 @@ describe('CSV export', () => {
     expect(csvCell('@SUM(A1)')).toBe("'@SUM(A1)");
     expect(csvCell('\tTAB')).toBe("'\tTAB");
     expect(csvCell('plain')).toBe('plain');
+  });
+
+  it('leaves a real negative number numeric — a number cannot carry a formula', () => {
+    // Observed live: the SLA export's Remaining column rendered -50.09 as
+    // "'-50.09", which a spreadsheet reads as text and cannot sum. Only the
+    // *string* "-5" is defused; the number -5 is not.
+    expect(csvCell(-50.09)).toBe('-50.09');
+    expect(csvCell(-5)).toBe('-5');
+    expect(csvCell(0)).toBe('0');
+    expect(csvCell(Number.NaN)).toBe('NaN');
   });
 
   it('quotes and escapes per RFC 4180', () => {

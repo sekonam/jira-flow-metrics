@@ -147,6 +147,13 @@ export interface MetricsStore {
    */
   countIssueMeta(projectId: string): Promise<number>;
   queryStatusDurations(query: StatusDurationQuery): Promise<StatusAggregateRow[]>;
+  /**
+   * Distinct status ids seen in one project's aggregates. The SLA goal
+   * picker's options: status metadata is instance-wide, and offering another
+   * project's same-named statuses as chips reads as duplicates — observed
+   * live with two seeded projects.
+   */
+  listProjectStatusIds(projectId: string): Promise<StatusId[]>;
 
   upsertStatusMeta(rows: readonly StatusMetaRow[]): Promise<void>;
   getStatusMeta(): Promise<StatusMetaRow[]>;

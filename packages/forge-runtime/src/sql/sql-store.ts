@@ -185,6 +185,17 @@ export class SqlMetricsStore implements MetricsStore {
     return toNumber(rows[0]?.['n'] ?? 0);
   }
 
+  async listProjectStatusIds(projectId: string): Promise<StatusId[]> {
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT DISTINCT status_id FROM issue_status_agg WHERE project_id = ?
+       ORDER BY status_id ASC`,
+      [projectId],
+    );
+    return rows
+      .map((row) => row['status_id'])
+      .filter((id): id is string => typeof id === 'string' && id !== '');
+  }
+
   async queryStatusDurations(query: StatusDurationQuery): Promise<StatusAggregateRow[]> {
     const clauses = ['project_id = ?'];
     const params: unknown[] = [query.projectId];

@@ -387,20 +387,42 @@ describe('parseSlaGoal', () => {
 });
 
 describe('handleListStatuses', () => {
-  it('returns the stored statuses to an authorised caller', async () => {
+  const TWO_STATUSES = [
+    {
+      statusId: '3',
+      name: 'In Progress',
+      category: 'inprogress' as const,
+      firstSeenAt: 0,
+      lastSeenAt: NOW,
+    },
+    {
+      statusId: '77',
+      name: 'In Progress',
+      category: 'inprogress' as const,
+      firstSeenAt: 0,
+      lastSeenAt: NOW,
+    },
+  ];
+
+  it("offers only the project's own statuses, not the instance's", async () => {
+    // Two same-named statuses under different ids — another project's twin
+    // must not appear as a duplicate chip (observed live with two seeded
+    // projects).
     const { runtime, store } = build();
-    await store.upsertStatusMeta([
-      {
-        statusId: '3',
-        name: 'In Progress',
-        category: 'inprogress',
-        firstSeenAt: 0,
-        lastSeenAt: NOW,
-      },
-    ]);
+    await store.upsertStatusMeta(TWO_STATUSES);
+    await store.putIssueAggregate(meta({ issueId: '1' }), [agg('1', '3', 4)]);
+    await store.putIssueAggregate(meta({ issueId: '2', projectId: '20000' }), [agg('2', '77', 4)]);
     const result = await handleListStatuses(runtime, { context: CONTEXT });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.map((s) => s.name)).toEqual(['In Progress']);
+    if (result.ok) expect(result.data.map((s) => s.statusId)).toEqual(['3']);
+  });
+
+  it('falls back to every status while the project is not yet indexed', async () => {
+    const { runtime, store } = build();
+    await store.upsertStatusMeta(TWO_STATUSES);
+    const result = await handleListStatuses(runtime, { context: CONTEXT });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.map((s) => s.statusId)).toEqual(['3', '77']);
   });
 
   it('refuses a caller who cannot browse the project', async () => {

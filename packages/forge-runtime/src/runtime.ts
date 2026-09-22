@@ -318,10 +318,21 @@ export class ListingRuntime {
     return this.deps.api.listProjects();
   }
 
-  /** Statuses the store has seen — the SLA goal picker's options. */
-  async listStatuses(): Promise<readonly StatusMetaRow[]> {
+  /**
+   * The SLA goal picker's options — statuses seen in *this* project.
+   *
+   * Status metadata is stored instance-wide, and two projects routinely carry
+   * same-named statuses under different ids; offering them all rendered a
+   * picker with every chip doubled (observed live). Before the project is
+   * indexed it has no aggregates, so the full list stands in — a usable
+   * picker beats an empty row while indexing runs.
+   */
+  async listStatuses(projectId: string): Promise<readonly StatusMetaRow[]> {
     await this.deps.store.migrate();
-    return this.deps.store.getStatusMeta();
+    const all = await this.deps.store.getStatusMeta();
+    const projectIds = new Set(await this.deps.store.listProjectStatusIds(projectId));
+    if (projectIds.size === 0) return all;
+    return all.filter((status) => projectIds.has(status.statusId));
   }
 
   get listingId(): string {

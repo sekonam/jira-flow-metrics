@@ -23,6 +23,10 @@ const RISKY_PREFIX = /^[=+\-@\t\r]/;
 /** Escape one CSV field, defusing spreadsheet formula injection. */
 export function csvCell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '';
+  // A finite number cannot carry a formula, and defusing it would turn a
+  // negative duration ("-50.09" remaining hours) into text a spreadsheet
+  // cannot sum — observed live on the SLA export's Remaining column.
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   const raw = String(value);
   const defused = RISKY_PREFIX.test(raw) ? `'${raw}` : raw;
   return /[",\n\r]/.test(defused) ? `"${defused.replace(/"/g, '""')}"` : defused;

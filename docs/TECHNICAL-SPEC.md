@@ -589,6 +589,16 @@ the real `invoke`, its payload validation and its rate limiter all run.
     against the actual failure on the actual dev site, not only against a reconstructed fixture —
     the live incident it stops is the same live incident that motivated it.
 
+    **Re-confirmed 2026-09-22, with one accounting note.** A fresh backfill of the same project
+    (SLA app, development) failed cleanly again: the corrupted token arrived after page 1, the
+    reseek re-fetched the same created-minute cluster and reprocessed the same 50 issues
+    idempotently, and the same-bound guard failed slice 1 with the exact expected log line. The
+    banner therefore reads "100 issues indexed" while 50 distinct issues are stored —
+    `issuesProcessed` counts processed items, reprocessed ones included, not distinct rows. The
+    reports themselves are unaffected (they count real rows), so this stays a cosmetic accounting
+    note rather than a fix: making the counter distinct-aware would mean querying the store per
+    slice for a number only the progress banner reads.
+
 ---
 
 ## 12. ⚠️ The unverified surface, exhaustively

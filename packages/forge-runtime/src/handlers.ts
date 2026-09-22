@@ -346,7 +346,7 @@ export async function handleListStatuses(
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
   try {
-    return { ok: true, data: await runtime.listStatuses() };
+    return { ok: true, data: await runtime.listStatuses(auth.projectId) };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }

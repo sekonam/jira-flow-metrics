@@ -5,3 +5,4 @@ pnpm-lock.yaml
 .forge
 *.md.golden
 .claude/worktrees
+.claude/
