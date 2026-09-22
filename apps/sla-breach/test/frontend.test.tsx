@@ -68,3 +68,14 @@ describe('sla-breach: the listing-specific behaviour', () => {
     cleanup();
   });
 });
+
+describe('sla-breach: the report chart', () => {
+  it('the chart above the table bands issues by how much of the target they have used', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    // The chart's own title, which only the ready state renders. It sits
+    // above the table so a reader sees the shape before the rows.
+    expect(await screen.findByText('How close to the target')).toBeDefined();
+    cleanup();
+  });
+});

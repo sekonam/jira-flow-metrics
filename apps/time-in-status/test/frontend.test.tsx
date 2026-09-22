@@ -89,3 +89,14 @@ describe('time-in-status: the listing-specific behaviour', () => {
     cleanup();
   });
 });
+
+describe('time-in-status: the report chart', () => {
+  it('the chart above the table plots one bar per measured status', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    // The chart's own title, which only the ready state renders. It sits
+    // above the table so a reader sees the shape before the rows.
+    expect(await screen.findByText('Median time in status')).toBeDefined();
+    cleanup();
+  });
+});

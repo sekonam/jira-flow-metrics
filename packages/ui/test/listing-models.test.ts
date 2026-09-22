@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { WorklogAggregateResult } from '@jfm/engine';
 import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
 import {
+  CHART_CATEGORY_LIMIT,
   DEFAULT_SLA_GOAL,
   toAgingChartData,
   toAgingTable,
   toAgingTiles,
+  toHistoryChartData,
   toHistoryTable,
   toHistoryTiles,
+  toSlaChartData,
   toSlaTable,
   toSlaTiles,
+  toWorklogChartData,
   toWorklogTable,
   toWorklogTiles,
   toggleCountedStatus,
@@ -276,5 +280,77 @@ describe('SLA goal choice', () => {
     expect(counted.countedStatusIds).toEqual(['3']);
     expect(counted.targetMs).toBe(DEFAULT_SLA_GOAL.targetMs);
     expect(toggleCountedStatus(counted, '3').countedStatusIds).toEqual([]);
+  });
+});
+
+describe('chart series', () => {
+  it('plots logged time in hours, not milliseconds', () => {
+    // The table says "6h"; the chart axis has to say 6, not 21600000.
+    expect(toWorklogChartData(worklog)).toEqual([
+      { label: 'Anna', value: 6 },
+      { label: 'Ben', value: 2 },
+    ]);
+  });
+
+  it('truncates the worklog series to a readable number of bars', () => {
+    const many: WorklogAggregateResult = {
+      ...worklog,
+      groups: Array.from({ length: 40 }, (_, index) => ({
+        key: `p${index}`,
+        label: `Person ${index}`,
+        timeSpentMs: (40 - index) * HOUR,
+        entries: 1,
+        issueCount: 1,
+      })),
+    };
+    const data = toWorklogChartData(many);
+    expect(data).toHaveLength(CHART_CATEGORY_LIMIT);
+    // The largest contributors, not an arbitrary dozen: `groups` arrives
+    // sorted, and the chart is a summary of where the time went.
+    expect(data[0]?.label).toBe('Person 0');
+  });
+
+  it('bands SLA issues by how much of the target they have used', () => {
+    // 0.75 lands in 50-80%, 3.75 in Breached. Every band renders, including
+    // the empty ones: "nothing is under 50%" is a real finding.
+    expect(toSlaChartData(sla)).toEqual([
+      { label: 'Under 50%', value: 0 },
+      { label: '50-80%', value: 1 },
+      { label: '80-100%', value: 0 },
+      { label: 'Breached', value: 1 },
+    ]);
+  });
+
+  it('bands an issue at exactly 100% of target the way the table does', () => {
+    // The table calls this row "Within target" — `remainingMs` is 0, not
+    // negative. A chart band of `fraction >= 1` would call the same row
+    // breached directly above the table saying it is not. The chart reads
+    // `breached`, so it cannot.
+    const exact = toSlaChartData({
+      ...sla,
+      rows: [
+        {
+          ...sla.rows[0]!,
+          consumedMs: 8 * HOUR,
+          remainingMs: 0,
+          consumedFraction: 1,
+          breached: false,
+        },
+      ],
+      breachedCount: 0,
+    });
+    expect(exact.find((band) => band.label === 'Breached')?.value).toBe(0);
+    expect(exact.find((band) => band.label === '80-100%')?.value).toBe(1);
+  });
+
+  it('counts every breached issue once, however far over it is', () => {
+    // `consumedFraction` is uncapped, so a 375%-of-target issue must still
+    // land in exactly one band.
+    const total = toSlaChartData(sla).reduce((sum, band) => sum + band.value, 0);
+    expect(total).toBe(sla.rows.length);
+  });
+
+  it('plots history changes per field, busiest first', () => {
+    expect(toHistoryChartData(history)).toEqual([{ label: 'status', value: 1 }]);
   });
 });

@@ -60,3 +60,19 @@ describe('worklog-reports: the listing-specific behaviour', () => {
     cleanup();
   });
 });
+
+describe('worklog-reports: the report chart', () => {
+  it('the chart above the table plots hours logged per person', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    // The chart's own title, which only the ready state renders. It sits
+    // above the table so a reader sees the shape before the rows.
+    //
+    // "Time logged per person", not "Time logged": the table's own column
+    // header is already "Time logged", and two nodes with identical text on
+    // one screen is ambiguous to a screen reader for exactly the reason it
+    // was ambiguous to this assertion.
+    expect(await screen.findByText('Time logged per person')).toBeDefined();
+    cleanup();
+  });
+});

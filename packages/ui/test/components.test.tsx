@@ -42,6 +42,7 @@ const {
   IndexingBanner,
   LoadingSurface,
   PageHeader,
+  ReportBarChart,
   ReportTable,
   SimpleReportTable,
   SlaGoalForm,
@@ -445,6 +446,36 @@ describe('AgingHistogram', () => {
     expect(screen.getAllByText('0')).toHaveLength(2);
     expect(screen.getByText('9')).toBeDefined();
     await expectNoA11yViolations();
+  });
+});
+
+describe('ReportBarChart', () => {
+  it('renders every category with its value', async () => {
+    render(
+      <ReportBarChart
+        data={[
+          { label: 'In Progress', value: 8 },
+          { label: 'Review', value: 2.5 },
+        ]}
+        title="Median time in status"
+        subtitle="Hours per status."
+      />,
+    );
+    expect(screen.getByText('Median time in status')).toBeDefined();
+    expect(screen.getByText('In Progress')).toBeDefined();
+    expect(screen.getByText('8')).toBeDefined();
+    expect(screen.getByText('2.5')).toBeDefined();
+    await expectNoA11yViolations();
+  });
+
+  it('renders nothing at all for an empty series', () => {
+    // Not an empty chart: every caller sits above a table showing the same
+    // data, so a plot area with no bars is 400px saying less than the table
+    // below it already says.
+    const { container } = render(
+      <ReportBarChart data={[]} title="Median time in status" subtitle="Hours per status." />,
+    );
+    expect(container.textContent).toBe('');
   });
 });
 

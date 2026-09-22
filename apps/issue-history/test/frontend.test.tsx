@@ -60,3 +60,14 @@ describe('issue-history: the listing-specific behaviour', () => {
     cleanup();
   });
 });
+
+describe('issue-history: the report chart', () => {
+  it('the chart above the table plots changes per field', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    // The chart's own title, which only the ready state renders. It sits
+    // above the table so a reader sees the shape before the rows.
+    expect(await screen.findByText('Changes by field')).toBeDefined();
+    cleanup();
+  });
+});

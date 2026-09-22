@@ -10,13 +10,15 @@ import {
   IndexingBanner,
   LoadingSurface,
   PageHeader,
+  ReportBarChart,
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
   toCapBanner,
-  toProgressBanner,
+  toHistoryChartData,
   toHistoryTable,
   toHistoryTiles,
+  toProgressBanner,
 } from '@jfm/ui';
 
 /**
@@ -144,6 +146,11 @@ export const App = (): React.JSX.Element => {
             })}
           />
           <SummaryTiles tiles={toHistoryTiles(report)} />
+          <ReportBarChart
+            data={toHistoryChartData(report)}
+            title="Changes by field"
+            subtitle="Which fields churn the most in this range, busiest first."
+          />
           <SimpleReportTable model={toHistoryTable(report)} />
         </Stack>
       ) : null}

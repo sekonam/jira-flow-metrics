@@ -10,7 +10,9 @@ import {
   surfaceStateOf,
   toProgressBanner,
   toProjectOptions,
+  toHours,
   toReportTable,
+  toStatusChartData,
   toSummaryTiles,
 } from '../src/view-model.js';
 
@@ -360,5 +362,60 @@ describe('toProjectOptions', () => {
 
   it('returns an empty list for an empty input', () => {
     expect(toProjectOptions([])).toEqual([]);
+  });
+});
+
+describe('toHours', () => {
+  it('reports hours to one decimal', () => {
+    expect(toHours(90 * 60_000)).toBe(1.5);
+    expect(toHours(HOUR)).toBe(1);
+    // 1h 3m — the rounding has to land somewhere, and a chart axis reading
+    // "1.1" against a table reading "1h 3m" is the same number, legibly.
+    expect(toHours(63 * 60_000)).toBe(1.1);
+  });
+
+  it('treats a missing or negative duration as zero rather than NaN', () => {
+    // A NaN reaching `BarChart` is a bar of undefined height, which renders
+    // as a silently absent category rather than an error.
+    expect(toHours(Number.NaN)).toBe(0);
+    expect(toHours(-HOUR)).toBe(0);
+    expect(toHours(0)).toBe(0);
+  });
+});
+
+describe('toStatusChartData', () => {
+  it('plots the median for every status that has one', () => {
+    expect(toStatusChartData(report())).toEqual([{ label: 'In Progress', value: 8 }]);
+  });
+
+  it('drops a status with no measured issues rather than plotting it as zero', () => {
+    // "To Do" has a column but no summary: no issue has a measurable stay in
+    // it. A zero bar would claim "no time is spent here", which is a
+    // different and wrong statement from "not measured".
+    const data = toStatusChartData(report());
+    expect(data.map((point) => point.label)).not.toContain('To Do');
+  });
+
+  it('is empty when nothing has been measured, so the chart can withhold itself', () => {
+    expect(toStatusChartData(report({ summaryByStatus: {} }))).toEqual([]);
+  });
+
+  it('skips a summary whose median is null', () => {
+    const data = toStatusChartData(
+      report({
+        summaryByStatus: {
+          '3': {
+            count: 1,
+            meanMs: null,
+            medianMs: null,
+            p85Ms: null,
+            p95Ms: null,
+            minMs: null,
+            maxMs: null,
+          },
+        },
+      }),
+    );
+    expect(data).toEqual([]);
   });
 });

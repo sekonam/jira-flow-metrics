@@ -5,6 +5,7 @@ import {
   formatDate,
   formatDateTime,
   formatDurationForHumans,
+  toHours,
   type ChartPoint,
   type SummaryTile,
 } from './view-model.js';
@@ -271,4 +272,65 @@ export function toHistoryTiles(report: HistoryReport): SummaryTile[] {
           : `${busiest.changes} changes across ${busiest.issues} issues.`,
     },
   ];
+}
+
+// ------------------------------------------------------- chart series ---
+
+/**
+ * How many categories a bar chart may show before the labels stop being
+ * readable.
+ *
+ * Not a cosmetic cap. A project with 60 contributors renders 60 unlabelled
+ * slivers, which is worse than no chart — so the series is truncated to the
+ * largest `CHART_CATEGORY_LIMIT` and the *table underneath* stays complete.
+ * The chart is the summary; the table is the record.
+ */
+export const CHART_CATEGORY_LIMIT = 12;
+
+/** Time logged per group — the worklog page's chart. */
+export function toWorklogChartData(result: WorklogAggregateResult): ChartPoint[] {
+  return result.groups
+    .slice(0, CHART_CATEGORY_LIMIT)
+    .map((group) => ({ label: group.label, value: toHours(group.timeSpentMs) }));
+}
+
+/**
+ * How close each issue is to its target — the SLA page's chart.
+ *
+ * Bands, not a breached/not-breached pair. "How many are about to breach" is
+ * the question this listing exists to answer and a two-bar chart cannot show
+ * it: an issue at 95% of target and one at 10% are both "within target", and
+ * only one of them is a problem today.
+ *
+ * ★ The breached band reads `row.breached`, the same field the table's
+ * "Breached" cell reads, rather than re-deriving it as `consumedFraction >=
+ * 1`. An issue that has consumed *exactly* its target has `remainingMs === 0`
+ * and is within target in the table; a band boundary of `>= 1` would count it
+ * as breached in the chart directly above. Two views of one row disagreeing
+ * on that row is precisely the quiet wrongness this product is sold against,
+ * and it is one expression away.
+ */
+export function toSlaChartData(report: SlaReport): ChartPoint[] {
+  const within = report.rows.filter((row) => !row.breached);
+  const bands = [
+    { label: 'Under 50%', min: 0, max: 0.5 },
+    { label: '50-80%', min: 0.5, max: 0.8 },
+    { label: '80-100%', min: 0.8, max: Number.POSITIVE_INFINITY },
+  ];
+  return [
+    ...bands.map((band) => ({
+      label: band.label,
+      value: within.filter(
+        (row) => row.consumedFraction >= band.min && row.consumedFraction < band.max,
+      ).length,
+    })),
+    { label: 'Breached', value: report.breachedCount },
+  ];
+}
+
+/** Changes per field — the history page's chart. */
+export function toHistoryChartData(report: HistoryReport): ChartPoint[] {
+  return report.byField
+    .slice(0, CHART_CATEGORY_LIMIT)
+    .map((field) => ({ label: field.fieldLabel, value: field.changes }));
 }

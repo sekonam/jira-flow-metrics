@@ -9,12 +9,14 @@ import {
   IndexingBanner,
   LoadingSurface,
   PageHeader,
+  ReportBarChart,
   ReportTable,
   SummaryTiles,
   surfaceStateOf,
   toCapBanner,
   toProgressBanner,
   toReportTable,
+  toStatusChartData,
   toSummaryTiles,
 } from '@jfm/ui';
 
@@ -161,6 +163,13 @@ export const App = (): React.JSX.Element => {
               Showing {envelope.report.basis === 'business' ? 'working hours' : 'elapsed time'}.
             </Text>
           </Box>
+          <ReportBarChart
+            data={toStatusChartData(envelope.report)}
+            title="Median time in status"
+            subtitle={`Hours per status, median across the issues below (${
+              envelope.report.basis === 'business' ? 'working hours' : 'elapsed time'
+            }).`}
+          />
           <ReportTable model={toReportTable(envelope.report)} />
         </Stack>
       ) : null}

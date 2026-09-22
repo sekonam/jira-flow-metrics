@@ -10,11 +10,13 @@ import {
   IndexingBanner,
   LoadingSurface,
   PageHeader,
+  ReportBarChart,
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
   toCapBanner,
   toProgressBanner,
+  toWorklogChartData,
   toWorklogTable,
   toWorklogTiles,
 } from '@jfm/ui';
@@ -144,6 +146,11 @@ export const App = (): React.JSX.Element => {
             })}
           />
           <SummaryTiles tiles={toWorklogTiles(report)} />
+          <ReportBarChart
+            data={toWorklogChartData(report)}
+            title="Time logged per person"
+            subtitle="Hours logged per person, largest first. The table below lists every one."
+          />
           <SimpleReportTable model={toWorklogTable(report, 'Person')} />
         </Stack>
       ) : null}

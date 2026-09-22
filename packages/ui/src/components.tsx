@@ -289,13 +289,48 @@ export function SummaryTiles({ tiles }: { tiles: readonly SummaryTile[] }): Reac
 }
 
 /**
- * The WIP-aging bucket histogram — 0-1d, 1-3d, ... 30d+, oldest bucket last.
+ * A labelled bar chart over a `ChartPoint` series.
  *
  * Renders through `@forge/react`'s native `BarChart`, not a hand-rolled
  * chart: the platform ships one, so building a second is the "beyond what
  * the task requires" this repo avoids elsewhere. `xAccessor`/`yAccessor`
  * name the fields on each `ChartPoint`; `BarChart` itself accepts an
  * `unknown[]`, which is why the cast is here and nowhere else.
+ *
+ * An empty series renders nothing rather than an empty axis. Every caller
+ * sits above a table that is already showing the same data, so a chart with
+ * no bars adds a confusing 400px of blank plot area and says nothing the
+ * table does not.
+ */
+export function ReportBarChart({
+  data,
+  title,
+  subtitle,
+}: {
+  data: readonly ChartPoint[];
+  title: string;
+  subtitle: string;
+}): React.JSX.Element | null {
+  if (data.length === 0) return null;
+  return (
+    <BarChart
+      data={data as unknown[]}
+      xAccessor="label"
+      yAccessor="value"
+      title={title}
+      subtitle={subtitle}
+    />
+  );
+}
+
+/**
+ * The WIP-aging bucket histogram — 0-1d, 1-3d, ... 30d+, oldest bucket last.
+ *
+ * The one chart that renders its empty categories: a bucket with no issues
+ * in it is a real, meaningful zero ("nothing has sat that long"), unlike the
+ * dropped categories in `toStatusChartData`. Hence the explicit `data` rather
+ * than a filtered series, and hence its own component rather than a call to
+ * `ReportBarChart` with a different title.
  */
 export function AgingHistogram({ data }: { data: readonly ChartPoint[] }): React.JSX.Element {
   return (

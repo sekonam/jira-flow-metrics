@@ -11,12 +11,14 @@ import {
   IndexingBanner,
   LoadingSurface,
   PageHeader,
+  ReportBarChart,
   SimpleReportTable,
   SlaGoalForm,
   SummaryTiles,
   surfaceStateOf,
   toCapBanner,
   toProgressBanner,
+  toSlaChartData,
   toSlaTable,
   toSlaTiles,
   type SlaGoalChoice,
@@ -184,6 +186,11 @@ export const App = (): React.JSX.Element => {
             })}
           />
           <SummaryTiles tiles={toSlaTiles(report)} />
+          <ReportBarChart
+            data={toSlaChartData(report)}
+            title="How close to the target"
+            subtitle="Issues by the share of the working-time target they have used. The 80-100% band is the one to act on."
+          />
           <SimpleReportTable model={toSlaTable(report)} />
         </Stack>
       ) : null}

@@ -410,3 +410,35 @@ export function toProjectOptions(projects: readonly JiraProjectRef[]): ProjectOp
     .map((p) => ({ label: p.name ?? p.key ?? p.id, value: p.id }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/**
+ * Hours, to one decimal — the unit every chart y-axis in this product uses.
+ *
+ * Charts cannot show "2d 4h": a bar's height is a number, and the axis has to
+ * be labelled in something. Hours is the only unit that stays honest for both
+ * bases — see `DurationFormat` for why days are wrong for working time — so
+ * every chart states "hours" in its subtitle and every value is one.
+ */
+export function toHours(ms: Millis): number {
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.round((ms / 3_600_000) * 10) / 10;
+}
+
+/**
+ * Median time in each status, as a bar series.
+ *
+ * The median, not the mean, for the same reason `toSummaryTiles` uses it:
+ * cycle-time distributions are right-skewed and one abandoned issue drags a
+ * mean somewhere no real issue has ever been. Statuses with no measured
+ * issues are dropped rather than plotted as zero — a zero bar reads as "no
+ * time spent here", which is a different and wrong claim.
+ */
+export function toStatusChartData(report: StatusReport): ChartPoint[] {
+  const points: ChartPoint[] = [];
+  for (const column of report.columns) {
+    const summary = report.summaryByStatus[column.statusId];
+    if (summary === undefined || summary.count === 0 || summary.medianMs === null) continue;
+    points.push({ label: column.name, value: toHours(summary.medianMs) });
+  }
+  return points;
+}
