@@ -433,6 +433,21 @@ describe('★ --reset only forgets what it actually deleted', () => {
     issues: { 'FLOW-1': { id: '1' }, 'FLOW-2': { id: '2' }, 'FLOW-3': { id: '3' } },
   };
 
+  /**
+   * The message shape `Jira.request` really produces.
+   *
+   * `jira-seed-lib.mjs` throws `` `${method} ${path} → ${status}\n${body}` ``,
+   * so the first line — the only line the reset loop reads — always contains
+   * the issue key. The first version of these tests passed hand-written
+   * messages with no key in them, which is exactly why they could not catch
+   * a status check that matched the key instead of the status.
+   */
+  function httpError(key: string, status: number): Error {
+    return new Error(
+      `DELETE /rest/api/3/issue/${key}?deleteSubtasks=true → ${String(status)}\n{"errorMessages":[]}`,
+    );
+  }
+
   function fakeJira(del: (key: string) => Promise<void>) {
     return { dryRun: false, del: (path: string) => del(/\/issue\/([^?]+)/.exec(path)![1]!) };
   }
@@ -441,7 +456,7 @@ describe('★ --reset only forgets what it actually deleted', () => {
     // An expired API token: every DELETE is a 401, nothing is deleted.
     const saved: unknown[] = [];
     await reset(
-      fakeJira(() => Promise.reject(new Error('DELETE /rest/api/3/issue/X → 401'))),
+      fakeJira((key) => Promise.reject(httpError(key, 401))),
       state,
       (next: unknown) => saved.push(next),
     );
@@ -459,14 +474,52 @@ describe('★ --reset only forgets what it actually deleted', () => {
     const saved: { issues: Record<string, unknown> }[] = [];
     await reset(
       fakeJira((key) => {
-        if (key === 'FLOW-1') return Promise.reject(new Error('DELETE … → 404 Not Found'));
-        if (key === 'FLOW-2') return Promise.reject(new Error('DELETE … → 403 Forbidden'));
+        if (key === 'FLOW-1') return Promise.reject(httpError(key, 404));
+        if (key === 'FLOW-2') return Promise.reject(httpError(key, 403));
         return Promise.resolve();
       }),
       state,
       (next) => saved.push(next as { issues: Record<string, unknown> }),
     );
     expect(Object.keys(saved[0]!.issues)).toEqual(['FLOW-2']);
+  });
+
+  it('★ reads the status, not the issue key that happens to contain one', async () => {
+    // `/\b404\b/` over the first line of the real message matched
+    // `DELETE /rest/api/3/issue/FLOW-404?… → 401`: `-` and `?` are both word
+    // boundaries. So the one issue per project whose key ends in -404 was
+    // forgotten while every other 401 was correctly kept — the fix against
+    // orphaning, orphaning exactly one issue. A bulk seed of thousands
+    // produces such a key with near certainty.
+    const keyed = {
+      ...state,
+      issues: { 'FLOW-403': { id: '1' }, 'FLOW-404': { id: '2' }, 'FLOW-4040': { id: '3' } },
+    };
+    const saved: { issues: Record<string, unknown> }[] = [];
+    await reset(
+      fakeJira((key) => Promise.reject(httpError(key, 401))),
+      keyed,
+      (next) => saved.push(next as { issues: Record<string, unknown> }),
+    );
+    expect(Object.keys(saved[0]!.issues).sort()).toEqual(['FLOW-403', 'FLOW-404', 'FLOW-4040']);
+  });
+
+  it('★ keeps an issue whose deletion gave up after retrying', async () => {
+    // Repeated 429 or 5xx: `… — gave up after 5 attempts`, with no status in
+    // the message at all. The issue definitely still exists.
+    const saved: { issues: Record<string, unknown> }[] = [];
+    await reset(
+      fakeJira((key) =>
+        Promise.reject(
+          new Error(
+            `DELETE /rest/api/3/issue/${key}?deleteSubtasks=true — gave up after 5 attempts`,
+          ),
+        ),
+      ),
+      state,
+      (next) => saved.push(next as { issues: Record<string, unknown> }),
+    );
+    expect(Object.keys(saved[0]!.issues)).toHaveLength(3);
   });
 
   it('clears the file when every deletion succeeded', async () => {

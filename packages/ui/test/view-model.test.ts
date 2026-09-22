@@ -487,6 +487,35 @@ describe('★ a cap banner must not contradict itself', () => {
     ).toBeNull();
   });
 
+  it('★ names both ceilings when both fired', () => {
+    // The SLA report withholds its attainment figure on a truncated
+    // aggregate read. Printing only the issue-page banner left the reader
+    // with a blank headline tile and no sentence explaining why it was
+    // blank.
+    const both = toReportCapBanner({
+      capped: true,
+      aggregatesCapped: true,
+      included: 500,
+      total: 600,
+      noun: 'issues',
+    });
+    expect(both?.title).toBe('Report capped at 500 of 600 issues');
+    expect(both?.body).toContain('missing measurements');
+
+    // And `aggregatesCapped` is the discriminator, not `included < total`:
+    // the two happen to agree on these two reports today, via an invariant
+    // held in another package and stated nowhere in this one.
+    const pageOnly = toReportCapBanner({
+      capped: true,
+      aggregatesCapped: false,
+      included: 500,
+      total: 500,
+      noun: 'issues',
+    });
+    expect(pageOnly?.title).toBe('Report capped at 500 of 500 issues');
+    expect(pageOnly?.body).not.toContain('missing measurements');
+  });
+
   it('★ makes the same distinction in a gadget footnote', () => {
     // A gadget has room for a sentence rather than a banner, and printed
     // "Covering 400 of 400 issues, so every figure here is a lower bound".

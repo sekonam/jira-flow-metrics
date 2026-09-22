@@ -177,6 +177,51 @@ describe('capped reports carry the real total', () => {
     expect((await buildSlaReport(small, '10000', goal, NOW)).aggregatesCapped).toBe(false);
   });
 
+  it('★ does not call an exactly-full aggregate read truncated', async () => {
+    // 500 issues on a 20-status workflow is exactly 10,000 aggregate rows,
+    // and nothing was dropped. `length >= cap` cannot tell that from a real
+    // truncation — and since this report started withholding `attainment`
+    // on a capped read, the false positive stopped costing a spurious
+    // banner and started blanking the headline figure on a complete report.
+    const store = new MemoryStore();
+    const statusIds = Array.from({ length: 20 }, (_u, i) => String(100 + i));
+    await store.upsertStatusMeta(
+      statusIds.map((statusId) => ({
+        statusId,
+        name: `Status ${statusId}`,
+        category: 'inprogress' as const,
+        firstSeenAt: 0,
+        lastSeenAt: NOW,
+      })),
+    );
+    await store.putIssueAggregates(
+      Array.from({ length: 500 }, (_u, i) => ({
+        meta: meta({ issueId: String(i + 1), currentStatusId: '100' }),
+        rows: statusIds.map((statusId) => agg(String(i + 1), statusId, 20)),
+      })),
+    );
+
+    const goal = { id: 'g', name: 'Goal', countedStatusIds: ['100'], targetMs: 8 * HOUR };
+    const sla = await buildSlaReport(store, '10000', goal, NOW);
+    expect(sla.aggregatesCapped).toBe(false);
+    expect(sla.capped).toBe(false);
+    // Every one of the 500 breaches, and the report says so rather than
+    // withholding the figure.
+    expect(sla.attainment).toBe(0);
+    expect((await buildAgingReport(store, '10000', NOW, 500)).aggregatesCapped).toBe(false);
+
+    // One row past the cap is a real truncation. It has to land on an issue
+    // already in the page — a 501st issue would be outside the 500-issue
+    // limit and would change nothing about the aggregate read.
+    await store.putIssueAggregates([
+      {
+        meta: meta({ issueId: '1', currentStatusId: '100' }),
+        rows: [...statusIds.map((statusId) => agg('1', statusId, 20)), agg('1', '999', 20)],
+      },
+    ]);
+    expect((await buildSlaReport(store, '10000', goal, NOW)).aggregatesCapped).toBe(true);
+  });
+
   it('worklog report: capped when more entries match than were fetched', async () => {
     const store = new MemoryStore();
     await store.putWorklogs('1', [worklog('a', 'Anna'), worklog('b', 'Ben'), worklog('c', 'Cara')]);

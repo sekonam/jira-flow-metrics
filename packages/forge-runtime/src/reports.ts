@@ -131,6 +131,35 @@ export interface AgingReport {
  */
 const AGGREGATE_ROW_CAP = 10_000;
 
+/**
+ * Read the aggregate rows for a page of issues, and say whether the cap cut
+ * them off.
+ *
+ * ★ Asks for one row more than the cap. `length >= cap` cannot tell "exactly
+ * 10,000 rows" from "truncated at 10,000" — 500 issues on a 20-status
+ * workflow is exactly 10,000 and nothing was dropped — and since the SLA
+ * report started withholding `attainment` on a capped read, that false
+ * positive stopped costing a spurious banner and started blanking the
+ * report's headline figure on a complete, correct report. The extra row is
+ * the cheapest possible discriminator and is dropped before it is used.
+ *
+ * Same `>= MAX` shape as the `enumerateDaysCapped` false positive fixed one
+ * commit earlier, one file over.
+ */
+async function readAggregates(
+  store: MetricsStore,
+  projectId: string,
+  issueIds: readonly string[],
+): Promise<{ aggregates: readonly StatusAggregateRow[]; capped: boolean }> {
+  const rows = await store.queryStatusDurations({
+    projectId,
+    issueIds,
+    limit: AGGREGATE_ROW_CAP + 1,
+  });
+  const capped = rows.length > AGGREGATE_ROW_CAP;
+  return { aggregates: capped ? rows.slice(0, AGGREGATE_ROW_CAP) : rows, capped };
+}
+
 const AGING_BUCKETS: readonly { label: string; fromDays: number; toDays: number | null }[] = [
   { label: '0-1d', fromDays: 0, toDays: 1 },
   { label: '1-3d', fromDays: 1, toDays: 3 },
@@ -158,12 +187,11 @@ export async function buildAgingReport(
   const projectIssueCount = await store.countIssueMeta({ projectId });
   const statusMeta = await store.getStatusMeta();
   const byId = new Map(statusMeta.map((s) => [s.statusId, s]));
-  const aggregates = await store.queryStatusDurations({
+  const { aggregates, capped: aggregatesCapped } = await readAggregates(
+    store,
     projectId,
-    issueIds: metas.map((m) => m.issueId),
-    limit: AGGREGATE_ROW_CAP,
-  });
-  const aggregatesCapped = aggregates.length >= AGGREGATE_ROW_CAP;
+    metas.map((m) => m.issueId),
+  );
   const aggregateFor = new Map<string, StatusAggregateRow>();
   for (const row of aggregates) aggregateFor.set(`${row.issueId}:${row.statusId}`, row);
 
@@ -287,12 +315,11 @@ export async function buildSlaReport(
   const metas = await store.queryIssueMeta({ projectId, limit });
   const projectIssueCount = await store.countIssueMeta({ projectId });
   const counted = new Set(goal.countedStatusIds);
-  const aggregates = await store.queryStatusDurations({
+  const { aggregates, capped: aggregatesCapped } = await readAggregates(
+    store,
     projectId,
-    issueIds: metas.map((m) => m.issueId),
-    limit: AGGREGATE_ROW_CAP,
-  });
-  const aggregatesCapped = aggregates.length >= AGGREGATE_ROW_CAP;
+    metas.map((m) => m.issueId),
+  );
 
   const consumedByIssue = new Map<string, number>();
   for (const row of aggregates) {

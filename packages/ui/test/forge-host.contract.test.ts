@@ -101,9 +101,21 @@ function standInPropsNeverRead(source: string): string[] {
     );
     const component = name!.replace(/Props$/, '');
     const signature = new RegExp(
-      `export const ${component}\\s*=\\s*\\(([\\s\\S]*?)\\)\\s*:\\s*React\\.JSX\\.Element`,
+      `export (?:const ${component}\\s*=\\s*|function ${component}\\s*)\\(([\\s\\S]*?)\\)\\s*:\\s*(?:React\\.)?JSX\\.Element`,
     ).exec(source);
-    if (signature === null) continue; // not a component; checked elsewhere
+    // ★ An unmatched signature fails rather than being skipped.
+    //
+    // It used to `continue` under the comment "not a component; checked
+    // elsewhere" — and it is not checked elsewhere: the sibling test only
+    // asserts the name exists on the host. So a stand-in written as
+    // `export function Widget(props: WidgetProps)`, or returning
+    // `JSX.Element` without the `React.` prefix, silently left this whole
+    // check. A scan that quietly covers less than it claims is the failure
+    // this file exists to catch, one level up.
+    if (signature === null) {
+      problems.push(`${component}: has a ${name} interface but no signature this scan can read`);
+      continue;
+    }
     const params = signature[1]!;
     if (/\.\.\.\w+/.test(params)) continue; // spreads the remainder
     const ignored = declared.filter((prop) => !new RegExp(`\\b${prop}\\b`).test(params));

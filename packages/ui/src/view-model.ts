@@ -460,8 +460,11 @@ export function toCapNotice(input: {
 }): string | null {
   if (!input.capped) return null;
   const included = input.included.toLocaleString('en-GB');
-  if (input.included < input.total) {
+  if (!input.aggregatesCapped) {
     return `Covering ${included} of ${input.total.toLocaleString('en-GB')} ${input.noun}, so every figure here is a lower bound.`;
+  }
+  if (input.included < input.total) {
+    return `Covering ${included} of ${input.total.toLocaleString('en-GB')} ${input.noun}, and some of those are missing measurements, so every figure here is a lower bound.`;
   }
   return `Some of these ${included} ${input.noun} are missing measurements, so every figure here is a lower bound.`;
 }
@@ -483,7 +486,16 @@ export function toReportCapBanner(input: {
   noun: string;
 }): ProgressBanner | null {
   if (!input.capped) return null;
-  if (input.included < input.total) {
+  // ★ Branch on `aggregatesCapped`, not on `included < total`.
+  //
+  // The two were equivalent — `rows.length` and `projectIssueCount` differ only
+  // when the issue page was cut — but only because of an invariant held in
+  // another package, stated nowhere here, and true of exactly these two
+  // reports. The discriminator was sitting in the parameter list unread,
+  // which is the "declares a prop and reads neither" shape this same commit
+  // set added `standInPropsNeverRead` to catch on the stand-ins.
+  const pageCapped = input.included < input.total;
+  if (!input.aggregatesCapped) {
     return toCapBanner({
       capped: true,
       included: input.included,
@@ -491,7 +503,21 @@ export function toReportCapBanner(input: {
       noun: input.noun,
     });
   }
-  return toAggregateCapBanner({ included: input.included, noun: input.noun });
+  if (!pageCapped) {
+    return toAggregateCapBanner({ included: input.included, noun: input.noun });
+  }
+  // Both ceilings. Naming only the first left the reader with a withheld
+  // attainment figure and no sentence explaining why it was withheld.
+  const page = toCapBanner({
+    capped: true,
+    included: input.included,
+    total: input.total,
+    noun: input.noun,
+  })!;
+  return {
+    ...page,
+    body: `${page.body} Some of the ${input.noun} that were read are also missing measurements.`,
+  };
 }
 
 function describeProgress(progress: BackfillProgress): string {

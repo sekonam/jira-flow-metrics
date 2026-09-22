@@ -1146,6 +1146,40 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     expect((await d.store.getIndexState('10000'))?.lastError).toMatch(/consecutive empty/);
   });
 
+  it('★ resets the empty-page count on any page that yields an issue', async () => {
+    // Without the reset the counter is cumulative across the whole slice, so
+    // a long healthy walk that happens to meet twenty empty pages spread
+    // over hundreds of requests would fail as though it were stuck. The
+    // guard has to count *consecutive* empties, and nothing held it there:
+    // deleting the reset left the whole suite green.
+    //
+    // 60 alternating pages — issue, empty, issue, empty — is 30 empties in
+    // one slice, comfortably past the cap of 20 if they accumulated. (The
+    // first version of this test used 15, which is under the cap: it passed
+    // with the reset deleted, which is the mistake this whole cycle keeps
+    // finding.)
+    const script: JiraSearchPage[] = [];
+    for (let i = 0; i < 60; i += 1) {
+      script.push({
+        issues: i % 2 === 0 ? [issue(i + 1)] : [],
+        isLast: i === 59,
+        nextPageToken: i === 59 ? null : `P${String(i)}`,
+        total: 30,
+      });
+    }
+    const api = new ScriptedSearchApi(script);
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 1,
+    });
+
+    expect(result.stoppedBecause).toBe('complete');
+    expect(result.done).toBe(true);
+    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(30);
+  });
+
   it('does not stop on a single empty page in a walk that is otherwise advancing', async () => {
     // The guards must not fire on the ordinary case they were written around:
     // a page that comes back empty because its issues were deleted or moved

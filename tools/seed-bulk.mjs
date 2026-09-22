@@ -195,7 +195,17 @@ async function reset(jira, state) {
       await jira.del(`/rest/api/3/issue/${key}?deleteSubtasks=true`);
     } catch (error) {
       const message = String(error.message).split('\n')[0];
-      if (!/\b404\b/.test(message)) remaining[key] = state.issues[key];
+      // ★ Anchored on the status position, not a bare word boundary.
+      //
+      // `jira-seed-lib` formats the message as `DELETE <path> → <status>`,
+      // and the path contains the issue key — so `/\b404\b/` matched
+      // `DELETE /rest/api/3/issue/FLOW-404?… → 401`, forgetting the one
+      // issue whose key happens to end in -404 while every other 401 was
+      // correctly kept. A bulk seed of thousands produces such a key with
+      // near certainty, so the fix against orphaning orphaned one issue per
+      // project. It also matched the "gave up after 5 attempts" message,
+      // where the issue certainly still exists.
+      if (!/→ 404\b/.test(message)) remaining[key] = state.issues[key];
       say(`      ⤳ ${key}: ${message}`);
     }
     done += 1;
