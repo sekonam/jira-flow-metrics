@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { describeScreen, loadScenarios, resolversFor, setBridgeResolvers } from '@jfm/ui-harness';
 
@@ -17,6 +17,19 @@ vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 
 const scenarios = await loadScenarios();
 const { App } = await import('../src/frontend/index.js');
+
+/**
+ * ★ `afterEach`, not a trailing `cleanup()` in each body.
+ *
+ * An inline `cleanup()` as the last statement never runs when an assertion
+ * above it throws, so one real failure leaks its DOM into the next test and
+ * takes unrelated tests down with it. Mutating the cap-banner wiring
+ * produced four failures, two of them collateral — including a chart test
+ * that had nothing to do with the change. A test suite's job in that moment
+ * is to say *which* thing broke.
+ */
+afterEach(cleanup);
+
 const { Gadget } = await import('../src/frontend/gadget.js');
 
 describeScreen(
@@ -70,7 +83,6 @@ describe('time-in-status: the listing-specific behaviour', () => {
     await waitFor(() => {
       expect(asked).toEqual(['elapsed', 'business', 'elapsed']);
     });
-    cleanup();
   });
 
   it('★ shows the re-entry badge, which is the whole product argument', async () => {
@@ -86,7 +98,6 @@ describe('time-in-status: the listing-specific behaviour', () => {
         /cumulative across every visit; Jira's own control chart shows only the most recent one/,
       ),
     ).toBeDefined();
-    cleanup();
   });
 });
 
@@ -104,14 +115,12 @@ describe('★ time-in-status: a capped report says so on both surfaces', () => {
     setBridgeResolvers(resolversFor(scenarios.capped.responses));
     render(<App />);
     expect(await screen.findByText(/Report capped at 2 of 4 issues/)).toBeDefined();
-    cleanup();
   });
 
   it('renders the cap notice in the gadget', async () => {
     setBridgeResolvers(resolversFor(scenarios.capped.responses));
     render(<Gadget />);
     expect(await screen.findByText(/Covering 2 of 4 issues/)).toBeDefined();
-    cleanup();
   });
 
   /**
@@ -154,14 +163,12 @@ describe('★ time-in-status: a capped report says so on both surfaces', () => {
     render(<App />);
     expect(await screen.findByText(/are missing measurements/)).toBeDefined();
     expect(screen.queryByText(/Report capped at/)).toBeNull();
-    cleanup();
   });
 
   it('★ and in the gadget', async () => {
     setBridgeResolvers(resolversFor(aggregateCappedResponses()));
     render(<Gadget />);
     expect(await screen.findByText(/are missing measurements/)).toBeDefined();
-    cleanup();
   });
 
   it('says nothing when the report is complete', async () => {
@@ -170,7 +177,6 @@ describe('★ time-in-status: a capped report says so on both surfaces', () => {
     render(<App />);
     await screen.findByText('FLOW-3');
     expect(screen.queryByText(/Report capped/)).toBeNull();
-    cleanup();
   });
 });
 
@@ -181,6 +187,5 @@ describe('time-in-status: the report chart', () => {
     // The chart's own title, which only the ready state renders. It sits
     // above the table so a reader sees the shape before the rows.
     expect(await screen.findByText('Median time in status')).toBeDefined();
-    cleanup();
   });
 });

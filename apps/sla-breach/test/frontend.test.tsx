@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describeScreen, loadScenarios, resolversFor, setBridgeResolvers } from '@jfm/ui-harness';
 import type { SlaReport } from '@jfm/forge-runtime';
@@ -16,6 +16,19 @@ vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 
 const scenarios = await loadScenarios();
 const { App } = await import('../src/frontend/index.js');
+
+/**
+ * ★ `afterEach`, not a trailing `cleanup()` in each body.
+ *
+ * An inline `cleanup()` as the last statement never runs when an assertion
+ * above it throws, so one real failure leaks its DOM into the next test and
+ * takes unrelated tests down with it. Mutating the cap-banner wiring
+ * produced four failures, two of them collateral — including a chart test
+ * that had nothing to do with the change. A test suite's job in that moment
+ * is to say *which* thing broke.
+ */
+afterEach(cleanup);
+
 const { Gadget } = await import('../src/frontend/gadget.js');
 
 describeScreen(
@@ -83,7 +96,70 @@ describe('sla-breach: the listing-specific behaviour', () => {
     expect(
       screen.getByText(/This is a counted-statuses goal, not a start\/stop\/pause timer/),
     ).toBeDefined();
-    cleanup();
+  });
+});
+
+describe('★ sla-breach: a capped report says so on both surfaces', () => {
+  /**
+   * The cap banner, on the page and in the gadget.
+   *
+   * Neither was held by anything: deleting `capped` from both call sites —
+   * removing the banner from the product entirely — left the whole suite and
+   * all forty browser flows green. `getSlaReport` takes no page size, so no
+   * scenario can produce a capped report for this listing and the state was
+   * unreachable from every fixture. The response is therefore adjusted from
+   * the real one, in the two shapes real data produces.
+   */
+  function withCap(over: { aggregatesCapped: boolean; total?: number }) {
+    const base = scenarios.populated.responses.getSlaReport as {
+      ok: true;
+      data: Record<string, unknown>;
+    };
+    // ★ `capped` is always true here, because on these two reports it is
+    // defined as `projectIssueCount > metas.length || aggregatesCapped` —
+    // the aggregate ceiling is folded in. So `capped: false` alongside
+    // `aggregatesCapped: true` is a shape the product cannot produce, and a
+    // test asserting on it would pin an invention.
+    const included = (base.data['rows'] as unknown[]).length;
+    return {
+      ...scenarios.populated.responses,
+      getSlaReport: {
+        ...base,
+        data: {
+          ...base.data,
+          capped: true,
+          aggregatesCapped: over.aggregatesCapped,
+          projectIssueCount: over.total ?? included,
+        },
+      },
+    };
+  }
+
+  it('names both figures when the issue page was cut', async () => {
+    setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: false, total: 40 })));
+    render(<App />);
+    expect(await screen.findByText(/Report capped at \d+ of 40 issues/)).toBeDefined();
+  });
+
+  it('★ says something different when only the measurements were cut', async () => {
+    // Asserting the first case alone is not enough: `capped` on its own
+    // still renders a banner, so gutting `aggregatesCapped` goes unnoticed.
+    setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: true })));
+    render(<App />);
+    expect(await screen.findByText(/are missing measurements/)).toBeDefined();
+    expect(screen.queryByText(/Report capped at/)).toBeNull();
+  });
+
+  it('carries the same notice into the gadget', async () => {
+    setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: false, total: 40 })));
+    render(<Gadget />);
+    expect(await screen.findByText(/of 40 issues/)).toBeDefined();
+  });
+
+  it('says nothing at all when the report is complete', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    expect(await screen.findByText(/Report capped/).catch(() => null)).toBeNull();
   });
 });
 
@@ -94,7 +170,6 @@ describe('sla-breach: the report chart', () => {
     // The chart's own title, which only the ready state renders. It sits
     // above the table so a reader sees the shape before the rows.
     expect(await screen.findByText('How close to the target')).toBeDefined();
-    cleanup();
   });
 });
 
@@ -115,7 +190,6 @@ describe('sla-breach: the saved-goal picker', () => {
     });
     render(<App />);
     expect(await screen.findByText('Saved goal')).toBeDefined();
-    cleanup();
   });
 });
 
@@ -165,6 +239,5 @@ describe('sla-breach: an out-of-order answer must not win', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.getByText('No issues measured yet')).toBeDefined();
     expect(screen.queryByText('FLOW-3')).toBeNull();
-    cleanup();
   });
 });

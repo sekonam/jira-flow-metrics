@@ -313,7 +313,11 @@ describe('capped reports carry the real total', () => {
       issue_type_id: null,
       priority_id: null,
       assignee_account_id: null,
-      current_status_id: '100',
+      // The *last* status id, so the row the slice would discard — rows
+      // come back ordered by issue_id then status_id — is precisely the
+      // one the aging report reads. A dropped row nothing looks at
+      // proves nothing.
+      current_status_id: String(100 + statuses - 1),
       created_at: NOW - 30 * DAY,
       resolved_at: null,
       due_at: null,
@@ -350,6 +354,28 @@ describe('capped reports carry the real total', () => {
     // But every figure is the one the store actually returned: 20 statuses
     // at four hours each, for all 500 issues, none short.
     expect(report.rows.every((row) => row.totalMs === statuses * 4 * HOUR)).toBe(true);
+
+    // ★ And the same for the four derived reports, which share the fix and
+    // had no test for it: restoring the slice in `readAggregates` left the
+    // whole suite green while corrupting both.
+    const derivedStore = new SqlMetricsStore(
+      new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
+      { migrate: () => Promise.resolve() },
+    );
+    const aging = await buildAgingReport(derivedStore, '10000', NOW, issues);
+    // The discarded row was the last issue's, so it lost its aggregate and
+    // with it the instant it entered the status — an age of zero on the
+    // oldest-first table.
+    expect(aging.rows.every((row) => row.enteredStatusAt !== null)).toBe(true);
+
+    // Counting every status, so the sum is short by exactly the dropped
+    // row rather than unaffected by it.
+    const goal = { id: 'g', name: 'Goal', countedStatusIds: [], targetMs: HOUR };
+    const sla = await buildSlaReport(derivedStore, '10000', goal, NOW, issues);
+    // Wrong in the reassuring direction, which is the failure `attainment`'s
+    // own docstring exists to prevent: an issue with no aggregate row reads
+    // as zero consumed working time, i.e. fully compliant.
+    expect(sla.rows.every((row) => row.consumedMs === statuses * 4 * HOUR)).toBe(true);
   });
 
   it('★ the flagship report detects a truncated aggregate read too', async () => {
@@ -446,22 +472,47 @@ describe('capped reports carry the real total', () => {
     expect(aging.split('\n').at(-1)).toMatch(/^# This file covers 2 of 3 issues\./);
 
     const sla = slaReportToCsv(await buildSlaReport(store, '10000', goal, NOW, 2));
-    expect(sla.split('\n').at(-1)).toMatch(/^# This file covers 2 of 3 issues\./);
+    expect(sla.split('\r\n').at(-1)).toMatch(/^# This file covers 2 of 3 issues\./);
+
+    // ★ The aggregate branch on these two, which is passed at the call site
+    // and reached by no test: deleting `aggregatesCapped:` from either
+    // export left the suite green.
+    const bothCeilings = slaReportToCsv({
+      ...(await buildSlaReport(store, '10000', goal, NOW, 2)),
+      aggregatesCapped: true,
+    });
+    expect(bothCeilings.split('\r\n').at(-1)).toContain(
+      'and some of those are missing measurements',
+    );
+    const agingBoth = agingReportToCsv({
+      ...(await buildAgingReport(store, '10000', NOW, 2)),
+      aggregatesCapped: true,
+    });
+    expect(agingBoth.split('\r\n').at(-1)).toContain('and some of those are missing measurements');
 
     // All five exports, not two: the worklog and history notes were added in
     // the same commit and asserted nowhere, so deleting either left the
     // suite green.
     const worklogStore = new MemoryStore();
+    // Two entries by one author, so the group count and the entry count
+    // differ: with three authors they coincided at 2, and the note's
+    // `included` could be mutated from entries to groups without any
+    // assertion noticing.
     await worklogStore.putWorklogs('1', [
       worklog('a', 'Anna'),
-      worklog('b', 'Ben'),
+      worklog('b', 'Anna'),
       worklog('c', 'Cara'),
     ]);
     const worklogCsv = worklogReportToCsv(
       await buildWorklogReport(worklogStore, { projectId: '10000', limit: 2 }, 'UTC'),
       'Author',
     );
-    expect(worklogCsv.split('\r\n').at(-1)).toContain('of 3 worklog entries');
+    // Both numbers, not just the total: `of 3` alone passed with `included`
+    // mutated to the group count. Two entries by one author make the two
+    // figures differ, so the assertion can tell them apart.
+    expect(worklogCsv.split('\r\n').at(-1)).toBe(
+      '# This file covers 2 of 3 worklog entries. Narrow the filters to export the rest.',
+    );
 
     const historyStore = new MemoryStore();
     const change = {
@@ -486,13 +537,71 @@ describe('capped reports carry the real total', () => {
     const historyCsv = historyReportToCsv(
       await buildHistoryReport(historyStore, { projectId: '10000', limit: 2 }),
     );
-    expect(historyCsv.split('\r\n').at(-1)).toContain('of 3 changes');
+    expect(historyCsv.split('\r\n').at(-1)).toBe(
+      '# This file covers 2 of 3 changes. Narrow the filters to export the rest.',
+    );
 
     // And a complete export carries no note at all — a spurious one would be
     // as wrong as a missing one, and it would land in someone's spreadsheet.
     const complete = agingReportToCsv(await buildAgingReport(store, '10000', NOW));
     expect(complete).not.toContain('#');
     expect(complete.split('\r\n')).toHaveLength(4); // header + three issues
+  });
+
+  it('★ notes an aggregate-only truncation, which no other export can reach', async () => {
+    // `capNoteRow`'s guard is `!capped && aggregatesCapped !== true`, and
+    // the second disjunct — the whole reason it was widened — was pinned by
+    // nothing: reverting it to `!capped` left all 1,069 tests green.
+    //
+    // The status report is the only one of the five where the combination
+    // is reachable: aging and SLA fold `aggregatesCapped` into `capped`,
+    // while this one keeps them separate because they say different things.
+    // 500 issues × 20 statuses is exactly `STORE_MAX_ROWS`, so every issue
+    // is on the page and the aggregate read is at the ceiling.
+    const issues = 500;
+    const statuses = 20;
+    const metaRows = Array.from({ length: issues }, (_u, i) => ({
+      issue_id: String(i + 1),
+      issue_key: `FLOW-${String(i + 1)}`,
+      project_id: '10000',
+      issue_type_id: null,
+      priority_id: null,
+      assignee_account_id: null,
+      current_status_id: '100',
+      created_at: NOW - 30 * DAY,
+      resolved_at: null,
+      due_at: null,
+      history_through_at: NOW,
+      truncated: 0,
+      updated_at: NOW,
+    }));
+    const aggRows = metaRows.flatMap((row) =>
+      Array.from({ length: statuses }, (_u, s2) => ({
+        issue_id: row.issue_id,
+        status_id: String(100 + s2),
+        project_id: '10000',
+        elapsed_ms: 4 * HOUR,
+        business_ms: 4 * HOUR,
+        entries: 1,
+        last_entered_at: NOW - DAY,
+        last_exited_at: null,
+        updated_at: NOW,
+      })),
+    );
+    const report = await buildStatusReport(
+      new SqlMetricsStore(
+        new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
+        { migrate: () => Promise.resolve() },
+      ),
+      { projectId: '10000', basis: 'business', limit: issues, offset: 0 },
+    );
+    expect(report.capped).toBe(false);
+    expect(report.aggregatesCapped).toBe(true);
+
+    const csv = statusReportToCsv(report, { durationFormat: 'hours' });
+    expect(csv.split('\r\n').at(-1)).toBe(
+      '"# Some of these 500 issues are missing measurements, so every figure in this file is a lower bound."',
+    );
   });
 
   it('★ escapes the truncation note like any other cell', async () => {

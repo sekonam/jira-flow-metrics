@@ -100,7 +100,18 @@ const SCENARIO_SETUP: Readonly<
   },
   capped: {
     label: 'Report capped',
-    note: 'More issues match than the report will fetch. Every figure is a lower bound and the banner has to say so — the one state whose absence is invisible.',
+    note: 'More rows match than the report will fetch. Every figure is a lower bound and the banner has to say so — the one state whose absence is invisible.',
+    /**
+     * ⚠️ Only the two resolvers that accept a page size can show this.
+     *
+     * `handleGetReport` and `handleHistoryReport` parse a `limit` from the
+     * payload; `handleAgingReport` and `handleSlaReport` call
+     * `runtime.agingReport(projectId)` / `slaReport(projectId, goal)` with
+     * no page size at all, so their reports only cap past 500 *indexed*
+     * issues — which this four-issue fixture cannot reach. Their surfaces
+     * `skip` this scenario in `screens.mjs` rather than publishing a
+     * populated screenshot under a caption that says "Report capped".
+     */
     options: { issues: [...IN_FLIGHT_ISSUES, CANONICAL_ISSUE], reportLimit: 2 },
   },
   partial: {
@@ -176,7 +187,10 @@ async function collect(runtime: ListingRuntime, reportLimit?: number): Promise<R
       // configuration — see PRODUCT-SPEC §7.
       payload: { countedStatusIds: ['3', '10200'], targetMs: 8 * 3_600_000 },
     }),
-    getHistoryReport: await handleHistoryReport(runtime, INVOCATION),
+    getHistoryReport: await handleHistoryReport(runtime, {
+      ...INVOCATION,
+      ...(reportLimit === undefined ? {} : { payload: { limit: reportLimit } }),
+    }),
     // The SLA goal picker's options — the statuses the pipeline stored.
     listStatuses: await handleListStatuses(runtime, INVOCATION),
     // The goal editor's saved goals. Empty on every scenario: nothing has

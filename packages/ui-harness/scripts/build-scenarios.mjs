@@ -1,3 +1,12 @@
+/**
+ * ⚠️ Reads the workspace packages from `dist`, so it needs a build first.
+ *
+ * `ui:screens` and `e2e:ui` run `tsc --build` ahead of this for that reason:
+ * without it a scenario change is silently ignored and the screenshots are
+ * generated from whatever was last compiled. Exactly the shape of the stale-
+ * `dist` defect that had thirteen app suites asserting against a previous
+ * build — see `vitest.config.mts`.
+ */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
