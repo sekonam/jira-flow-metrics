@@ -500,6 +500,36 @@ the real `invoke`, its payload validation and its rate limiter all run.
    to get it is a v1.1 question. Until then the export opens in a modal, selectable, with its
    filename, and says why.
 
+   **The 2026 routes to a real download, priced (2026-09-22).** Two now
+   exist, and both were researched against Atlassian's own documentation
+   rather than assumed. Neither is taken for v1, and the reasons are the
+   decision rather than an omission:
+
+   - **`FileCard` with `onDownload` returning `Promise<Blob>`** — the UI Kit
+     component triggers a genuine browser download, named by `fileName`
+     (documented, Preview/EAP, page updated 2026-05-25). It does not exist
+     in `@forge/react` 12.1.3, which is what this repository pins: taking it
+     means an upgrade onto components Atlassian labels "not supported or
+     recommended for use in production", for a first Marketplace submission.
+   - **Forge Object Store** (`@forge/object-store`, Preview since ~June 2026)
+     — upload the CSV, hand back a presigned URL. Costs an `objectStore`
+     manifest module, and Atlassian documents that adding one **triggers a
+     major version upgrade**, which means every existing installation stops
+     receiving updates until its admin consents. It also cannot set a
+     download filename: no `Content-Disposition` option exists, so the file
+     saves under an opaque object key (community-reported, unanswered).
+
+   A third possibility is cheap and untested: a Custom UI resource inside a
+   UI Kit `<Frame>`. Forge's Custom UI iframe sandbox now includes
+   `allow-downloads` (documented), so a twenty-line resource doing
+   `Blob` + `<a download>` may work — but whether `<Frame>` inherits that
+   sandbox is not documented, and one surface moving to Custom UI is a
+   change worth making deliberately rather than to add a button.
+
+   **So the modal stays for v1**, and this is now a decision with prices
+   attached rather than "no way was found". Revisit when `FileCard` reaches
+   GA — that is the route with no major-version cost and a real filename.
+
    **Every listing now exports its own report (2026-09-21).** Drafting the four remaining
    Marketplace listings surfaced that all five apps wired `exportCsv` to `statusReportCsv` — the
    time-in-status table — so on listings 2–5 the button exported the wrong report (on
@@ -521,9 +551,20 @@ the real `invoke`, its payload validation and its rate limiter all run.
    this workspace to stand in for `@atlassian/viz-platform-charts` — like every other stand-in,
    this proves the right data reaches the DOM in the right order, not that Forge's real chart
    renders identically.
-10. **`getStorageEstimate` is not exposed.** `ListingRuntime.storageEstimate()` reports
-    instance-wide row counts and has no project scope, so no app registers it as a resolver. It
-    stays as an internal method until there is an admin surface that can authorise it properly.
+10. **`getStorageEstimate` is exposed — resolved (2026-09-22).**
+    `ListingRuntime.storageEstimate()` reported instance-wide row counts with no project scope, so
+    no app registered it as a resolver, and the note here said it would stay internal "until there
+    is an admin surface that can authorise it properly". `jira:adminPage` is that surface: Jira
+    restricts it to administrators itself, which is the only gate an instance-wide question can
+    honestly have.
+
+    All five listings now carry one, reporting rows and estimated bytes per table. **One page per
+    listing, not one shared page** — Forge provisions a SQL database per _app_, confirmed live on
+    2026-09-22 by reading two of them at the same moment: Time in Status held 191 `issue_meta` rows
+    and 0 visits while WIP Aging held 310 and 4. Nothing issue-shaped appears on the page, and a
+    test asserts no issue key can reach it: an admin page is visible to people who may have no
+    permission on the projects the rows came from. The byte total is the sum of the same breakdown
+    the table renders, so the headline and the rows cannot drift apart.
 
 11. **★★ A backfill can stall on a corrupted Jira pagination cursor — not our bug, took three
     attempts to fix correctly, the third confirmed live.** Bulk-seeding 300 real issues into one
@@ -598,6 +639,72 @@ the real `invoke`, its payload validation and its rate limiter all run.
     reports themselves are unaffected (they count real rows), so this stays a cosmetic accounting
     note rather than a fix: making the counter distinct-aware would mean querying the store per
     slice for a number only the progress banner reads.
+
+12. **★★ `jira:issuePanel` deploys, lints and installs cleanly and never appears — resolved by
+    changing module (2026-09-22).** The issue-timeline surface was first built as a
+    `jira:issuePanel`. `forge lint` passed, `forge deploy` produced a _minor_ version bump (adding
+    a module is not a major change), `forge install --upgrade` reported "Site is already at the
+    latest version" — and on a real issue there was nothing, anywhere, to click.
+
+    Nothing was broken. Two documented properties of the module, neither visible from the manifest
+    and both disqualifying for a read-only report:
+
+    1. **An issue panel is opt-in per issue.** The module contributes a _button_ under "Apps"
+       below the work-item summary; the panel exists on an issue only after somebody clicks it.
+       Atlassian confirms there is no way to open one automatically — FRGE-734 and ECO-251 are
+       both open, the latter since April 2024.
+    2. **"Only users with permission to edit the Jira issue can see the configured button."** The
+       people who read a metrics report are routinely the people without edit permission, so the
+       surface would have been invisible to most of its own audience.
+
+    A third trap wasted time before the cause was known: the **"View app actions" button in the
+    issue header is a different extension point** (`jira:issueAction`), and its menu is correctly
+    empty for an app that ships no action — so the obvious place to look is the wrong one.
+
+    **Fixed by using `jira:issueActivity`**, which has neither property: a tab inside the Activity
+    panel, always present, for every viewer, with no per-issue opt-in. It is also the better
+    placement for what this product argues — the cumulative figure now sits one click from Jira's
+    own History tab, which is the thing it is measured against. Confirmed live 2026-09-22: the
+    tab renders next to All / Comments / History / Work log. Note `jira:issueActivity` takes no
+    `icon`; the property does not exist on that module.
+
+13. **Per-visit storage, and why the aggregate could not answer the flow diagram (2026-09-22).**
+    `issue_status_agg` collapses every visit to a status into one row. That is exactly right for
+    the four v1 reports and it cannot answer "where was this issue three weeks ago", which is the
+    whole of a cumulative flow diagram. `issue_status_visit` stores one row per stay —
+    `exited_at` null for the visit still running, `seq` giving a stable order for two visits
+    entered in the same millisecond — derived from the same timeline reconstruction the aggregate
+    collapses, so the two cannot disagree.
+
+    It costs **no extra Jira request**: the changelog is already fetched whenever
+    `statusDurations` is set. It costs storage, so it is a per-listing dataset flag
+    (`IngestDatasets.statusVisits`) and only `wip-aging` sets it — roughly 8 rows per issue against
+    the aggregate's 3-6, about 11 MB at the 20,000-issue reference instance.
+
+    **Confirmed live, end to end, on 2026-09-22**, including one behaviour observed on a real
+    tenant for the first time: adding a label to ten issues wrote **zero** visits, while a single
+    status transition wrote four. `eventAffectsDatasets` classifies a labels-only change as
+    irrelevant to every dataset and skips the re-read — deliberate, an invocation not spent on a
+    consumption-priced platform, and now observed rather than assumed.
+
+14. **Platform findings from the September 2026 documentation sweep, recorded because they bear on
+    decisions already made here.**
+
+    - **UI Kit chart `colorPalette` is accepted and silently ignored** — Atlassian defect
+      ECO-1390, raised March 2026, still open. This repository passes no `colorPalette` for that
+      reason; a palette here would read as a choice the platform had honoured.
+    - **`dashboards:widget` went GA on 2026-09-22** and Atlassian now calls `jira:dashboardGadget`
+      "legacy", with **no deprecation date and no automated converter**. The replacement's own
+      reference page still says EAP, so the manifest shape may yet move. No migration here yet;
+      the note exists so the next person does not rediscover the question.
+    - **Node 20 reached EOL in April 2026**; `nodejs24.x` is now recommended and changing
+      `app.runtime.name` does _not_ trigger a major upgrade. These apps stay on `nodejs22.x`,
+      which is supported, because the deployed runtime should match the one the tests run on.
+    - **`/rest/api/3/search/jql` pagination**: a `400` naming an invalid or expired
+      `nextPageToken` is community-reported on queries that were plainly complete, which is a
+      second, unrelated way for the failure in item 11 to present. The guard there fails the
+      backfill loudly rather than treating it as the end of results, and that remains the right
+      call — silently truncating an index is the failure this product exists to avoid.
 
 ---
 

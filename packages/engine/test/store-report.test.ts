@@ -807,3 +807,106 @@ describe('★ report filters are evaluated by the store, not after the page', ()
     expect(unfiltered.rows.map((r) => r.issueId)).toContain('7');
   });
 });
+
+describe('status visits — the rows the aggregate cannot reconstruct', () => {
+  const T0 = T('2026-03-01T00:00:00Z');
+
+  async function visitStore(): Promise<MemoryStore> {
+    const store = await seededStore();
+    await store.putIssueVisits('1', [
+      {
+        issueId: '1',
+        seq: 0,
+        statusId: '10000',
+        projectId: '10000',
+        enteredAt: T0,
+        exitedAt: T0 + HOUR,
+      },
+      {
+        issueId: '1',
+        seq: 1,
+        statusId: '3',
+        projectId: '10000',
+        enteredAt: T0 + HOUR,
+        exitedAt: null,
+      },
+    ]);
+    return store;
+  }
+
+  it('replaces an issue’s visits rather than merging them', async () => {
+    const store = await visitStore();
+    // A re-ingested issue can have *fewer* visits than before — history
+    // edited, an issue moved — and merging would leave the surplus behind
+    // as phantom visits nothing ever deletes.
+    await store.putIssueVisits('1', [
+      { issueId: '1', seq: 0, statusId: '3', projectId: '10000', enteredAt: T0, exitedAt: null },
+    ]);
+    const rows = await store.queryStatusVisits({ projectId: '10000' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.statusId).toBe('3');
+  });
+
+  it('★ returns a visit that overlaps the window, not only one contained by it', async () => {
+    const store = await visitStore();
+    // The visit still running began before this window and has no end. It
+    // is the row a flow diagram needs most, and a containment test drops it.
+    const rows = await store.queryStatusVisits({
+      projectId: '10000',
+      from: T0 + 10 * HOUR,
+      to: T0 + 20 * HOUR,
+    });
+    expect(rows.map((r) => r.statusId)).toEqual(['3']);
+  });
+
+  it('excludes a visit that closed before the window and one that starts after it', async () => {
+    const store = await visitStore();
+    expect(
+      await store.queryStatusVisits({ projectId: '10000', from: T0 + 2 * HOUR, to: T0 + 3 * HOUR }),
+    ).toHaveLength(1);
+    // A window entirely before anything happened.
+    expect(
+      await store.queryStatusVisits({ projectId: '10000', from: T0 - 10 * HOUR, to: T0 }),
+    ).toHaveLength(0);
+  });
+
+  it('orders by issue then sequence, so same-millisecond visits stay in order', async () => {
+    const store = await visitStore();
+    const rows = await store.queryStatusVisits({ projectId: '10000' });
+    expect(rows.map((r) => r.seq)).toEqual([0, 1]);
+  });
+
+  it('scopes to the project and to the issues asked for', async () => {
+    const store = await visitStore();
+    await store.putIssueAggregate(meta({ issueId: '9', projectId: '20000' }), []);
+    await store.putIssueVisits('9', [
+      { issueId: '9', seq: 0, statusId: '3', projectId: '20000', enteredAt: T0, exitedAt: null },
+    ]);
+    expect(await store.queryStatusVisits({ projectId: '20000' })).toHaveLength(1);
+    expect(await store.queryStatusVisits({ projectId: '10000', issueIds: ['2'] })).toHaveLength(0);
+  });
+
+  it('drops an issue’s visits when the issue is deleted', async () => {
+    const store = await visitStore();
+    await store.deleteIssue('1');
+    expect(await store.queryStatusVisits({ projectId: '10000' })).toHaveLength(0);
+  });
+
+  it('counts visits into the storage breakdown the admin page renders', async () => {
+    const store = await visitStore();
+    const counts = await store.countRows();
+    expect(counts['issue_status_visit']).toBe(2);
+    expect(counts['issue_meta']).toBeGreaterThan(0);
+    // Every table the byte estimate knows about is present, so a table can
+    // never be silently missing from the admin page.
+    for (const table of Object.keys(ESTIMATED_ROW_BYTES)) {
+      expect(counts[table]).toBeTypeOf('number');
+    }
+  });
+
+  it('includes visits in the byte estimate', async () => {
+    const bare = await seededStore();
+    const withVisits = await visitStore();
+    expect(await withVisits.estimateBytes()).toBeGreaterThan(await bare.estimateBytes());
+  });
+});

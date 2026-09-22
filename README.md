@@ -36,28 +36,35 @@ Jira calls**. That reuse is the point: the multi-listing structure is the distri
 
 ## Status
 
-|                                           |                                                       |
-| ----------------------------------------- | ----------------------------------------------------- |
-| Tests                                     | **735 passing**                                       |
-| Coverage on `packages/**` + app frontends | **97.8% statements · 91.1% branches** (CI floor: 80%) |
-| Lint, typecheck, build                    | Green                                                 |
-| Deployed to Forge                         | **No**                                                |
-| Published to the Marketplace              | **No**                                                |
+|                                           |                                                          |
+| ----------------------------------------- | -------------------------------------------------------- |
+| Tests                                     | **959 passing**                                          |
+| Coverage on `packages/**` + app frontends | **97.8% statements · 91.1% branches** (CI floor: 80%)    |
+| Lint, typecheck, build                    | Green                                                    |
+| Deployed to Forge                         | **Yes** — all five, `development`, verified in real Jira |
+| Published to the Marketplace              | **No**                                                   |
 
-### ⚠️ What has never been verified
+### ⚠️ What is still unverified
 
-**Nothing in this repository has executed on the Atlassian Forge platform.** There is no Atlassian
-developer account here, so `forge login`, `forge lint`, `forge tunnel` and `forge deploy` could not
-be run. Specifically unverified:
+All five apps are deployed and installed on a real Jira Cloud site, and every surface has been read
+back from it — report pages, dashboard gadgets, the per-listing charts, the cumulative flow
+diagram, the admin storage page, and the issue timeline as a tab beside Jira's own History. Forge
+SQL accepts the DDL and the upserts; the adapters work; the manifests lint and deploy.
 
-- the five `manifest.yml` files (written against Atlassian's published module reference);
-- `forgeSqlExecutor` and `forgeJiraFetch` — the two adapter functions that touch the Forge SDKs;
-- whether Forge SQL accepts the DDL and the `ON DUPLICATE KEY UPDATE` upserts;
-- **how Forge itself renders the UI.** Every screen is rendered and audited in CI, but through a
-  stand-in host renderer (`packages/ui-harness`): `@forge/react`'s UI Kit 2 exports are string
-  sentinels serialised over the bridge, and the code that turns them into Atlassian Design System
-  markup ships inside Jira and is not on npm. Structure, copy, state and numbers are verified;
-  Forge's own rendering and its acceptance of these props are not.
+What that does **not** cover:
+
+- **`forge tunnel` has never run.** Hot-reload local development is unverified, though the
+  production `forge deploy` path is proven.
+- **Screenshots are stale, and could not be re-shot here.** Every report page gained a chart in
+  v1.1. Driving a real browser was enough to _read_ each surface back, but not to click inside a
+  Forge iframe or capture one — both fail against that iframe specifically, and the known-good CSV
+  modal fails identically, so it is an automation limit rather than a product fault.
+- **CI still renders the UI through a stand-in host renderer** (`packages/ui-harness`), because
+  `@forge/react`'s UI Kit 2 exports are string sentinels and the code that turns them into
+  Atlassian Design System markup ships inside Jira and is not on npm. That stand-in proves
+  structure, copy, state and numbers; the live sessions are what prove Forge's own rendering.
+- **One real, open, Jira-side bug** at 300-issue scale — a corrupted pagination cursor; see
+  `docs/TECHNICAL-SPEC.md` § 11 item 11.
 
 Everything else — the arithmetic, the ingestion pipeline, the backfill state machine, the store
 contract, the request URLs, the SQL statement text and its bound parameters — is covered by tests

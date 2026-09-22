@@ -115,21 +115,70 @@ Either answer being yes means dropping that listing, not shipping it anyway.
 
 ---
 
-## Stage 5 — v1.1, only after a listing has paying customers
+## Stage 5 — v1.1 · **built, 2026-09-22**, ahead of the gate
 
-Ordered by (value to an existing customer) ÷ (weeks). Nothing here is worth doing before stage 3.
+Ordered by (value to an existing customer) ÷ (weeks). This list was explicitly _not_ meant to be
+built before stage 3 — "nothing here is worth doing before stage 3" — and it was built anyway, on
+an instruction to implement the roadmap in full rather than to honour its sequencing. That is a
+real departure from the plan and it is recorded rather than smoothed over: **the day-90 gate in
+stage 3 is unaffected and still governs whether listings 2-5 are ever submitted.** What changed is
+that the work sitting behind that gate is now done, so honouring the gate costs nothing extra.
 
-| Item                                           | Why it waits                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Charts on the report pages (UI Kit ships them) | Visible polish, no new capability. Cheap once there is a customer to show it to.     |
-| Cumulative flow diagram (listing 3)            | The most-requested shape in this niche; a week of chart work on data already stored. |
-| Push report filters into SQL                   | Only matters once someone's instance is big enough to be slow.                       |
-| "Extend history" beyond 12 months              | Only matters once someone asks.                                                      |
-| Stored SLA goals + a goal editor (listing 4)   | Real work; justified only if the SLA listing sells.                                  |
-| Issue panel showing one issue's timeline       | Uses `evaluateSla`'s full pause model; a genuinely different surface.                |
-| Confluence embedding                           | A second platform review cycle. Only with revenue behind it.                         |
+| Item                                           | State                                                                                                                                                                            |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Charts on the report pages (UI Kit ships them) | **Done.** One per listing, each answering the question its listing exists to answer. Verified rendering in real Jira.                                                            |
+| Cumulative flow diagram (listing 3)            | **Done** — and it needed a new table, not a week of chart work. See TECHNICAL-SPEC § 11 item 13.                                                                                 |
+| Push report filters into SQL                   | **Done**, and it was a correctness fix rather than an optimisation: the in-memory path paged, counted and capped wrongly whenever a filter was set on a project past one page.   |
+| "Extend history" beyond 12 months              | **Done.** Widening only; an unlisted window is refused rather than clamped.                                                                                                      |
+| Stored SLA goals + a goal editor (listing 4)   | **Done.** The one piece of stored configuration in the product; a saved goal travels as its id alone so a client cannot label a table with one goal and compute it from another. |
+| Issue panel showing one issue's timeline       | **Done**, as `jira:issueActivity` rather than `jira:issuePanel` — the panel form is opt-in per issue and only visible to users with _edit_ permission. § 11 item 12.             |
+| Confluence embedding                           | **Not done, and now a decision rather than a backlog item.** See below.                                                                                                          |
+
+Two items that were not on this list and are now done, because the work above kept walking into
+them: an **admin storage page** on all five listings (closing TECHNICAL-SPEC § 11 item 10, open
+since the first commit), and **per-visit storage**, which the flow diagram could not be built
+without.
+
+### Confluence embedding — dropped, with reasons
+
+Researched against Atlassian's own documentation on 2026-09-22 rather than estimated. Three
+findings, any one of which is enough:
+
+1. **Forge SQL is isolated per product.** Atlassian, verbatim: "Data stored by your Forge app for
+   one Atlassian app is not accessible from other Atlassian apps. For example, data stored in Jira
+   is not accessible from Confluence or vice versa." A Confluence macro therefore **cannot read
+   the aggregates these apps already store**, which was the entire premise — "embed a report we
+   already have" becomes "build a second ingestion path", which this repository exists to avoid.
+2. **Multi-product apps cannot be listed free.** Atlassian: they "can only be listed on
+   Marketplace as paid apps; free listings are not supported." The pricing model here is free
+   under 10 users, which is the top of the adoption funnel.
+3. **It forces a new Marketplace review.** "Multi App Compatibility" is listed as a new app type,
+   an explicit exception to routine-update auto-approval.
+
+The one-line manifest change (`app.compatibility`) was never the cost. This is now a
+**no** rather than a _later_, and it should only be reopened if a paying customer asks for it by
+name.
 
 ---
+
+## Stage 6 — what is actually left, and who can do it
+
+Everything below needs an identity, a decision, or a screen — none of it is code.
+
+| #   | Step                                                                                               | Who      |
+| --- | -------------------------------------------------------------------------------------------------- | -------- |
+| 6.1 | Vendor account, tax and bank details (stage 2.1, still open)                                       | 🧑 human |
+| 6.2 | **Re-shoot the six listing screenshots** — every report page gained a chart, so they are all stale | 🧑 human |
+| 6.3 | Screenshots for listings 2-5 (`docs/listing-assets-*`, two of four part-shot)                      | 🧑 human |
+| 6.4 | Pricing setup, submit, respond to review, publish                                                  | 🧑 human |
+| 6.5 | Day-90 gate — unchanged, and still the decision this roadmap exists for                            | 🧑 human |
+
+**6.2 and 6.3 are the reason this stage exists rather than being finished.** Driving a real
+browser against real Jira was enough to _read_ every new surface back — the charts, the flow
+diagram, the admin page, the Activity tab all confirmed rendering with real values — but not to
+click inside a Forge iframe or capture a screenshot of one. Both fail against the Forge iframe
+specifically, and the known-good CSV modal fails identically, so this is an automation limit
+rather than a product one.
 
 ## What is deliberately never on this roadmap
 

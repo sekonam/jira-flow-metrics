@@ -4,21 +4,35 @@
 > Everything else in `docs/` answers "how", once you have started.
 
 **Where this repository stands.** Five listing apps and a shared engine are built, tested and
-reviewed — 780 tests, lint/typecheck/build green, secret-scanned. **All five apps are deployed and
-installed** on the developer site, real reports have rendered real data inside real Jira
-(`issue-history` on 9 issues, then `pnpm run seed:bulk` past 300), and **the Control Chart hand-check
-is done** (ROADMAP 1.8): the app's cumulative time-in-status figures were checked against raw Jira
-changelog data pulled independently, on both a simple single-visit issue and three re-entry cases,
-and matched exactly. Getting all of this working took nine SDK-shape or scale-only bugs nothing
-local could have caught — six from the first live open (ROADMAP 1.5), three more from testing at
-300-issue scale (ROADMAP 1.7a), and a tenth confirmed and fixed live on 2026-09-15: the dashboard
-gadget's "Configure" menu item rendered permanently disabled because the manifest's `edit:` block
-was missing `render: native` (§ 11 item 7 — now resolved on all five apps). What remains open is a
-real, still-open Jira-side pagination bug at 300-issue scale (TECHNICAL-SPEC § 11 item 11).
-`pnpm run e2e:live` separately runs the real engine against the dev site and agrees with Jira on
-every figure, and `pnpm run backfill:scale` proves the backfill machinery holds up past 5,000 issues
-synthetically (ROADMAP 1.7). **What has still never happened:** a `forge tunnel` session (hot-reload
-local dev is unverified, though the production `forge deploy` path is proven live), and a listing.
+reviewed — **959 tests**, lint/typecheck/build green, secret-scanned. All five are deployed and
+installed on the developer site, and every surface has now been **read back from real Jira**, not
+assumed: the report pages, the dashboard gadgets, the per-listing charts, the cumulative flow
+diagram, the admin storage page, and the issue timeline as a tab beside Jira's own History. The
+Control Chart hand-check is done (ROADMAP 1.8) and matched exactly on both a single-visit control
+issue and three re-entry cases.
+
+**The v1.1 list is built too** (ROADMAP stage 5, 2026-09-22) — charts, the cumulative flow
+diagram, SQL-side report filters, "extend history", stored SLA goals with an editor, and the issue
+timeline. That was done ahead of the day-90 gate on an explicit instruction; **the gate itself is
+unchanged** and still decides whether listings 2-5 are ever submitted. Confluence embedding was
+researched and **dropped** rather than deferred — Forge SQL is isolated per product, so a
+Confluence macro cannot read what the Jira apps store, and multi-product apps cannot be listed
+free (ROADMAP stage 5).
+
+Getting here took **twelve** SDK- or platform-shape bugs that nothing local could have caught: six
+from the first live open (ROADMAP 1.5), three from 300-issue scale (1.7a), the dashboard gadget's
+`edit.render: native` (§ 11 item 7), and — on 2026-09-22 — a `jira:issuePanel` that deployed,
+linted and installed cleanly and never appeared anywhere, because an issue panel is opt-in per
+issue _and_ invisible to anyone without edit permission on the issue (§ 11 item 12). Every one of
+them was found by opening the product, not by reading the code.
+
+What remains open: the Jira-side pagination bug at scale (§ 11 item 11), and one thing an
+automated session could not do — **screenshots**. Clicking inside a Forge iframe and capturing one
+both fail against the Forge iframe specifically, so the six listing screenshots are stale (every
+report page gained a chart) and listings 2-5 are only part-shot. `pnpm run e2e:live` still runs the
+real engine against the dev site and agrees with Jira on every figure;
+`pnpm run backfill:scale` still proves the backfill past 5,000 issues. **What has still never
+happened:** a `forge tunnel` session, and a listing.
 
 **So the blocker is not code and it is not money.** It is three things only you can supply: an
 **Atlassian identity**, roughly **half a day at a terminal with a tunnel open**, and **one week of

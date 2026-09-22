@@ -1146,6 +1146,76 @@ describe('SqlMetricsStore read and write paths not covered above', () => {
     expect(statement.params).toEqual(['10000']);
   });
 
+  it('replaces an issue\u2019s visits with a delete then one insert', async () => {
+    const sql = new RecordingSqlExecutor();
+    const store = new SqlMetricsStore(sql);
+    await store.putIssueVisits('1', [
+      { issueId: '1', seq: 0, statusId: '3', projectId: '10000', enteredAt: 1, exitedAt: 2 },
+      { issueId: '1', seq: 1, statusId: '5', projectId: '10000', enteredAt: 2, exitedAt: null },
+    ]);
+    // Delete-then-insert, not an upsert keyed on (issue_id, seq): a
+    // re-ingested issue can have fewer visits than before, and an upsert
+    // would leave the surplus rows behind as phantom visits.
+    expect(sql.sql[0]).toBe('DELETE FROM issue_status_visit WHERE issue_id = ?');
+    expect(sql.sql[1]).toContain('INSERT INTO issue_status_visit');
+    expect(sql.sql[1]).toContain('VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)');
+    expect(sql.statements[1]?.params).toEqual([
+      '1',
+      0,
+      '3',
+      '10000',
+      1,
+      2,
+      '1',
+      1,
+      '5',
+      '10000',
+      2,
+      null,
+    ]);
+  });
+
+  it('writes no insert at all when an issue has no visits', async () => {
+    const sql = new RecordingSqlExecutor();
+    await new SqlMetricsStore(sql).putIssueVisits('1', []);
+    expect(sql.sql).toEqual(['DELETE FROM issue_status_visit WHERE issue_id = ?']);
+  });
+
+  it('★ selects visits by overlap, so an open visit before the window still matches', async () => {
+    const sql = new RecordingSqlExecutor();
+    await new SqlMetricsStore(sql).queryStatusVisits({
+      projectId: '10000',
+      issueIds: ['1', '2'],
+      from: 100,
+      to: 200,
+      limit: 25,
+      offset: 5,
+    });
+    const statement = sql.statements[0]!;
+    expect(statement.statement).toContain('issue_id IN (?, ?)');
+    expect(statement.statement).toContain('entered_at < ?');
+    // `exited_at IS NULL` is how a still-running visit says it has no end —
+    // the row a cumulative flow diagram needs most.
+    expect(statement.statement).toContain('(exited_at IS NULL OR exited_at > ?)');
+    expect(statement.statement).toContain('LIMIT 25 OFFSET 5');
+    expect(statement.params).toEqual(['10000', '1', '2', 200, 100]);
+  });
+
+  it('counts every table the byte estimate knows about, in one statement', async () => {
+    const sql = new RecordingSqlExecutor(() => [
+      { issue_meta: 191, issue_status_agg: 526, issue_status_visit: 4 },
+    ]);
+    const counts = await new SqlMetricsStore(sql).countRows();
+    // One query, not nine: Forge SQL meters DML per installation and this is
+    // the sort of screen somebody refreshes.
+    expect(sql.sql).toHaveLength(1);
+    expect(counts['issue_meta']).toBe(191);
+    expect(counts['issue_status_visit']).toBe(4);
+    // A table the row did not carry reads as zero rather than as undefined,
+    // so the admin page cannot render a blank cell.
+    expect(counts['worklog']).toBe(0);
+  });
+
   it('lower-cases history field filters to match how they are stored', async () => {
     const sql = new RecordingSqlExecutor();
     await new SqlMetricsStore(sql).queryHistory({

@@ -12,6 +12,11 @@ import {
   toAgingTiles,
   toFlowChartData,
   toHistoryChartData,
+  toStorageTable,
+  toStorageTiles,
+  toTimelineTable,
+  toTimelineTiles,
+  toTimelineTotals,
   toHistoryTable,
   toHistoryTiles,
   toSlaChartData,
@@ -475,5 +480,153 @@ describe('the cumulative flow series', () => {
     // An unnamed line is still a line with a real count on it; dropping the
     // point would make the bands stop summing to the work in flight.
     expect(data[0]?.series).toBe('999');
+  });
+});
+
+describe('the issue timeline view models', () => {
+  const AT = Date.parse('2026-03-02T09:00:00Z');
+  const timeline = {
+    issueKey: 'FLOW-1',
+    createdAt: AT,
+    resolvedAt: null,
+    visits: [
+      {
+        statusId: '1',
+        statusName: 'To Do',
+        enteredAt: AT,
+        exitedAt: AT + HOUR,
+        elapsedMs: HOUR,
+        businessMs: HOUR,
+      },
+      {
+        statusId: '3',
+        statusName: 'In Progress',
+        enteredAt: AT + HOUR,
+        exitedAt: null,
+        elapsedMs: 2 * HOUR,
+        businessMs: 2 * HOUR,
+      },
+    ],
+    totals: [
+      {
+        statusId: '3',
+        statusName: 'In Progress',
+        elapsedMs: 2 * HOUR,
+        businessMs: 2 * HOUR,
+        entries: 2,
+      },
+    ],
+    truncated: false,
+    sla: null,
+  };
+
+  it('marks the visit still in progress rather than inventing an end', () => {
+    const table = toTimelineTable(timeline);
+    expect(table.rows[0]?.[2]).toBe('2 Mar 2026 10:00');
+    expect(table.rows[1]?.[2]).toBe('still here');
+  });
+
+  it('shows both bases, because the panel sits beside the History tab', () => {
+    // Elapsed has to be there to be checkable against Jira's own wall-clock
+    // timestamps; working time has to be there or the panel disagrees with
+    // the report page about the same issue.
+    const table = toTimelineTable(timeline);
+    expect(table.headers).toContain('Elapsed');
+    expect(table.headers).toContain('Working time');
+  });
+
+  it('says when the timeline is a lower bound', () => {
+    expect(toTimelineTable({ ...timeline, truncated: true }).footnotes[0]).toMatch(/lower bound/);
+    expect(toTimelineTable(timeline).footnotes).toEqual([]);
+  });
+
+  it('footnotes the re-entry only when a status really was re-entered', () => {
+    expect(toTimelineTotals(timeline).footnotes[0]).toMatch(/every stay/);
+    const single = { ...timeline, totals: [{ ...timeline.totals[0]!, entries: 1 }] };
+    expect(toTimelineTotals(single).footnotes).toEqual([]);
+  });
+
+  it('reports only the visit count when no goal could be derived', () => {
+    const tiles = toTimelineTiles(timeline);
+    expect(tiles).toHaveLength(1);
+    expect(tiles[0]?.value).toBe('2');
+  });
+
+  it('★ names the goal as derived, and discounts the paused time', () => {
+    const tiles = toTimelineTiles({
+      ...timeline,
+      sla: {
+        issueId: '1',
+        issueKey: 'FLOW-1',
+        goalId: 'derived',
+        state: 'running',
+        startedAt: AT,
+        stoppedAt: null,
+        elapsedWorkingMs: 2 * HOUR,
+        remainingMs: 6 * HOUR,
+        breachAt: null,
+        breached: false,
+        pausedMs: 3 * HOUR,
+      },
+    });
+    expect(tiles[1]?.value).toBe('2h');
+    expect(tiles[1]?.hint).toMatch(/3h back in a to-do status is not counted/);
+    // A figure that reads as configured when it is derived is the sort of
+    // quiet claim this product is sold against.
+    expect(tiles[2]?.hint).toMatch(/Against a derived goal/);
+  });
+
+  it('reads a breach as "over by", never as a negative duration', () => {
+    const tiles = toTimelineTiles({
+      ...timeline,
+      sla: {
+        issueId: '1',
+        issueKey: 'FLOW-1',
+        goalId: 'derived',
+        state: 'breached',
+        startedAt: AT,
+        stoppedAt: null,
+        elapsedWorkingMs: 10 * HOUR,
+        remainingMs: -2 * HOUR,
+        breachAt: AT,
+        breached: true,
+        pausedMs: 0,
+      },
+    });
+    expect(tiles[2]?.label).toBe('Over one working day');
+    expect(tiles[2]?.value).toBe('over by 2h');
+  });
+});
+
+describe('the admin storage view models', () => {
+  const estimate = {
+    bytes: 83_200,
+    note: 'Estimated from row counts, not measured on disk.',
+    tables: [
+      { table: 'issue_status_agg', rows: 526, bytes: 52_600 },
+      { table: 'issue_meta', rows: 191, bytes: 30_560 },
+      { table: 'issue_status_visit', rows: 0, bytes: 0 },
+    ],
+  };
+
+  it('lists every table with its rows and size, and keeps the caveat', () => {
+    const table = toStorageTable(estimate);
+    expect(table.rows[0]).toEqual(['issue_status_agg', '526', '51.4 KB']);
+    // A table listed at zero is a real answer — "this listing does not
+    // ingest that dataset" — and dropping the row would hide it.
+    expect(table.rows[2]).toEqual(['issue_status_visit', '0', '0 B']);
+    expect(table.footnotes).toEqual([estimate.note]);
+  });
+
+  it('leads with the total and the issue count an admin actually asks for', () => {
+    const tiles = toStorageTiles(estimate);
+    expect(tiles[0]?.value).toBe('81.3 KB');
+    expect(tiles[1]?.value).toBe('191');
+  });
+
+  it('renders a fresh installation as zero rather than as nothing', () => {
+    const tiles = toStorageTiles({ bytes: 0, note: estimate.note, tables: [] });
+    expect(tiles[0]?.value).toBe('0 B');
+    expect(tiles[1]?.value).toBe('0');
   });
 });
