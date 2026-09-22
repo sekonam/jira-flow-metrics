@@ -69,6 +69,19 @@ That pair is the sharpest discriminator available and it is free to apply. It is
 ships in v1 and a goal editor does not; why a dashboard gadget ships and a settings-import screen
 does not.
 
+**Several rows below were v1.1 candidates and have since shipped** (2026-09-22, ROADMAP stage 5):
+charts on every report page, a cumulative flow diagram on listing 3, a saved-goal editor on
+listing 4, an issue timeline on listing 1, "extend history", and an admin storage page. The tests
+above still stand — each of those is met every time the work is done and appears in something a
+user shows someone else — and the point of this section is that they were _not_ allowed to delay
+v1, not that they were never worth building.
+
+**Confluence embedding is the one that did not survive re-examination**, and it failed on a fact
+rather than on a priority: Forge isolates an app's storage per product, so a Confluence macro
+cannot read the aggregates these Jira apps already hold. "Embed a report we already have" would
+have meant building a second ingestion path into a second product, which is the opposite of the
+thesis this repository tests. Multi-product apps also cannot be listed free. See ROADMAP stage 5.
+
 The second principle is **correctness over surface area**. A metrics product that is quietly wrong
 is worth less than no product, so the working-hours arithmetic is covered by hand-computed golden
 tests before any feature was added on top of it.
@@ -97,15 +110,15 @@ reuses; this one exists to answer the day-90 question.
 
 ### Explicitly out of scope for v1
 
-| Not shipping                                   | Why                                                                                  |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Predictive analytics, forecasting, Monte Carlo | Sells against Tempo and Appfire on breadth. Losing position.                         |
-| Cross-project portfolio rollups                | A different buyer (a PMO), a different price point, a different listing.             |
-| Confluence embedding                           | A second platform's review cycle for one feature.                                    |
-| Custom-field-based duration metrics            | Unbounded scope; every instance's fields differ.                                     |
-| A goal/threshold editor                        | Belongs to listing 4, and even there v1 ships view-level goals only.                 |
-| Sprint/board-scoped reports                    | Board APIs are a separate surface with their own rate limits. Revisit after day 90.  |
-| Charting beyond the gadget tiles               | UI Kit ships charts; using them well is a week. It is a v1.1 item, not a v1 blocker. |
+| Not shipping                                   | Why                                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Predictive analytics, forecasting, Monte Carlo | Sells against Tempo and Appfire on breadth. Losing position.                          |
+| Cross-project portfolio rollups                | A different buyer (a PMO), a different price point, a different listing.              |
+| Confluence embedding                           | **Now a settled no, not a deferral** — see below.                                     |
+| Custom-field-based duration metrics            | Unbounded scope; every instance's fields differ.                                      |
+| A goal/threshold editor                        | Belonged to listing 4, and v1 shipped view-level goals only. **Shipped in v1.1.**     |
+| Sprint/board-scoped reports                    | Board APIs are a separate surface with their own rate limits. Revisit after day 90.   |
+| Charting beyond the gadget tiles               | UI Kit ships charts; using them well is a week. Was a v1.1 item. **Shipped in v1.1.** |
 
 ### Pricing ladder — listing 1
 
@@ -177,8 +190,13 @@ than blended into a single number that would be subtly wrong.
 
 ### Out of scope
 
-Aging by assignee or swimlane, board-scoped aging, cumulative flow diagrams, forecasting. A CFD is
-a genuinely good v1.1 candidate; it is not a v1 blocker.
+Aging by assignee or swimlane, board-scoped aging, forecasting.
+
+**The cumulative flow diagram shipped in v1.1** (2026-09-22). It was filed here as "a genuinely
+good v1.1 candidate", and building it turned up the reason it could never have been a v1 item: the
+stored aggregate collapses every visit to a status into one row, so it cannot say where an issue
+was on a past day. A CFD needed a second table (`issue_status_visit`, one row per stay) and a new
+per-listing dataset flag — engine work, not chart work. See TECHNICAL-SPEC § 11 item 13.
 
 ### Pricing
 
@@ -204,10 +222,10 @@ Broken Build's $275.
 
 The engine implements **two** SLA models and they give different answers:
 
-| Model                                          | Where used              | What it measures                                                                                                                                            |
-| ---------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Counted statuses**                           | The project-wide report | Cumulative working time in the counted statuses. Exactly computable from the stored aggregate, so it works over a whole project without re-reading history. |
-| **Start / stop / pause timer** (`evaluateSla`) | Single-issue surfaces   | Starts on entering a start status, stops on a stop status, excludes paused statuses. Strictly more expressive, needs the issue's full timeline.             |
+| Model                                          | Where used              | What it measures                                                                                                                                                                                                        |
+| ---------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Counted statuses**                           | The project-wide report | Cumulative working time in the counted statuses. Exactly computable from the stored aggregate, so it works over a whole project without re-reading history.                                                             |
+| **Start / stop / pause timer** (`evaluateSla`) | The issue timeline tab  | Starts on entering a start status, stops on a stop status, excludes paused statuses. Strictly more expressive, needs the issue's full timeline — which is why it is on the one surface that has a single issue in hand. |
 
 Both are documented in the UI footnote and on the listing page. Conflating them would be the sort
 of quiet difference that makes a metrics product untrustworthy, which is the one thing this product
@@ -215,8 +233,18 @@ cannot afford.
 
 ### Out of scope
 
-Goal editing and storage, notifications, escalation rules, JSM SLA field integration, calendars
-per goal. v1 ships **view-level goals** — you pick the statuses and the target on the page.
+Notifications, escalation rules, JSM SLA field integration, calendars per goal.
+
+**Goal editing and storage shipped in v1.1** (2026-09-22). v1 shipped view-level goals only — you
+picked the statuses and the target on the page, and nothing was saved. A named, saved goal is the
+one piece of stored configuration in the whole product, and it earns that place for a reason the
+scope test in § 3 does catch: two people opening the same SLA report are meant to see the same
+numbers measured the same way, and a per-view choice cannot give them that.
+
+One decision inside it is worth stating here rather than only in the code: **a saved goal travels
+to the server as its id alone**, and the definition is read from storage there. A payload carrying
+both an id and its fields would let a page be headed with one goal's name and computed from
+another's numbers — precisely the "quiet difference" the model table above exists to avoid.
 
 ### Pricing
 
