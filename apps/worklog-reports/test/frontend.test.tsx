@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { describeScreen, loadScenarios, resolversFor, setBridgeResolvers } from '@jfm/ui-harness';
 
@@ -15,6 +15,10 @@ vi.mock('@forge/react', () => import('@jfm/ui-harness/forge-host'));
 
 const scenarios = await loadScenarios();
 const { App } = await import('../src/frontend/index.js');
+
+/** See the note in `apps/time-in-status/test/frontend.test.tsx`. */
+afterEach(cleanup);
+
 const { Gadget } = await import('../src/frontend/gadget.js');
 
 describeScreen(
@@ -53,6 +57,49 @@ describeScreen(
   },
   scenarios,
 );
+
+describe('★ worklog-reports: a capped report says so on both surfaces', () => {
+  /**
+   * The cap banner, on the page and in the gadget.
+   *
+   * Pinned by nothing: deleting `capped` from both call sites — removing the
+   * banner from this listing entirely — left the whole suite and all forty
+   * browser flows green. It had a screenshot for a while, which is not a
+   * test: `screens.mjs` compares against no baseline.
+   */
+  function withCap(total: number) {
+    const base = scenarios.populated.responses.getWorklogReport as {
+      ok: true;
+      data: Record<string, unknown>;
+    };
+    return {
+      ...scenarios.populated.responses,
+      getWorklogReport: {
+        ...base,
+        data: { ...base.data, capped: true, totalEntries: total },
+      },
+    };
+  }
+
+  it('names both figures on the page', async () => {
+    setBridgeResolvers(resolversFor(withCap(99)));
+    render(<App />);
+    expect(await screen.findByText(/Report capped at \d+ of 99 worklog entries/)).toBeDefined();
+  });
+
+  it('carries the same notice into the gadget', async () => {
+    setBridgeResolvers(resolversFor(withCap(99)));
+    render(<Gadget />);
+    expect(await screen.findByText(/of 99 worklog entries/)).toBeDefined();
+  });
+
+  it('says nothing when the report is complete', async () => {
+    // A spurious banner is as wrong as a missing one.
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    expect(await screen.findByText(/Report capped/).catch(() => null)).toBeNull();
+  });
+});
 
 describe('worklog-reports: the listing-specific behaviour', () => {
   it('totals the three usable fixture worklogs and states the basis', async () => {

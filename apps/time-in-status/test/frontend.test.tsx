@@ -54,7 +54,7 @@ describeScreen(
     resolverKeys: ['getReport'],
     invokedOnLoad: ['getReport'],
     heading: 'Time in Status',
-    emptyText: /No indexed issues in this project yet/,
+    emptyText: /Nothing to show for this project yet/,
     populatedText: /In Progress · median/,
   },
   scenarios,

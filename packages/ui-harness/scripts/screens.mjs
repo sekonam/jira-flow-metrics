@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -52,7 +53,11 @@ const SCENARIOS = [
   {
     id: 'capped',
     label: 'Report capped',
-    note: 'More issues match than the report fetched. Every figure is a lower bound and the banner has to say so.',
+    // "rows", not "issues": issue-history caps *changes*. The scenario's own
+    // note was corrected for this and this one — the copy that actually
+    // reaches the published index — was not, so the page captioned in issues
+    // sat above a banner reading "Report capped at 2 of 10 changes".
+    note: 'More rows match than the report fetched. Every figure is a lower bound and the banner has to say so.',
   },
   {
     id: 'partial',
@@ -86,7 +91,12 @@ const SCREENS = [
     id: 'time-in-status-panel',
     listing: 'Time in Status',
     surface: 'panel',
-    skip: ['empty', 'capped'],
+    // Reads only `getIssueTimeline`, which comes from the fixture Jira and
+    // not from the store — so this surface cannot express *any* index state.
+    // It rendered the same complete six-visit timeline for `populated`,
+    // `canonical`, `partial` and `not-indexed`, and published one of them
+    // under "Backfill running — numbers must be labelled partial".
+    skip: ['empty', 'capped', 'canonical', 'partial', 'not-indexed'],
   },
   { id: 'time-in-status-admin', listing: 'Time in Status', surface: 'admin', skip: ['capped'] },
   { id: 'worklog-reports-admin', listing: 'Worklog Reports', surface: 'admin', skip: ['capped'] },
@@ -95,10 +105,32 @@ const SCREENS = [
   { id: 'issue-history-admin', listing: 'Issue History', surface: 'admin', skip: ['capped'] },
   { id: 'time-in-status-page', listing: 'Time in Status', surface: 'page' },
   { id: 'time-in-status-gadget', listing: 'Time in Status', surface: 'gadget' },
-  { id: 'worklog-reports-page', listing: 'Worklog Reports', surface: 'page', skip: ['capped'] },
-  { id: 'worklog-reports-gadget', listing: 'Worklog Reports', surface: 'gadget', skip: ['capped'] },
-  { id: 'wip-aging-page', listing: 'WIP Aging', surface: 'page', skip: ['capped'] },
-  { id: 'wip-aging-gadget', listing: 'WIP Aging', surface: 'gadget', skip: ['capped'] },
+  // `canonical` is the one issue that carries worklogs, so this report is
+  // identical to `populated` — a second copy of the same image under a
+  // different caption says nothing a reader can use.
+  {
+    id: 'worklog-reports-page',
+    listing: 'Worklog Reports',
+    surface: 'page',
+    skip: ['capped', 'canonical'],
+  },
+  {
+    id: 'worklog-reports-gadget',
+    listing: 'Worklog Reports',
+    surface: 'gadget',
+    skip: ['capped', 'canonical'],
+  },
+  // The canonical issue is Done, so WIP aging excludes it and `canonical`
+  // renders exactly the empty state — published, before this, as "Canonical
+  // issue: 12h in progress across two visits" above a page saying nothing
+  // is in flight.
+  { id: 'wip-aging-page', listing: 'WIP Aging', surface: 'page', skip: ['capped', 'canonical'] },
+  {
+    id: 'wip-aging-gadget',
+    listing: 'WIP Aging',
+    surface: 'gadget',
+    skip: ['capped', 'canonical'],
+  },
   { id: 'sla-breach-page', listing: 'SLA & Due Dates', surface: 'page', skip: ['capped'] },
   { id: 'sla-breach-gadget', listing: 'SLA & Due Dates', surface: 'gadget', skip: ['capped'] },
   { id: 'issue-history-page', listing: 'Issue History', surface: 'page' },
@@ -115,6 +147,55 @@ const VIEWPORT = {
 };
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+
+/**
+ * ★ Two scenarios that render the same pixels are one screenshot and one lie.
+ *
+ * Every mislabelled screenshot this cycle has found was byte-identical to
+ * another scenario's on the same screen: an empty aging page published as
+ * "Canonical issue", a complete timeline published as "Backfill running —
+ * numbers must be labelled partial", and fourteen populated pages published
+ * as "Report capped". Each was found by an audit reading images; each was
+ * fixed one at a time; the next one appeared on an axis nobody had looked
+ * at yet.
+ *
+ * They all have the same signature, and it is cheap to compute. A screen
+ * that genuinely cannot express a scenario says so with `skip`, which is
+ * visible and checked. A screen that silently renders two states the same
+ * way is publishing a caption its image does not support.
+ */
+function reportIdenticalScreens(results) {
+  const byScreen = new Map();
+  for (const result of results) {
+    const list = byScreen.get(result.screen.id) ?? [];
+    list.push(result);
+    byScreen.set(result.screen.id, list);
+  }
+
+  let failures = 0;
+  for (const [screenId, list] of byScreen) {
+    const byHash = new Map();
+    for (const result of list) {
+      const same = byHash.get(result.hash) ?? [];
+      same.push(result.scenario.id);
+      byHash.set(result.hash, same);
+    }
+    for (const scenarios of byHash.values()) {
+      if (scenarios.length < 2) continue;
+      failures += 1;
+      log(
+        `✗ ${screenId}: ${scenarios.join(', ')} render identically — ` +
+          'either the screen cannot express one of them (add it to `skip`) ' +
+          'or the scenario is not reaching this surface',
+      );
+    }
+  }
+  return failures;
+}
+
+function hashOf(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
 
 function log(line) {
   process.stdout.write(`${line}\n`);
@@ -153,6 +234,26 @@ function assertScenarioListIsCurrent() {
   }
 }
 
+/**
+ * ★ Every `skip` entry must name a scenario that exists.
+ *
+ * `skip` silently removes a screenshot, and a typo — `'cappped'` — matches
+ * no scenario id, so it skips *nothing* and quietly re-publishes the
+ * mislabelled image it was added to remove. Nothing else validates it:
+ * `assertScreenListIsCurrent` reads only screen ids and
+ * `assertScenarioListIsCurrent` reads only `SCENARIO_IDS`. The mechanism
+ * that suppresses a lie must not itself be able to fail silently.
+ */
+function assertSkipsAreReal() {
+  const known = new Set(SCENARIOS.map((scenario) => scenario.id));
+  const bad = SCREENS.flatMap((screen) =>
+    (screen.skip ?? []).filter((id) => !known.has(id)).map((id) => `${screen.id}: ${id}`),
+  );
+  if (bad.length > 0) {
+    throw new Error(`skip names a scenario that does not exist — ${bad.join(', ')}`);
+  }
+}
+
 function assertScreenListIsCurrent() {
   const registry = readFileSync(join(HERE, '..', 'harness', 'screens.tsx'), 'utf8');
   const declared = [...registry.matchAll(/^\s*id: '([a-z0-9-]+)',$/gm)].map((m) => m[1]);
@@ -170,6 +271,7 @@ function assertScreenListIsCurrent() {
 async function main() {
   assertScreenListIsCurrent();
   assertScenarioListIsCurrent();
+  assertSkipsAreReal();
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
 
@@ -257,9 +359,11 @@ async function main() {
       }
       if (violations.length === 0 && problems.length === 0) log(`✓ ${name}`);
 
-      results.push({ screen, scenario, file, violations, problems });
+      results.push({ screen, scenario, file, violations, problems, hash: hashOf(join(OUT, file)) });
     }
   }
+
+  failures += reportIdenticalScreens(results);
 
   await browser.close();
   await server.close();

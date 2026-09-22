@@ -9,6 +9,7 @@ import {
   LoadingSurface,
   SummaryTiles,
   isIndexIncomplete,
+  gadgetEmptyMessage,
   surfaceStateOf,
   toCapNotice,
   toProjectOptions,
@@ -118,8 +119,15 @@ const GadgetView = (): React.JSX.Element => {
         : (error ?? 'Unknown error');
     return <ErrorSurface message={message} />;
   }
+  // ★ Which empty this is. See `gadgetEmptyMessage`.
+  //
+  // The index state comes off the envelope this gadget already has, not from
+  // a second resolver: `getReport` returns it, and unlike its four siblings
+  // this listing defines no `getIndexProgress` — `resolver-wiring.test.ts`
+  // catches a frontend invoking a key its own resolver never registers,
+  // which is exactly what the first attempt at this did.
   if (state === 'empty' || envelope === null) {
-    return <Text>No indexed issues in this project yet.</Text>;
+    return <Text>{gadgetEmptyMessage(envelope?.progress ?? null)}</Text>;
   }
 
   // Two independent ceilings, two different sentences — see `toCapNotice`.

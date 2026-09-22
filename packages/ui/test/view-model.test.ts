@@ -9,6 +9,7 @@ import {
   isIndexIncomplete,
   surfaceStateOf,
   toProgressBanner,
+  gadgetEmptyMessage,
   toReadCapBanner,
   toReportCapBanner,
   toCapNotice,
@@ -432,6 +433,53 @@ describe('toStatusChartData', () => {
       }),
     );
     expect(data).toEqual([]);
+  });
+});
+
+describe("★ a gadget's empty state has to say which empty it is", () => {
+  // The pages have distinguished these since the four-state design was
+  // written; the gadgets said "Nothing to show for this project yet" for
+  // both, which claims the project is empty when what is true is that the
+  // app has never looked at it. Found by the screenshot guard: `empty` and
+  // `not-indexed` were byte-identical on four of the five gadgets.
+  const progress = (state: BackfillProgress['state']): BackfillProgress => ({
+    state,
+    issuesProcessed: 0,
+    issuesTotal: null,
+    fraction: null,
+    lastError: null,
+    startedAt: null,
+    updatedAt: 0,
+  });
+
+  it('names a never-indexed project as never indexed', () => {
+    expect(gadgetEmptyMessage(null)).toMatch(/has not been indexed yet/);
+    expect(gadgetEmptyMessage(progress('not_started'))).toMatch(/has not been indexed yet/);
+  });
+
+  it('says indexing is still running rather than that there is nothing', () => {
+    expect(gadgetEmptyMessage(progress('running'))).toMatch(/still running/);
+    expect(gadgetEmptyMessage(progress('paused'))).toMatch(/still running/);
+  });
+
+  it('says so when indexing failed, and where to look', () => {
+    expect(gadgetEmptyMessage(progress('failed'))).toMatch(/did not finish/);
+    expect(gadgetEmptyMessage(progress('failed'))).toMatch(/project menu/);
+  });
+
+  it('only claims the project is empty when it has actually been indexed', () => {
+    expect(gadgetEmptyMessage(progress('complete'))).toBe('Nothing to show for this project yet.');
+  });
+
+  it('★ gives a different answer for every state, so no two render alike', () => {
+    const said = new Set(
+      [null, ...(['not_started', 'running', 'paused', 'failed', 'complete'] as const)].map(
+        (state) => gadgetEmptyMessage(state === null ? null : progress(state)),
+      ),
+    );
+    // `null` and `not_started` are the same statement, and `running`/`paused`
+    // are one statement too — four distinct sentences for six states.
+    expect(said.size).toBe(4);
   });
 });
 

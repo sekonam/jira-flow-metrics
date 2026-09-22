@@ -286,6 +286,42 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
  * used — `ReportEnvelope.partial` — folds in per-page row truncation and so
  * answers a different question depending on the page size it was asked for.
  */
+/**
+ * What a gadget says when it has no rows to show.
+ *
+ * ★ "Nothing to show" and "nobody has indexed this" are different answers,
+ * and every gadget gave the first for both.
+ *
+ * The project pages have distinguished these since the four-state design was
+ * written — an empty indexed project gets `EmptySurface`, a never-indexed one
+ * gets a banner and a Start indexing button. The gadgets collapsed them,
+ * because the empty branch returns before the index state is consulted: a
+ * dashboard on a project nobody had indexed read "Nothing to show for this
+ * project yet", which says the project is empty when what is actually true
+ * is that the app has never looked at it.
+ *
+ * That is the conflation this product exists to avoid, on the surface its own
+ * comments call "often the only surface someone who did not install the app
+ * ever sees". Found by the screenshot guard: the `empty` and `not-indexed`
+ * screenshots were byte-identical on four of the five gadgets.
+ *
+ * A gadget cannot offer the button — indexing is the project page's action,
+ * and a dashboard viewer may not even be able to reach it — so it says which
+ * state it is in and where the action lives.
+ */
+export function gadgetEmptyMessage(progress: BackfillProgress | null): string {
+  if (progress === null || progress.state === 'not_started') {
+    return 'This project has not been indexed yet. Open the report from the project menu to start.';
+  }
+  if (progress.state === 'running' || progress.state === 'paused') {
+    return 'Indexing is still running. This will fill in once it finishes.';
+  }
+  if (progress.state === 'failed') {
+    return 'Indexing did not finish. Open the report from the project menu for the reason.';
+  }
+  return 'Nothing to show for this project yet.';
+}
+
 export function isIndexIncomplete(progress: BackfillProgress | null): boolean {
   return progress === null || progress.state !== 'complete';
 }

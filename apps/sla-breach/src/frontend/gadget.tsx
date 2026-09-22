@@ -8,6 +8,7 @@ import {
   GadgetConfigForm,
   LoadingSurface,
   SummaryTiles,
+  gadgetEmptyMessage,
   isIndexIncomplete,
   surfaceStateOf,
   toCapNotice,
@@ -79,6 +80,7 @@ const GadgetView = (): React.JSX.Element => {
   const [report, setReport] = useState<SlaReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [partial, setPartial] = useState(false);
 
   useEffect(() => {
@@ -99,7 +101,10 @@ const GadgetView = (): React.JSX.Element => {
         // gadget with an error. The banner just goes quiet.
         try {
           const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
-          if (!cancelled && state.ok) setPartial(isIndexIncomplete(state.data));
+          if (!cancelled && state.ok) {
+            setProgress(state.data);
+            setPartial(isIndexIncomplete(state.data));
+          }
         } catch {
           // Leave `partial` false: saying nothing is better than saying
           // something wrong about the index.
@@ -131,8 +136,10 @@ const GadgetView = (): React.JSX.Element => {
         : (error ?? 'Unknown error');
     return <ErrorSurface message={message} />;
   }
-  if (report === null || state === 'empty')
-    return <Text>Nothing to show for this project yet.</Text>;
+  // ★ Which empty this is. See `gadgetEmptyMessage`: a never-indexed
+  // project used to read "Nothing to show", which says the project is empty
+  // when what is true is that the app has never looked at it.
+  if (report === null || state === 'empty') return <Text>{gadgetEmptyMessage(progress)}</Text>;
 
   // Two independent ceilings, two different sentences — see `toCapNotice`.
   const capNotice = toCapNotice({

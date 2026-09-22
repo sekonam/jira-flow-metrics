@@ -125,6 +125,17 @@ describe('★ wip-aging: a capped report says so on both surfaces', () => {
     expect(await screen.findByText(/of 40 issues/)).toBeDefined();
   });
 
+  it('★ and distinguishes the two ceilings there too', async () => {
+    // The page covered both branches and the gadget only one, so setting
+    // `aggregatesCapped: false` at the gadget's call site was green — and
+    // that mutation makes `toCapNotice` print "Covering 4 of 4 issues, so
+    // every figure here is a lower bound", the self-contradiction its own
+    // docstring says it exists to prevent.
+    setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: true })));
+    render(<Gadget />);
+    expect(await screen.findByText(/are missing measurements/)).toBeDefined();
+  });
+
   it('says nothing at all when the report is complete', async () => {
     setBridgeResolvers(resolversFor(scenarios.populated.responses));
     render(<App />);
