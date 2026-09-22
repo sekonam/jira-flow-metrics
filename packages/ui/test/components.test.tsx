@@ -503,6 +503,37 @@ describe('SlaGoalForm as a goal editor', () => {
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDefined();
   });
 
+  it('★ stops naming a saved goal once the selection has been edited away from it', () => {
+    // Regression. The picker was uncontrolled, so after a chip toggle
+    // detached the page from the goal — the caption correctly reading
+    // "This selection is not saved" — the dropdown above it still displayed
+    // that goal's name. Two controls on one screen disagreeing about which
+    // goal the numbers are measured against.
+    const { rerender } = render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={{ countedStatusIds: ['3'], targetMs: 4 * 3_600_000, savedGoalId: 'g-1' }}
+        savedGoals={SAVED}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Measuring against the saved goal/)).toBeDefined();
+
+    rerender(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={{ countedStatusIds: [], targetMs: 4 * 3_600_000 }}
+        savedGoals={SAVED}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/This selection is not saved/)).toBeDefined();
+    const pickers = screen.getAllByRole('combobox');
+    expect(within(pickers[0]!.closest('div')!).queryByText('Time to resolution')).toBeNull();
+  });
+
   it('shows the refusal when the save is rejected', async () => {
     const onSave = vi.fn().mockRejectedValue(new Error('maximum of 20 saved goals'));
     render(
@@ -839,6 +870,25 @@ describe('ExtendHistoryControl', () => {
 
     expect(await within(dialog).findByText(/already indexed over a longer history/)).toBeTruthy();
     expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('★ does not claim all history is indexed when the range could not be read', async () => {
+    // Regression. A rejected `onLoad` left `current` as `undefined`, which
+    // collapsed into the same branch as `null` — so a transient failure
+    // rendered an error box directly above the confident, false sentence
+    // "This project is indexed over all history", with the Re-index button
+    // removed because the options list was empty.
+    render(
+      <ExtendHistoryControl
+        onLoad={vi.fn().mockRejectedValue(new Error('resolver unavailable'))}
+        onExtend={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/could not be read/)).toBeTruthy();
+    expect(within(dialog).queryByText(/all history/i)).toBeNull();
+    expect(within(dialog).queryByText(/nothing further to extend/)).toBeNull();
   });
 
   it('offers no action once all history is already indexed', async () => {

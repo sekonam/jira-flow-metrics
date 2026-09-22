@@ -125,7 +125,16 @@ export async function processIssue(
   const projectId = issue.fields?.project?.id ?? '';
 
   let requests = 0;
-  const needsChangelog = config.datasets.statusDurations || config.datasets.history;
+  // `statusVisits` belongs here too: the visits *are* the reconstructed
+  // timeline, so a dataset set that asks for visits without status durations
+  // would otherwise fetch no changelog and write every issue as one synthetic
+  // visit — a silently wrong flow diagram with no error anywhere. No shipped
+  // preset hits it, but the flag is public API and its own docstring invites
+  // the combination.
+  const needsChangelog =
+    config.datasets.statusDurations ||
+    config.datasets.history ||
+    config.datasets.statusVisits === true;
   let entries: JiraChangelogEntry[] = [];
   let truncated = false;
 

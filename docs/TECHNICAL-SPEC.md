@@ -687,7 +687,26 @@ the real `invoke`, its payload validation and its rate limiter all run.
     irrelevant to every dataset and skips the re-read — deliberate, an invocation not spent on a
     consumption-priced platform, and now observed rather than assumed.
 
-14. **Platform findings from the September 2026 documentation sweep, recorded because they bear on
+14. **★ The cumulative flow diagram read the wrong 500 issues — found by review, fixed before it
+    ever ran on a project big enough to show it (2026-09-22).** `buildFlowReport` selected its
+    rows by paging `issue_meta` and passing those ids to the visit query. `issue_meta` is ordered
+    `created_at ASC`, so on any project past one page that chose the **oldest** issues — exactly
+    the ones least likely to have moved in the last thirty days. A three-year-old project would
+    have rendered `unavailable` and withheld the chart entirely: the precise "telling a user their
+    team did nothing for a month" outcome the flag exists to prevent, arrived at from the other
+    direction.
+
+    Fixed by letting the **window** select the rows: `queryStatusVisits({ projectId, from, to })`
+    is already scoped by project and bounded by the window, and the issue page was never adding
+    anything but a wrong filter. `capped` now means "the visit query hit its own row cap", which
+    is a statement about the rows actually read, and the page renders the same `toCapBanner` every
+    other report does — it previously computed `capped` and showed it nowhere. `issueCount` is the
+    distinct issues appearing in the window rather than the project total its docstring claimed.
+
+    A regression test builds 600 ancient closed issues plus one recent live one and asserts the
+    chart finds the recent one.
+
+15. **Platform findings from the September 2026 documentation sweep, recorded because they bear on
     decisions already made here.**
 
     - **UI Kit chart `colorPalette` is accepted and silently ignored** — Atlassian defect

@@ -449,6 +449,12 @@ export async function handleExtendHistory(
   if (requested === 'unusable') return { ok: false, error: UNUSABLE_HISTORY_WINDOW };
   try {
     const current = (await runtime.historyWindow(auth.projectId)).months;
+    // Asking for the window already in force is not a widening, and this is
+    // the one control in the product that spends the installation's whole
+    // Jira request budget — so re-indexing for no change in coverage is
+    // refused rather than quietly performed. The UI does not offer it; the
+    // resolver is directly invokable, which is why the guard is here.
+    if (current === requested) return { ok: false, error: NARROWER_HISTORY };
     // `null` is the widest window there is, so it is always accepted and
     // never narrowed away from.
     if (current === null && requested !== null) return { ok: false, error: NARROWER_HISTORY };
@@ -831,7 +837,7 @@ export async function handleListSlaGoals(
 export async function handleSaveSlaGoal(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,
-): Promise<HandlerResult<readonly StoredSlaGoal[]>> {
+): Promise<HandlerResult<{ goals: readonly StoredSlaGoal[]; savedId: string }>> {
   runtime.beginInvocation();
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -839,7 +845,14 @@ export async function handleSaveSlaGoal(
   if (goal === 'no-name') return { ok: false, error: GOAL_NAME_REQUIRED };
   try {
     const result = await runtime.saveSlaGoal(auth.projectId, goal);
-    return result.saved ? { ok: true, data: result.goals } : { ok: false, error: GOALS_FULL };
+    // The id comes back explicitly. A client that had to find its own goal
+    // in the returned list could only match on the name, and two goals may
+    // share one — it would then attach the page to whichever came first,
+    // which is the "labelled with one goal, computed from another" failure
+    // `resolveSlaGoal` exists to prevent, reintroduced on the way out.
+    return result.saved
+      ? { ok: true, data: { goals: result.goals, savedId: goal.id } }
+      : { ok: false, error: GOALS_FULL };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }

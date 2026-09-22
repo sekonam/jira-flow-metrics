@@ -360,9 +360,12 @@ export interface FlowReport {
   readonly points: readonly FlowPoint[];
   readonly from: Millis;
   readonly to: Millis;
-  /** Issues whose visits were read. A real count, not a page length. */
+  /** Distinct issues appearing anywhere in the window, counted from the visits read. */
   readonly issueCount: number;
-  /** True when more issues exist than the report could read visits for. */
+  /**
+   * True when the visit query hit its own row cap, so some visits in the
+   * window were not read and every band is a lower bound.
+   */
   readonly capped: boolean;
   /**
    * True when nothing has stored visits for this project.
@@ -411,27 +414,32 @@ export async function buildFlowReport(
   options: { days?: number; limit?: number } = {},
 ): Promise<FlowReport> {
   const days = Math.max(1, Math.min(180, Math.trunc(options.days ?? 30)));
-  const limit = options.limit ?? 500;
+  const visitLimit = options.limit ?? 20_000;
   // `to` is the end of today; `from` is midnight `days - 1` days earlier, so
   // a 30-day window has 30 points and the last one is today.
   const lastDay = startOfDayUtc(now);
   const from = lastDay - (days - 1) * DAY_MS;
   const to = lastDay + DAY_MS;
 
-  const metas = await store.queryIssueMeta({ projectId, limit });
-  const issueCount = await store.countIssueMeta({ projectId });
-  const visits = await store.queryStatusVisits({
-    projectId,
-    issueIds: metas.map((m) => m.issueId),
-    from,
-    to,
-  });
+  // ★ The visits are selected by the **window**, not by an issue page.
+  //
+  // This used to fetch `queryIssueMeta({ projectId, limit })` first and pass
+  // those ids down — and `issue_meta` is ordered `created_at ASC`, so on a
+  // project with more than one page of issues that selected the *oldest*
+  // ones: exactly the issues least likely to have moved in the last thirty
+  // days. A three-year-old project would have rendered `unavailable` — the
+  // chart withheld entirely — because its 500 oldest issues were all long
+  // closed. The window is the question this report asks, so the window is
+  // what selects the rows.
+  const visits = await store.queryStatusVisits({ projectId, from, to, limit: visitLimit });
 
   const statusMeta = await store.getStatusMeta();
   const byId = new Map(statusMeta.map((s) => [s.statusId, s]));
 
   const counts = new Map<string, number>();
   const usedStatuses = new Set<StatusId>();
+  const issues = new Set<string>();
+  for (const visit of visits) issues.add(visit.issueId);
   for (let day = 0; day < days; day += 1) {
     // The last instant of the day, so an issue that entered a status at
     // 09:00 and left at 17:00 counts on that day only if it was still there
@@ -477,8 +485,10 @@ export async function buildFlowReport(
     points,
     from,
     to,
-    issueCount,
-    capped: issueCount > metas.length,
+    issueCount: issues.size,
+    // The query stopped at its own cap, so there are visits in this window
+    // it did not read and every band below is a lower bound.
+    capped: visits.length >= visitLimit,
     unavailable: visits.length === 0,
   };
 }

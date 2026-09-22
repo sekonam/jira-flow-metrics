@@ -85,3 +85,24 @@ describe('sla-breach: the report chart', () => {
     cleanup();
   });
 });
+
+describe('sla-breach: the saved-goal picker', () => {
+  it('★ loads the goal list even when the status list fails', async () => {
+    // Regression. The two fetches shared one `try`, so a failing
+    // `listStatuses` swallowed the error and `listSlaGoals` never ran — one
+    // transient blip taking two unrelated features off the screen.
+    setBridgeResolvers({
+      ...resolversFor(scenarios.populated.responses),
+      listStatuses: () => {
+        throw new Error('status list unavailable');
+      },
+      listSlaGoals: () => ({
+        ok: true,
+        data: [{ id: 'g-1', name: 'Time to resolution', countedStatusIds: [], targetMs: 14400000 }],
+      }),
+    });
+    render(<App />);
+    expect(await screen.findByText('Saved goal')).toBeDefined();
+    cleanup();
+  });
+});

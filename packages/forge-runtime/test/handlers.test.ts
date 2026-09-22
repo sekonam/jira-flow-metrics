@@ -760,6 +760,22 @@ describe('the history window — ROADMAP stage 5, "extend history beyond 12 mont
     ).toEqual({ ok: false, error: NARROWER_HISTORY });
   });
 
+  it('★ refuses the window already in force rather than re-indexing for nothing', async () => {
+    // Regression. `current === null && requested === null` passed both
+    // guards, so asking for all-history when all history was already
+    // indexed re-read the whole project from Jira for no change in
+    // coverage — on the one control in the product that spends the
+    // installation's entire request budget. The UI never offers it; the
+    // resolver is directly invokable, which is why the guard lives here.
+    const { runtime, jobs } = buildWithSettings();
+    await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: null } });
+    jobs.length = 0;
+    expect(
+      await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: null } }),
+    ).toEqual({ ok: false, error: NARROWER_HISTORY });
+    expect(jobs).toHaveLength(0);
+  });
+
   it('refuses an unlisted window before touching settings or the queue', async () => {
     const { runtime, jobs } = buildWithSettings();
     const result = await handleExtendHistory(runtime, {
@@ -847,7 +863,7 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
     const { runtime } = buildWithSettings();
     const saved = await save(runtime, 'Time to resolution');
     expect(saved.ok).toBe(true);
-    const goals = saved.ok ? saved.data : [];
+    const goals = saved.ok ? saved.data.goals : [];
     expect(goals).toHaveLength(1);
     expect(goals[0]?.name).toBe('Time to resolution');
     expect(goals[0]?.countedStatusIds).toEqual(['3']);
@@ -857,6 +873,9 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
       ok: true,
       data: goals,
     });
+    // The server names the goal it saved. A client that had to find its own
+    // by name would pick the wrong one whenever two share a name.
+    expect(saved.ok && saved.data.savedId).toBe(goals[0]?.id);
   });
 
   it('generates the id rather than taking one from the client', () => {
@@ -892,13 +911,14 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
   it('replaces a goal by id rather than adding a second with the same id', async () => {
     const { runtime } = buildWithSettings();
     const first = await save(runtime, 'Original');
-    const id = first.ok ? first.data[0]!.id : '';
+    const id = first.ok ? first.data.goals[0]!.id : '';
     const second = await handleSaveSlaGoal(runtime, {
       context: CONTEXT,
       payload: { id, name: 'Renamed', countedStatusIds: [], targetMs: 8 * 3_600_000 },
     });
-    expect(second.ok && second.data).toHaveLength(1);
-    expect(second.ok && second.data[0]?.name).toBe('Renamed');
+    expect(second.ok && second.data.goals).toHaveLength(1);
+    expect(second.ok && second.data.goals[0]?.name).toBe('Renamed');
+    expect(second.ok && second.data.savedId).toBe(id);
   });
 
   it('refuses the twenty-first goal rather than evicting the oldest', async () => {
@@ -917,7 +937,7 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
     const { runtime, store } = buildWithSettings();
     await seedIssue(store);
     const saved = await save(runtime, 'Four hours in progress');
-    const id = saved.ok ? saved.data[0]!.id : '';
+    const id = saved.ok ? saved.data.savedId : '';
     // The payload names the goal and also lies about it. The stored
     // definition wins: a client must not be able to label a table with one
     // goal's name and compute it from another's numbers.
@@ -944,7 +964,7 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
     const { runtime, store } = buildWithSettings();
     await seedIssue(store);
     const saved = await save(runtime, 'Four hours in progress');
-    const id = saved.ok ? saved.data[0]!.id : '';
+    const id = saved.ok ? saved.data.savedId : '';
     const csv = await handleExportCsv(
       runtime,
       { context: CONTEXT, payload: { goalId: id } },
@@ -972,7 +992,7 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
   it('deletes a goal, and deleting one twice is not an error', async () => {
     const { runtime } = buildWithSettings();
     const saved = await save(runtime, 'Gone soon');
-    const id = saved.ok ? saved.data[0]!.id : '';
+    const id = saved.ok ? saved.data.savedId : '';
     expect(await handleDeleteSlaGoal(runtime, { context: CONTEXT, payload: { id } })).toEqual({
       ok: true,
       data: [],

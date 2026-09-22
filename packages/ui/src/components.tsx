@@ -254,6 +254,11 @@ export function SlaGoalForm({
             inputId="sla-saved-goal"
             options={goals.map((saved) => ({ label: saved.name, value: saved.id }))}
             placeholder="Choose a saved goal"
+            // Controlled, like the target picker below it. Left uncontrolled
+            // the dropdown kept displaying a goal's name after a chip toggle
+            // had already detached the page from it — the caption said "not
+            // saved" while the control above still named the goal.
+            value={active === undefined ? null : { label: active.name, value: active.id }}
             isDisabled={busy}
             onChange={(option) => {
               const id = (option as { value?: string } | null)?.value;
@@ -679,7 +684,11 @@ export function ExtendHistoryControl({
       });
   }, [chosen, close, onExtend]);
 
-  const options = current === undefined || current === null ? [] : historyWindowOptions(current);
+  // `undefined` is "not read yet or could not be read" and `null` is "all
+  // history". Collapsing the two made a failed load render an error box
+  // above the confident, false claim that everything was already indexed.
+  const unknown = current === undefined;
+  const options = unknown || current === null ? [] : historyWindowOptions(current);
 
   return (
     <>
@@ -691,15 +700,19 @@ export function ExtendHistoryControl({
               <ModalTitle>Extend indexed history</ModalTitle>
             </ModalHeader>
             <ModalBody>
-              {current === undefined && error === null ? (
+              {unknown && error === null ? (
                 <LoadingSurface label="Reading the current range" />
               ) : (
                 <Stack space="space.150">
-                  <Text>
-                    This project is indexed over{' '}
-                    <Strong>{describeHistoryWindow(current ?? null).toLowerCase()}</Strong>.
-                  </Text>
-                  {options.length === 0 ? (
+                  {unknown ? (
+                    <Text>The range currently indexed could not be read.</Text>
+                  ) : (
+                    <Text>
+                      This project is indexed over{' '}
+                      <Strong>{describeHistoryWindow(current).toLowerCase()}</Strong>.
+                    </Text>
+                  )}
+                  {unknown ? null : options.length === 0 ? (
                     <Text>
                       All available history is already indexed. There is nothing further to extend.
                     </Text>

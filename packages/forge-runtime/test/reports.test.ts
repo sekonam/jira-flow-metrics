@@ -395,6 +395,74 @@ describe('cumulative flow (listing 3) — the report the aggregate cannot answer
     expect(report.bands.map((b) => b.name)).toEqual(['To Do', 'In Progress', 'Done']);
   });
 
+  it('★ selects visits by the window, not by the oldest page of issues', async () => {
+    // Regression. This used to page `issue_meta` first and pass those ids
+    // down — and `issue_meta` is ordered `created_at ASC`, so it picked the
+    // *oldest* issues: exactly the ones least likely to have moved
+    // recently. A long-lived project rendered `unavailable` and hid the
+    // chart entirely, which is the precise outcome the flag exists to
+    // avoid.
+    const store = new MemoryStore();
+    await store.migrate();
+    await store.upsertStatusMeta([
+      {
+        statusId: '3',
+        name: 'In Progress',
+        category: 'inprogress',
+        firstSeenAt: 0,
+        lastSeenAt: NOW,
+      },
+    ]);
+    // 600 ancient, long-closed issues, then one recent issue still in
+    // flight. A 500-row issue page sorted oldest-first never reaches it.
+    for (let index = 0; index < 600; index += 1) {
+      const id = `old-${String(index)}`;
+      await store.putIssueAggregate(meta({ issueId: id, createdAt: NOW - 900 * DAY }), []);
+      await store.putIssueVisits(id, [
+        {
+          issueId: id,
+          seq: 0,
+          statusId: '3',
+          projectId: '10000',
+          enteredAt: NOW - 900 * DAY,
+          exitedAt: NOW - 880 * DAY,
+        },
+      ]);
+    }
+    await store.putIssueAggregate(meta({ issueId: 'recent', createdAt: NOW - DAY }), []);
+    await store.putIssueVisits('recent', [
+      {
+        issueId: 'recent',
+        seq: 0,
+        statusId: '3',
+        projectId: '10000',
+        enteredAt: NOW - DAY,
+        exitedAt: null,
+      },
+    ]);
+
+    const report = await buildFlowReport(store, '10000', NOW, { days: 5 });
+    expect(report.unavailable).toBe(false);
+    expect(report.issueCount).toBe(1);
+    expect(countOn(report, 4, '3')).toBe(1);
+  });
+
+  it('says when the visit query hit its cap, so the bands are a lower bound', async () => {
+    const store = await flowStore();
+    const capped = await buildFlowReport(store, '10000', NOW, { days: 5, limit: 2 });
+    expect(capped.capped).toBe(true);
+    const complete = await buildFlowReport(store, '10000', NOW, { days: 5 });
+    expect(complete.capped).toBe(false);
+  });
+
+  it('counts the distinct issues in the window, not the project', async () => {
+    const store = await flowStore();
+    await store.putIssueAggregate(meta({ issueId: 'untouched' }), []);
+    const report = await buildFlowReport(store, '10000', NOW, { days: 5 });
+    // Two issues have visits; a third exists and never moved in the window.
+    expect(report.issueCount).toBe(2);
+  });
+
   it('★ says the data is unavailable rather than drawing a flat zero', async () => {
     // A listing that does not set `datasets.statusVisits` stores no visits.
     // "Indexing has not recorded the visits" and "nothing was in flight for

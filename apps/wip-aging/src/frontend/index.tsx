@@ -192,11 +192,26 @@ export const App = (): React.JSX.Element => {
             zeroes asserts the second one.
           */}
           {flow !== null && !flow.unavailable ? (
-            <ReportLineChart
-              data={toFlowChartData(flow)}
-              title="Cumulative flow"
-              subtitle="Issues in each status at the end of each day, last 30 days (UTC)."
-            />
+            <Stack space="space.100">
+              {/*
+                A capped flow chart is a lower bound like any other capped
+                report, and it said so nowhere: every other report in the
+                product renders `toCapBanner` and this one quietly did not.
+              */}
+              <IndexingBanner
+                banner={toCapBanner({
+                  capped: flow.capped,
+                  included: flow.issueCount,
+                  total: flow.issueCount,
+                  noun: 'issues',
+                })}
+              />
+              <ReportLineChart
+                data={toFlowChartData(flow)}
+                title="Cumulative flow"
+                subtitle="Issues in each status at the end of each day, last 30 days (UTC)."
+              />
+            </Stack>
           ) : null}
           <SimpleReportTable model={toAgingTable(report)} />
         </Stack>

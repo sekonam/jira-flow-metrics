@@ -86,13 +86,21 @@ export const App = (): React.JSX.Element => {
   // rather than an error page: the report itself is unaffected.
   useEffect(() => {
     void (async () => {
+      // Two independent `try`s on purpose. Chained, a failing `listStatuses`
+      // swallowed the error and `listSlaGoals` never ran, so a transient
+      // failure loading the status chips silently took the saved-goal picker
+      // with it — two unrelated features lost to one blip.
       try {
         const result = (await invoke('listStatuses', {})) as Result<readonly StatusMetaRow[]>;
         if (result.ok) setStatuses(result.data);
+      } catch {
+        // Leave the chip row empty; the default goal still renders a report.
+      }
+      try {
         const goals = (await invoke('listSlaGoals', {})) as Result<readonly SavedSlaGoal[]>;
         if (goals.ok) setSavedGoals(goals.data);
       } catch {
-        // Leave the chip row empty; the default goal still renders a report.
+        // Leave the picker empty; an ad-hoc goal still renders a report.
       }
     })();
   }, []);
@@ -122,12 +130,16 @@ export const App = (): React.JSX.Element => {
         name,
         countedStatusIds: [...goal.countedStatusIds],
         targetMs: goal.targetMs,
-      })) as Result<readonly SavedSlaGoal[]>;
+        // Present only when the page is still attached to a saved goal, so
+        // saving under the same name *edits* that goal instead of minting a
+        // second one with the same name.
+        ...(goal.savedGoalId === undefined ? {} : { id: goal.savedGoalId }),
+      })) as Result<{ goals: readonly SavedSlaGoal[]; savedId: string }>;
       if (!result.ok) throw new Error(result.error);
-      setSavedGoals(result.data);
-      // Attach the page to the goal it just saved: the numbers on screen are
-      // now that goal's, and the caption should say so.
-      const saved = result.data.find((candidate) => candidate.name === name);
+      setSavedGoals(result.data.goals);
+      // Attach the page to the goal the *server* says it saved, by id. A
+      // name lookup would pick the wrong one whenever two share a name.
+      const saved = result.data.goals.find((candidate) => candidate.id === result.data.savedId);
       if (saved !== undefined) setGoal(toGoalChoice(saved));
     },
     [goal],

@@ -1200,3 +1200,51 @@ describe('issue security levels', () => {
     expect(result.stoppedBecause).toBe('error');
   });
 });
+
+describe('★ statusVisits needs the changelog it is derived from', () => {
+  const searchPage = loadFixture<JiraSearchPage>('search-page.json');
+  const changelog = loadFixture<JiraChangelogPage>('changelog-reentry.json');
+  const VISITS_ONLY = {
+    statusDurations: false,
+    worklogs: false,
+    history: false,
+    statusVisits: true,
+  } as const;
+
+  it('pages the changelog for a dataset that wants visits but not durations', async () => {
+    // Regression. `needsChangelog` was `statusDurations || history`, so a
+    // dataset asking for visits alone fetched nothing: `reconstructTimeline`
+    // saw an empty changelog and wrote every issue as one synthetic visit —
+    // a silently wrong flow diagram and issue timeline, with no error
+    // anywhere to notice. No shipped preset hits it; the flag is public API
+    // and its own docstring invites the combination.
+    const api = new FakeJiraApi({
+      changelogs: { '20002': changelog.values ?? [] },
+      changelogPageSize: 2,
+    });
+    const processed = await processIssue(
+      searchPage.issues![1]!,
+      api,
+      config({ datasets: VISITS_ONLY }),
+      NOW,
+    );
+    expect(api.changelogCalls).toHaveLength(3);
+    // Real transitions, not one synthetic visit covering the issue's life.
+    expect(processed!.visits.length).toBeGreaterThan(1);
+    expect(processed!.visits[0]!.enteredAt).toBe(processed!.meta.createdAt);
+  });
+
+  it('writes visits and nothing else for a visits-only dataset', async () => {
+    // The flag adds a table; it does not quietly switch the other ones on.
+    const processed = await processIssue(
+      searchPage.issues![0]!,
+      new FakeJiraApi(),
+      config({ datasets: VISITS_ONLY }),
+      NOW,
+    );
+    expect(processed!.visits.length).toBeGreaterThan(0);
+    expect(processed!.aggregates).toEqual([]);
+    expect(processed!.worklogs).toEqual([]);
+    expect(processed!.history).toEqual([]);
+  });
+});

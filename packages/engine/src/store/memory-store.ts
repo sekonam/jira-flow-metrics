@@ -138,7 +138,12 @@ export class MemoryStore implements MetricsStore {
   }
 
   queryStatusVisits(query: StatusVisitQuery): Promise<StatusVisitRow[]> {
-    const issueFilter = query.issueIds === undefined ? null : new Set(query.issueIds);
+    // An empty list is *no filter*, not "match nothing" — the same rule the
+    // SQL adapter follows and the same rule `IssueMetaQuery` follows. This
+    // store is documented as the reference semantics, so a divergence here
+    // is a divergence in the contract itself.
+    const issueFilter =
+      query.issueIds === undefined || query.issueIds.length === 0 ? null : new Set(query.issueIds);
     const rows: StatusVisitRow[] = [];
     for (const [issueId, visits] of this.visits) {
       const meta = this.issueMeta.get(issueId);
