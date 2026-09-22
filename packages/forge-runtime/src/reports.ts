@@ -9,6 +9,7 @@ import {
   type IssueMetaRow,
   type MetricsStore,
   type Millis,
+  AGGREGATE_ROW_CAP,
   type StatusAggregateRow,
   type StatusId,
   type StatusCategory,
@@ -16,7 +17,6 @@ import {
   type WorklogAggregateResult,
   type WorklogGroupBy,
 } from '@jfm/engine';
-import { SQL_MAX_ROWS } from './sql/sql-store.js';
 
 /**
  * Reports for listings 2-5, built from the same stored aggregates as listing 1.
@@ -130,7 +130,6 @@ export interface AgingReport {
  * failure this codebase exists to avoid, so the cap is now explicit and
  * hitting it is reported rather than absorbed.
  */
-const AGGREGATE_ROW_CAP = SQL_MAX_ROWS - 1;
 
 /**
  * Read the aggregate rows for a page of issues, and say whether the cap cut
@@ -141,11 +140,20 @@ const AGGREGATE_ROW_CAP = SQL_MAX_ROWS - 1;
  *
  * Two mistakes in sequence, both worth keeping written down.
  *
- * `length >= cap` cannot tell "exactly `cap` rows" from "truncated at `cap`"
- * — 500 issues on a 20-status workflow is exactly 10,000 and nothing was
- * dropped — and since the SLA report started withholding `attainment` on a
- * capped read, that false positive stopped costing a spurious banner and
- * started blanking the headline figure on a complete, correct report.
+ * `length >= cap` cannot tell "exactly `cap` rows" from "truncated at `cap`",
+ * and since the SLA report started withholding `attainment` on a capped
+ * read, that false positive stopped costing a spurious banner and started
+ * blanking the headline figure on a complete, correct report.
+ *
+ * ⚠️ One value is still indistinguishable, and it is not the one an earlier
+ * version of this comment named. With the cap at `STORE_MAX_ROWS - 1` the
+ * probe reads `STORE_MAX_ROWS`, so a page whose aggregates come to *exactly*
+ * `STORE_MAX_ROWS` rows is reported as capped though nothing was dropped —
+ * 500 issues on a 20-status workflow, which is an ordinary shape. That is
+ * the honest limit of detecting truncation through a port with a hard
+ * ceiling: one value must be guessed, and this guesses the safe way, since
+ * withholding a correct figure is recoverable and publishing a wrong one is
+ * not.
  *
  * The fix for that asked for `10_000 + 1` while `AGGREGATE_ROW_CAP` was
  * 10,000 — which is exactly `SQL_MAX_ROWS`, so `clampLimit` silently handed
@@ -514,7 +522,19 @@ export async function buildFlowReport(
   options: { days?: number; limit?: number } = {},
 ): Promise<FlowReport> {
   const days = Math.max(1, Math.min(180, Math.trunc(options.days ?? 30)));
-  const visitLimit = options.limit ?? 20_000;
+  // ★ Below the store's ceiling, and read one row past it.
+  //
+  // This defaulted to 20,000 — twice `STORE_MAX_ROWS` — so the store clamped
+  // the read to 10,000 and `visits.length >= 20_000` could never be true: a
+  // window holding 12,000 visits lost 2,000 of them and reported `capped:
+  // false`. The same defect that made `AGGREGATE_ROW_CAP` unable to fire,
+  // armed here for whoever raised the 500 that `runtime.flowReport` passes
+  // today and currently hides it.
+  //
+  // And `>=` rather than `>` called an exactly-full read truncated, which is
+  // the mirror-image false positive this cycle has now fixed three times.
+  // Over-reading by one row answers both at once.
+  const visitLimit = Math.min(options.limit ?? AGGREGATE_ROW_CAP, AGGREGATE_ROW_CAP);
   // `to` is the end of today; `from` is midnight `days - 1` days earlier, so
   // a 30-day window has 30 points and the last one is today.
   const lastDay = startOfDayUtc(now);
@@ -531,7 +551,9 @@ export async function buildFlowReport(
   // chart withheld entirely — because its 500 oldest issues were all long
   // closed. The window is the question this report asks, so the window is
   // what selects the rows.
-  const visits = await store.queryStatusVisits({ projectId, from, to, limit: visitLimit });
+  const read = await store.queryStatusVisits({ projectId, from, to, limit: visitLimit + 1 });
+  const visitsCapped = read.length > visitLimit;
+  const visits = visitsCapped ? read.slice(0, visitLimit) : read;
 
   const statusMeta = await store.getStatusMeta();
   const byId = new Map(statusMeta.map((s) => [s.statusId, s]));
@@ -588,7 +610,7 @@ export async function buildFlowReport(
     issueCount: issues.size,
     // The query stopped at its own cap, so there are visits in this window
     // it did not read and every band below is a lower bound.
-    capped: visits.length >= visitLimit,
+    capped: visitsCapped,
     unavailable: visits.length === 0,
   };
 }

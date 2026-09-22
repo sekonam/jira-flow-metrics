@@ -14,7 +14,7 @@ import {
   ReportTable,
   SummaryTiles,
   surfaceStateOf,
-  toCapBanner,
+  toReportCapBanner,
   toProgressBanner,
   toReportTable,
   toStatusChartData,
@@ -200,8 +200,15 @@ export const App = (): React.JSX.Element => {
       {state === 'ready' && envelope !== null ? (
         <Stack space="space.200">
           <IndexingBanner
-            banner={toCapBanner({
-              capped: envelope.report.capped,
+            banner={toReportCapBanner({
+              // Two ceilings, and this page had a banner for only one of
+              // them: `capped` says there are more issues than these, while
+              // `aggregatesCapped` says the issues *shown* may be
+              // understated — an issue whose aggregate rows were cut renders
+              // 0h in every column. The second is the wrong number rather
+              // than the missing one.
+              capped: envelope.report.capped || envelope.report.aggregatesCapped,
+              aggregatesCapped: envelope.report.aggregatesCapped,
               included: envelope.report.issueCount,
               total: envelope.report.matchingIssueCount,
               noun: 'issues',

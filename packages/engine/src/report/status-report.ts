@@ -1,4 +1,9 @@
-import type { MetricsStore, StatusAggregateRow, StatusMetaRow } from '../store/types.js';
+import {
+  AGGREGATE_ROW_CAP,
+  type MetricsStore,
+  type StatusAggregateRow,
+  type StatusMetaRow,
+} from '../store/types.js';
 import { summariseDurations, type DistributionSummary } from '../metrics/cycle-time.js';
 import type { DurationBasis, Millis, StatusId } from '../types.js';
 
@@ -69,6 +74,26 @@ export interface StatusReport {
    * in `docs/TECHNICAL-SPEC.md` § 11.1.
    */
   readonly capped: boolean;
+  /**
+   * True when the *aggregate* read hit its row ceiling, so some issues on
+   * this page are measured over only part of their statuses.
+   *
+   * ★ A separate truncation from `capped`, and the more dangerous one.
+   *
+   * `capped` compares a `COUNT(*)` against the issue page: it says "there
+   * are more issues than these". This one says "the issues shown may be
+   * understated" — an issue whose aggregate rows were cut renders `0h` in
+   * every column and `0` as its total, which is a *wrong number*, not a
+   * missing one, and it sorts to the bottom of a table ordered by time.
+   *
+   * The store clamps any read to 10,000 rows and drops the tail by
+   * `ORDER BY issue_id`, so a 500-issue page on a workflow with 21 or more
+   * statuses per issue crosses it — an ordinary enterprise workflow, on this
+   * report's default page size. It had no flag at all: the same silent
+   * ceiling `AGGREGATE_ROW_CAP` was added to close in `reports.ts` for the
+   * four derived listings, left open on the flagship one.
+   */
+  readonly aggregatesCapped: boolean;
 }
 
 export interface StatusReportQuery {
@@ -114,14 +139,24 @@ export async function buildStatusReport(
   });
   const matchingIssueCount = await store.countIssueMeta(metaQuery);
 
+  // ★ An explicit ceiling, read one row past it.
+  //
+  // This used to pass no `limit` at all, which does not mean "no limit": the
+  // SQL adapter clamps an unspecified read to 10,000 and returns the first
+  // 10,000 by `issue_id`, so the tail issues of a large page lost every
+  // aggregate row and rendered as zero. Asking for `cap + 1` is what makes
+  // the truncation detectable — and the cap has to sit *below* the store's
+  // ceiling, or the extra row is clamped away and the check can never fire.
   const aggregates = await store.queryStatusDurations({
     projectId: query.projectId,
     issueIds: page.map((m) => m.issueId),
     ...(query.statusIds === undefined ? {} : { statusIds: query.statusIds }),
+    limit: AGGREGATE_ROW_CAP + 1,
   });
+  const aggregatesCapped = aggregates.length > AGGREGATE_ROW_CAP;
 
   const byIssue = new Map<string, StatusAggregateRow[]>();
-  for (const row of aggregates) {
+  for (const row of aggregatesCapped ? aggregates.slice(0, AGGREGATE_ROW_CAP) : aggregates) {
     const list = byIssue.get(row.issueId) ?? [];
     list.push(row);
     byIssue.set(row.issueId, list);
@@ -171,6 +206,7 @@ export async function buildStatusReport(
     anyTruncated: rows.some((r) => r.truncated),
     matchingIssueCount,
     capped: matchingIssueCount > query.offset + rows.length,
+    aggregatesCapped,
   };
 }
 

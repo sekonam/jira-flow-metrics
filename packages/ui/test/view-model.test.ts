@@ -23,6 +23,7 @@ const HOUR = 3_600_000;
 
 function report(overrides: Partial<StatusReport> = {}): StatusReport {
   return {
+    aggregatesCapped: false,
     columns: [
       { statusId: '10000', name: 'To Do' },
       { statusId: '3', name: 'In Progress' },

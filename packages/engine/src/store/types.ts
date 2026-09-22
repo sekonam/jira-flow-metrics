@@ -181,6 +181,38 @@ export interface HistoryQuery {
 }
 
 /**
+ * The most rows any single read through this port may return.
+ *
+ * ★ Part of the **contract**, not an implementation detail of one adapter.
+ *
+ * `SqlMetricsStore` clamps every `LIMIT` to this, silently — a caller asking
+ * for more gets this many, in `ORDER BY` order, with no signal that anything
+ * was dropped. Four separate defects in this codebase came from a report
+ * reading past it and not knowing: an issue whose aggregate rows were cut
+ * reads as zero consumed time, which renders as *fully compliant* on the SLA
+ * page and as `0h` on the time-in-status table.
+ *
+ * So a caller that needs to know whether it saw everything asks for
+ * `cap + 1`, and its own cap must therefore sit strictly **below** this
+ * number — otherwise the probe is clamped away and the check can never fire,
+ * which is exactly what happened when `AGGREGATE_ROW_CAP` was set to this
+ * value. {@link AGGREGATE_ROW_CAP} derives from it for that reason.
+ *
+ * `MemoryStore` deliberately does **not** clamp: it is the reference
+ * semantics, and a test that wants to see the ceiling has to drive the SQL
+ * adapter (`LimitHonouringSqlExecutor` exists for that). That asymmetry is
+ * itself how three of those four defects stayed green in the suite.
+ */
+export const STORE_MAX_ROWS = 10_000;
+
+/**
+ * The ceiling a report reads aggregates under, one below the store's own.
+ *
+ * The extra row is the truncation probe; see {@link STORE_MAX_ROWS}.
+ */
+export const AGGREGATE_ROW_CAP = STORE_MAX_ROWS - 1;
+
+/**
  * Persistence port. Implemented by `ForgeSqlStore` in production and by
  * `MemoryStore` in tests.
  */

@@ -78,6 +78,7 @@ const REPORT: StatusReport = {
   anyTruncated: true,
   matchingIssueCount: 2,
   capped: false,
+  aggregatesCapped: false,
   columns: [
     { statusId: '10000', name: 'To Do' },
     { statusId: '3', name: 'In Progress' },

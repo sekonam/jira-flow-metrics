@@ -1,4 +1,5 @@
 import {
+  STORE_MAX_ROWS,
   CREATE_STATEMENTS,
   MIGRATIONS,
   DELETE_ISSUE_STATEMENTS,
@@ -478,7 +479,11 @@ export class SqlMetricsStore implements MetricsStore {
  * so a bare clamp would pass `NaN` straight into the statement. These fail
  * closed on any non-finite input instead.
  */
-export const SQL_MAX_ROWS = 10_000;
+/**
+ * Re-exported from the port, where the contract lives. The adapter enforces
+ * this number; it does not get to choose it — see `STORE_MAX_ROWS`.
+ */
+export const SQL_MAX_ROWS = STORE_MAX_ROWS;
 
 function clampLimit(limit: number): number {
   if (!Number.isFinite(limit)) return SQL_MAX_ROWS;

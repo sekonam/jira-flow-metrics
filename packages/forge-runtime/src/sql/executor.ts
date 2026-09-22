@@ -195,6 +195,21 @@ export class LimitHonouringSqlExecutor extends RecordingSqlExecutor {
 
   override query<T>(statement: string, params: readonly unknown[] = []): Promise<T[]> {
     void super.query(statement, params);
+    // ★ Refuse a shape this cannot model, rather than answering it wrongly.
+    //
+    // `countRows()` emits one SELECT of nine correlated sub-counts
+    // (`SELECT (SELECT COUNT(*) FROM issue_meta) AS issue_meta, …`), and the
+    // naive reading of it returns `[{ n }]` — none of the nine named
+    // columns — so every table count comes back 0 and the admin storage page
+    // reports nothing at all. A test written against that could be "fixed"
+    // by asserting zero, which is how a stand-in that lies becomes a test
+    // that lies. This is a test double for *ceilings and paging*; anything
+    // else it should decline to answer.
+    if (/\(\s*SELECT\b/i.test(statement) || /\bJOIN\b/i.test(statement)) {
+      return Promise.reject(
+        new Error(`LimitHonouringSqlExecutor cannot model this statement: ${normalise(statement)}`),
+      );
+    }
     const table = /\bFROM\s+(\w+)/i.exec(statement)?.[1];
     const rows = table === undefined ? [] : (this.tables[table] ?? []);
     if (/COUNT\s*\(/i.test(statement)) {

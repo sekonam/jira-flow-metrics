@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   MemoryStore,
+  STORE_MAX_ROWS,
   type HistoryRecord,
+  type MetricsStore,
   type IssueMetaRow,
   type StatusAggregateRow,
   type WorklogRecord,
@@ -453,6 +455,50 @@ describe('cumulative flow (listing 3) — the report the aggregate cannot answer
     expect(capped.capped).toBe(true);
     const complete = await buildFlowReport(store, '10000', NOW, { days: 5 });
     expect(complete.capped).toBe(false);
+  });
+
+  it('★ does not call an exactly-full visit read capped', async () => {
+    // `visits.length >= visitLimit` called a read that dropped nothing
+    // truncated — the same `>= MAX` false positive this cycle has now fixed
+    // in three other places. `flowStore` holds exactly four visits.
+    const store = await flowStore();
+    const exact = await buildFlowReport(store, '10000', NOW, { days: 5, limit: 4 });
+    expect(exact.capped).toBe(false);
+    expect(await store.queryStatusVisits({ projectId: '10000' })).toHaveLength(4);
+    // Three is a real truncation.
+    expect((await buildFlowReport(store, '10000', NOW, { days: 5, limit: 3 })).capped).toBe(true);
+  });
+
+  it('★ keeps the visit limit under the ceiling the store enforces', async () => {
+    // The default was 20,000 — twice `STORE_MAX_ROWS` — so the store clamped
+    // the read to 10,000 and `length >= 20_000` could never be true: a
+    // window holding 12,000 visits silently lost 2,000 and reported
+    // `capped: false`. Exactly what made `AGGREGATE_ROW_CAP` unable to fire.
+    //
+    // Asserted on the request rather than on a 12,000-row fixture: what went
+    // wrong was the number asked for, and it is the number that must stay
+    // below the ceiling.
+    const store = await flowStore();
+    const asked: number[] = [];
+    // A Proxy, not a spread: `MemoryStore`'s methods live on its prototype,
+    // so `{ ...store }` copies the fields and none of the behaviour.
+    const spy = new Proxy(store, {
+      get(target, prop, receiver) {
+        if (prop !== 'queryStatusVisits') return Reflect.get(target, prop, receiver) as unknown;
+        return (query: Parameters<MetricsStore['queryStatusVisits']>[0]) => {
+          asked.push(query.limit ?? Number.POSITIVE_INFINITY);
+          return target.queryStatusVisits(query);
+        };
+      },
+    }) as MetricsStore;
+
+    await buildFlowReport(spy, '10000', NOW, { days: 5 });
+    expect(asked[0]).toBeLessThanOrEqual(STORE_MAX_ROWS);
+    // A caller asking for more than the store will ever return is clamped to
+    // something it can actually detect the truncation of.
+    asked.length = 0;
+    await buildFlowReport(spy, '10000', NOW, { days: 5, limit: 50_000 });
+    expect(asked[0]).toBeLessThanOrEqual(STORE_MAX_ROWS);
   });
 
   it('counts the distinct issues in the window, not the project', async () => {

@@ -96,9 +96,15 @@ function standInPropsNeverRead(source: string): string[] {
   // version matched only `interface`, with an `extends [\w, ]+` that could
   // not span a generic argument — so two one-line edits made a stand-in
   // invisible to this scan entirely, which is the hole it exists to close.
-  const declarations = source.matchAll(
-    /export (?:interface|type) (\w+Props)\b[^{]*\{([\s\S]*?)\n\}/g,
-  );
+  // The body ends at the first `}` that starts a line **or** closes the
+  // declaration on the line it opened. Terminating only on `\n}` meant a
+  // one-line `export type XProps = { a?: string };` ran on until the *next*
+  // declaration's closing brace: its props were attributed to the previous
+  // component (a false positive naming the wrong one) and the component
+  // after it was never checked at all, with `checked` still non-zero so the
+  // guard stayed quiet. One-line is the idiomatic form of the type-alias
+  // shape this scan was just taught to read, so teaching it that opened it.
+  const declarations = source.matchAll(/export (?:interface|type) (\w+Props)\b[^{]*\{([^{}]*?)\}/g);
   let checked = 0;
   for (const [, name, body] of declarations) {
     const declared = [...body!.matchAll(/^\s*(?:readonly\s+)?([a-zA-Z]\w*)\??\s*:/gm)].map(
@@ -138,12 +144,33 @@ function standInPropsNeverRead(source: string): string[] {
  * `React.JSX.Element`, which reported six perfectly correct shapes as
  * broken — and a check that cries wolf teaches people to route around it,
  * which is worse than the silent skip it replaced.
+ *
+ * ⚠️ Two known limits, both erring quietly rather than falsely:
+ *
+ *   - a bracket inside a string or comment in the parameter list is counted
+ *     (`{ tone = ')' }` truncates the capture, an unbalanced one returns
+ *     `null` and fails loudly);
+ *   - a wrapped component (`export const Chip = memo(({ tone }: ChipProps)
+ *     => …)`) captures the wrapper's whole argument, so a prop mentioned
+ *     anywhere in the body reads as used. A prop mentioned nowhere is still
+ *     caught.
+ *
+ * Neither shape exists in `forge-host.tsx`. Counting brackets is the right
+ * amount of machinery for a file this scan is checking is *plain*; if a
+ * stand-in ever needs one of these shapes, the answer is a real parser, not
+ * a longer regex.
  */
 function componentParams(source: string, component: string): string | null {
   const declaration = new RegExp(`export (?:const|function) ${component}\\b`).exec(source);
   if (declaration === null) return null;
   const open = source.indexOf('(', declaration.index);
   if (open === -1) return null;
+  // The `(` has to belong to *this* declaration. `export const Panel =
+  // fallbackPanel;` has none, and walking past the `;` found the parameter
+  // list of some later function and reported every one of Panel's props as
+  // ignored — a false positive on a correct stand-in, which is the failure
+  // mode that teaches people to route around a check.
+  if (source.slice(declaration.index, open).includes(';')) return null;
   let depth = 0;
   for (let i = open; i < source.length; i += 1) {
     const ch = source[i];

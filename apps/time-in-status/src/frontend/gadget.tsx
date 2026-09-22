@@ -10,6 +10,7 @@ import {
   SummaryTiles,
   isIndexIncomplete,
   surfaceStateOf,
+  toCapNotice,
   toProjectOptions,
   toSummaryTiles,
   type ProjectOption,
@@ -121,6 +122,15 @@ const GadgetView = (): React.JSX.Element => {
     return <Text>No indexed issues in this project yet.</Text>;
   }
 
+  // Two independent ceilings, two different sentences — see `toCapNotice`.
+  const capNotice = toCapNotice({
+    capped: envelope.report.capped || envelope.report.aggregatesCapped,
+    aggregatesCapped: envelope.report.aggregatesCapped,
+    included: envelope.report.issueCount,
+    total: envelope.report.matchingIssueCount,
+    noun: 'issues',
+  });
+
   return (
     <Stack space="space.150">
       <Heading as="h3">Time in Status</Heading>
@@ -132,12 +142,7 @@ const GadgetView = (): React.JSX.Element => {
         dashboard could publish an attainment percentage over a 500-issue
         slice of a 5,000-issue project with no qualifier at all.
       */}
-      {envelope.report.capped ? (
-        <Text size="small">
-          Covering {envelope.report.issueCount} of {envelope.report.matchingIssueCount} issues, so
-          every figure here is a lower bound.
-        </Text>
-      ) : null}
+      {capNotice !== null ? <Text size="small">{capNotice}</Text> : null}
       {/*
         Read from `progress`, not from `envelope.partial`. `partial` also folds
         in per-row changelog truncation across the *returned page*, so what it

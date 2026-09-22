@@ -13,6 +13,7 @@ import {
 } from '@jfm/engine';
 import { LimitHonouringSqlExecutor, RecordingSqlExecutor } from '../src/sql/executor.js';
 import { SQL_MAX_ROWS, SqlMetricsStore } from '../src/sql/sql-store.js';
+import { STORE_MAX_ROWS, buildStatusReport } from '@jfm/engine';
 import { SettingsStore } from '../src/settings.js';
 import { ListingRuntime } from '../src/runtime.js';
 import {
@@ -288,6 +289,88 @@ describe('capped reports carry the real total', () => {
 
     const aging = await buildAgingReport(sqlStore, '10000', NOW, issues);
     expect(aging.aggregatesCapped).toBe(true);
+  });
+
+  it('★ the flagship report detects a truncated aggregate read too', async () => {
+    // `buildStatusReport` passed **no** `limit` to `queryStatusDurations`,
+    // which does not mean "no limit": the SQL adapter clamps an unspecified
+    // read to `STORE_MAX_ROWS` and keeps the first rows by `issue_id`. So on
+    // a 500-issue page over a 21-status workflow — the default page size and
+    // an ordinary enterprise workflow — the tail issues lost every aggregate
+    // row and rendered `0h` in every column with `0` as their total, sorting
+    // to the bottom of a table ordered by time. `StatusReport.capped` stayed
+    // false, because it only ever compared the issue page against a COUNT.
+    //
+    // Three rounds of this cycle fixed that shape in the four derived
+    // listings and never looked at listing 1, where it is a wrong number
+    // rather than a missing banner.
+    const issues = 500;
+    const statuses = 21;
+    const metaRows = Array.from({ length: issues }, (_u, i) => ({
+      issue_id: String(i + 1),
+      issue_key: `FLOW-${String(i + 1)}`,
+      project_id: '10000',
+      issue_type_id: null,
+      priority_id: null,
+      assignee_account_id: null,
+      current_status_id: '100',
+      created_at: NOW - 30 * DAY,
+      resolved_at: null,
+      due_at: null,
+      history_through_at: NOW,
+      truncated: 0,
+      updated_at: NOW,
+    }));
+    const aggRows = metaRows.flatMap((row) =>
+      Array.from({ length: statuses }, (_u, s2) => ({
+        issue_id: row.issue_id,
+        status_id: String(100 + s2),
+        project_id: '10000',
+        elapsed_ms: 4 * HOUR,
+        business_ms: 4 * HOUR,
+        entries: 1,
+        last_entered_at: NOW - DAY,
+        last_exited_at: null,
+        updated_at: NOW,
+      })),
+    );
+    expect(aggRows).toHaveLength(10_500);
+    expect(aggRows.length).toBeGreaterThan(STORE_MAX_ROWS);
+
+    const sqlStore = new SqlMetricsStore(
+      new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
+      { migrate: () => Promise.resolve() },
+    );
+    const report = await buildStatusReport(sqlStore, {
+      projectId: '10000',
+      basis: 'business',
+      limit: issues,
+      offset: 0,
+    });
+
+    expect(report.rows).toHaveLength(issues);
+    expect(report.aggregatesCapped).toBe(true);
+
+    // And the thing the flag is *about*: some rows really did come back as
+    // zero, which is the wrong number the banner now qualifies.
+    expect(report.rows.filter((row) => row.totalMs === 0).length).toBeGreaterThan(0);
+
+    // A page inside the ceiling reports no truncation and no zero rows.
+    const small = new SqlMetricsStore(
+      new LimitHonouringSqlExecutor({
+        issue_meta: metaRows.slice(0, 100),
+        issue_status_agg: aggRows.slice(0, 100 * statuses),
+      }),
+      { migrate: () => Promise.resolve() },
+    );
+    const complete = await buildStatusReport(small, {
+      projectId: '10000',
+      basis: 'business',
+      limit: 100,
+      offset: 0,
+    });
+    expect(complete.aggregatesCapped).toBe(false);
+    expect(complete.rows.every((row) => row.totalMs > 0)).toBe(true);
   });
 
   it('worklog report: capped when more entries match than were fetched', async () => {
