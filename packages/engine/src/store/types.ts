@@ -86,6 +86,29 @@ export interface IndexStateRow {
   readonly updatedAt: Millis;
 }
 
+/**
+ * The filters a report may apply to `issue_meta`, plus its page.
+ *
+ * These used to be applied in `buildStatusReport` *after* the page had been
+ * fetched, which broke three ways at once on any project bigger than one
+ * page: the page was fetched before filtering so a filtered page could come
+ * back short or skip rows entirely, `issueCount` counted only the matches
+ * inside the fetched window, and the "capped" test compared a filtered page
+ * against the unfiltered project total, so every filtered report claimed to
+ * be capped. One query shape, evaluated by the store, fixes all three — and
+ * `countIssueMeta` takes the same shape so a page and its total cannot
+ * disagree about which rows match.
+ */
+export interface IssueMetaQuery {
+  readonly projectId: string;
+  readonly assigneeAccountIds?: readonly string[];
+  readonly issueTypeIds?: readonly string[];
+  readonly createdFrom?: Millis;
+  readonly createdTo?: Millis;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
 export interface StatusDurationQuery {
   readonly projectId: string;
   readonly issueIds?: readonly string[];
@@ -138,14 +161,15 @@ export interface MetricsStore {
   deleteIssue(issueId: string): Promise<void>;
 
   getIssueMeta(issueId: string): Promise<IssueMetaRow | null>;
-  queryIssueMeta(projectId: string, limit: number, offset: number): Promise<IssueMetaRow[]>;
+  queryIssueMeta(query: IssueMetaQuery): Promise<IssueMetaRow[]>;
   /**
-   * Total `issue_meta` rows for a project, independent of any page size.
+   * Matching `issue_meta` rows, independent of any page size: `limit` and
+   * `offset` on the query are ignored, every other field is honoured.
    * Reports need this to say "showing 500 of 1,234" instead of rendering a
    * capped page that looks complete — the silent-ceiling failure documented
    * in `docs/TECHNICAL-SPEC.md` § 11.1.
    */
-  countIssueMeta(projectId: string): Promise<number>;
+  countIssueMeta(query: IssueMetaQuery): Promise<number>;
   queryStatusDurations(query: StatusDurationQuery): Promise<StatusAggregateRow[]>;
   /**
    * Distinct status ids seen in one project's aggregates. The SLA goal

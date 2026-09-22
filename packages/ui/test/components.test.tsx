@@ -74,7 +74,7 @@ const REPORT: StatusReport = {
   basis: 'elapsed',
   issueCount: 2,
   anyTruncated: true,
-  projectIssueCount: 2,
+  matchingIssueCount: 2,
   capped: false,
   columns: [
     { statusId: '10000', name: 'To Do' },

@@ -1,9 +1,4 @@
-import type {
-  IssueMetaRow,
-  MetricsStore,
-  StatusAggregateRow,
-  StatusMetaRow,
-} from '../store/types.js';
+import type { MetricsStore, StatusAggregateRow, StatusMetaRow } from '../store/types.js';
 import { summariseDurations, type DistributionSummary } from '../metrics/cycle-time.js';
 import type { DurationBasis, Millis, StatusId } from '../types.js';
 
@@ -39,14 +34,24 @@ export interface StatusReport {
   readonly basis: DurationBasis;
   /** Per-status distribution across the whole result set. */
   readonly summaryByStatus: Readonly<Record<StatusId, DistributionSummary>>;
+  /** Issues on this page. */
   readonly issueCount: number;
   /** True when any row's history was incomplete. Surfaced in the UI, not hidden. */
   readonly anyTruncated: boolean;
-  /** Total issues stored for the project, from a real count, not a page length. */
-  readonly projectIssueCount: number;
   /**
-   * True when the project holds more issues than the report could fetch, so
-   * `issueCount` is a lower bound and rows may be missing. The UI must say so —
+   * Issues matching this report's filters, from a real `COUNT(*)`, not a page
+   * length.
+   *
+   * Named for what it counts. It used to be `projectIssueCount` and used to
+   * count the project, which was the same number only while the report had no
+   * filters — with one applied, the cap banner read "500 of 1,234 issues"
+   * where the 500 was filtered and the 1,234 was not, and the two halves of
+   * that sentence described different sets.
+   */
+  readonly matchingIssueCount: number;
+  /**
+   * True when more issues match than this page could hold, so `issueCount` is
+   * a lower bound and rows may be missing. The UI must say so —
    * a capped page that looks complete is the silent-ceiling failure documented
    * in `docs/TECHNICAL-SPEC.md` § 11.1.
    */
@@ -72,13 +77,29 @@ export async function buildStatusReport(
   const statusMeta = await store.getStatusMeta();
   const nameOf = new Map(statusMeta.map((s) => [s.statusId, s.name]));
 
-  // Over-fetch metadata, then filter in memory. Store-side filtering is a
-  // planned optimisation (see docs/TECHNICAL-SPEC.md "known limitations");
-  // at the page sizes the UI uses this is not the bottleneck.
-  const metas = await store.queryIssueMeta(query.projectId, query.limit + query.offset, 0);
-  const projectIssueCount = await store.countIssueMeta(query.projectId);
-  const filtered = metas.filter((m) => matchesFilters(m, query));
-  const page = filtered.slice(query.offset, query.offset + query.limit);
+  // Filters are evaluated by the store, not here. This used to over-fetch
+  // `limit + offset` rows, filter them in memory and then slice — which is
+  // wrong three ways the moment a filter is set and the project is bigger
+  // than one page: the fetch window is chosen before the filter is applied,
+  // so the page can come back short or skip matching rows entirely;
+  // `issueCount` counts only the matches inside that window; and `capped`
+  // compares a filtered page against the unfiltered project total, so every
+  // filtered report claims to be capped. See `IssueMetaQuery`.
+  const metaQuery = {
+    projectId: query.projectId,
+    ...(query.assigneeAccountIds === undefined
+      ? {}
+      : { assigneeAccountIds: query.assigneeAccountIds }),
+    ...(query.issueTypeIds === undefined ? {} : { issueTypeIds: query.issueTypeIds }),
+    ...(query.createdFrom === undefined ? {} : { createdFrom: query.createdFrom }),
+    ...(query.createdTo === undefined ? {} : { createdTo: query.createdTo }),
+  };
+  const page = await store.queryIssueMeta({
+    ...metaQuery,
+    limit: query.limit,
+    offset: query.offset,
+  });
+  const matchingIssueCount = await store.countIssueMeta(metaQuery);
 
   const aggregates = await store.queryStatusDurations({
     projectId: query.projectId,
@@ -133,25 +154,11 @@ export async function buildStatusReport(
     rows,
     basis: query.basis,
     summaryByStatus,
-    issueCount: filtered.length,
+    issueCount: rows.length,
     anyTruncated: rows.some((r) => r.truncated),
-    projectIssueCount,
-    capped: projectIssueCount > metas.length,
+    matchingIssueCount,
+    capped: matchingIssueCount > query.offset + rows.length,
   };
-}
-
-function matchesFilters(meta: IssueMetaRow, query: StatusReportQuery): boolean {
-  if (query.assigneeAccountIds !== undefined && query.assigneeAccountIds.length > 0) {
-    if (meta.assigneeAccountId === null) return false;
-    if (!query.assigneeAccountIds.includes(meta.assigneeAccountId)) return false;
-  }
-  if (query.issueTypeIds !== undefined && query.issueTypeIds.length > 0) {
-    if (meta.issueTypeId === null) return false;
-    if (!query.issueTypeIds.includes(meta.issueTypeId)) return false;
-  }
-  if (query.createdFrom !== undefined && meta.createdAt < query.createdFrom) return false;
-  if (query.createdTo !== undefined && meta.createdAt >= query.createdTo) return false;
-  return true;
 }
 
 /**

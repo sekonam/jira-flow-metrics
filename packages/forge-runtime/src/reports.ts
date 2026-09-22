@@ -126,8 +126,8 @@ export async function buildAgingReport(
   now: Millis,
   limit = 500,
 ): Promise<AgingReport> {
-  const metas = await store.queryIssueMeta(projectId, limit, 0);
-  const projectIssueCount = await store.countIssueMeta(projectId);
+  const metas = await store.queryIssueMeta({ projectId, limit });
+  const projectIssueCount = await store.countIssueMeta({ projectId });
   const statusMeta = await store.getStatusMeta();
   const byId = new Map(statusMeta.map((s) => [s.statusId, s]));
   const aggregates = await store.queryStatusDurations({
@@ -233,8 +233,8 @@ export async function buildSlaReport(
   now: Millis,
   limit = 500,
 ): Promise<SlaReport> {
-  const metas = await store.queryIssueMeta(projectId, limit, 0);
-  const projectIssueCount = await store.countIssueMeta(projectId);
+  const metas = await store.queryIssueMeta({ projectId, limit });
+  const projectIssueCount = await store.countIssueMeta({ projectId });
   const counted = new Set(goal.countedStatusIds);
   const aggregates = await store.queryStatusDurations({
     projectId,

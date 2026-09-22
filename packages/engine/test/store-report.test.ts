@@ -128,13 +128,13 @@ describe('MemoryStore — the reference store semantics', () => {
     await store.putIssueAggregate(meta({ issueId: '9', projectId: '20000' }), [agg('9', '3', 1)]);
     expect(await store.queryStatusDurations({ projectId: '10000' })).toHaveLength(4);
     expect(await store.queryStatusDurations({ projectId: '20000' })).toHaveLength(1);
-    expect(await store.queryIssueMeta('20000', 100, 0)).toHaveLength(1);
+    expect(await store.queryIssueMeta({ projectId: '20000', limit: 100 })).toHaveLength(1);
   });
 
   it('paginates deterministically', async () => {
     const store = await seededStore();
-    const first = await store.queryIssueMeta('10000', 1, 0);
-    const second = await store.queryIssueMeta('10000', 1, 1);
+    const first = await store.queryIssueMeta({ projectId: '10000', limit: 1 });
+    const second = await store.queryIssueMeta({ projectId: '10000', limit: 1, offset: 1 });
     expect(first[0]?.issueId).toBe('1');
     expect(second[0]?.issueId).toBe('2');
     expect(
@@ -306,8 +306,8 @@ describe('MemoryStore — the reference store semantics', () => {
 describe('store counts — the real totals behind capped pages', () => {
   it('counts issue meta per project regardless of any page size', async () => {
     const store = await seededStore();
-    expect(await store.countIssueMeta('10000')).toBe(2);
-    expect(await store.countIssueMeta('99999')).toBe(0);
+    expect(await store.countIssueMeta({ projectId: '10000' })).toBe(2);
+    expect(await store.countIssueMeta({ projectId: '99999' })).toBe(0);
   });
 
   it('lists the distinct status ids one project has actually used', async () => {
@@ -426,7 +426,7 @@ describe('status report assembly', () => {
     // Two issues stored, a one-issue page: the report must say so, because a
     // capped page that looks complete is the silent-ceiling failure of
     // TECHNICAL-SPEC § 11.1.
-    expect(capped.projectIssueCount).toBe(2);
+    expect(capped.matchingIssueCount).toBe(2);
     expect(capped.capped).toBe(true);
     expect(capped.rows).toHaveLength(1);
 
@@ -436,7 +436,7 @@ describe('status report assembly', () => {
       limit: 10,
       offset: 0,
     });
-    expect(complete.projectIssueCount).toBe(2);
+    expect(complete.matchingIssueCount).toBe(2);
     expect(complete.capped).toBe(false);
   });
 
@@ -667,5 +667,143 @@ describe('Forge cost model', () => {
     expect(volume.backfillRequests).toBe(400 + 2000);
     expect(volume.backfillSlices).toBe(200);
     expect(volume.monthlyRequests).toBe(4000);
+  });
+});
+
+/**
+ * The filters used to be applied after the page had been fetched. These are
+ * the three failures that produced, each of which needs a project bigger than
+ * one page to show itself — which is why none of them appeared in the suite
+ * that existed while the filtering was in memory.
+ */
+describe('★ report filters are evaluated by the store, not after the page', () => {
+  /** Six issues, alternating assignee, one per day. */
+  async function mixedStore(): Promise<MemoryStore> {
+    const store = new MemoryStore();
+    await store.migrate();
+    await store.upsertStatusMeta([
+      {
+        statusId: '3',
+        name: 'In Progress',
+        category: 'inprogress',
+        firstSeenAt: 0,
+        lastSeenAt: NOW,
+      },
+    ]);
+    await store.putIssueAggregates(
+      Array.from({ length: 6 }, (_, index) => ({
+        meta: meta({
+          issueId: String(index + 1),
+          assigneeAccountId: index % 2 === 0 ? 'acc-anna' : 'acc-ben',
+          issueTypeId: index < 3 ? '10002' : '10003',
+          createdAt: T('2026-03-01T00:00:00Z') + index * 86_400_000,
+        }),
+        rows: [agg(String(index + 1), '3', index + 1)],
+      })),
+    );
+    return store;
+  }
+
+  it('pages through a filtered set instead of paging first and filtering after', async () => {
+    const store = await mixedStore();
+    const query = {
+      projectId: '10000',
+      basis: 'elapsed' as const,
+      assigneeAccountIds: ['acc-anna'],
+      limit: 2,
+    };
+    const first = await buildStatusReport(store, { ...query, offset: 0 });
+    const second = await buildStatusReport(store, { ...query, offset: 2 });
+
+    // Anna has issues 1, 3 and 5. Fetching `limit + offset` rows unfiltered
+    // and slicing afterwards gave page two of [1,3] — rows 2 and 3 of a
+    // four-row window that only held two matches — so the third match was
+    // unreachable through paging at all.
+    expect(first.rows.map((r) => r.issueId)).toEqual(['1', '3']);
+    expect(second.rows.map((r) => r.issueId)).toEqual(['5']);
+  });
+
+  it('counts the matching issues, not the ones inside the fetched window', async () => {
+    const store = await mixedStore();
+    const report = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      assigneeAccountIds: ['acc-anna'],
+      limit: 1,
+      offset: 0,
+    });
+    // Three of the six are Anna's. The old code counted the matches inside a
+    // one-row fetch, so this reported 1 — a page length wearing a total's
+    // name, the same failure TECHNICAL-SPEC § 11.1 records for the unfiltered
+    // path.
+    expect(report.matchingIssueCount).toBe(3);
+    expect(report.issueCount).toBe(1);
+    expect(report.capped).toBe(true);
+  });
+
+  it('does not call a filtered report capped when every match is on the page', async () => {
+    const store = await mixedStore();
+    const report = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      issueTypeIds: ['10003'],
+      limit: 500,
+      offset: 0,
+    });
+    // Three matches, all shown. The old test compared the page against the
+    // *project* total of six, so every filtered report — however complete —
+    // rendered the "every figure on this page is a lower bound" banner.
+    expect(report.rows).toHaveLength(3);
+    expect(report.matchingIssueCount).toBe(3);
+    expect(report.capped).toBe(false);
+  });
+
+  it('filters on created date as a half-open range', async () => {
+    const store = await mixedStore();
+    const report = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      createdFrom: T('2026-03-02T00:00:00Z'),
+      createdTo: T('2026-03-04T00:00:00Z'),
+      limit: 500,
+      offset: 0,
+    });
+    // `[from, to)` — issue 4, created exactly at `createdTo`, is excluded,
+    // matching every other range filter in the store.
+    expect(report.rows.map((r) => r.issueId)).toEqual(['2', '3']);
+  });
+
+  it('treats an empty id list as no filter rather than as matching nothing', async () => {
+    const store = await mixedStore();
+    const report = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      assigneeAccountIds: [],
+      limit: 500,
+      offset: 0,
+    });
+    expect(report.rows).toHaveLength(6);
+  });
+
+  it('excludes an unassigned issue from an assignee filter without dropping it otherwise', async () => {
+    const store = await mixedStore();
+    await store.putIssueAggregate(meta({ issueId: '7', assigneeAccountId: null }), [
+      agg('7', '3', 1),
+    ]);
+    const filtered = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      assigneeAccountIds: ['acc-anna'],
+      limit: 500,
+      offset: 0,
+    });
+    const unfiltered = await buildStatusReport(store, {
+      projectId: '10000',
+      basis: 'elapsed',
+      limit: 500,
+      offset: 0,
+    });
+    expect(filtered.rows.map((r) => r.issueId)).not.toContain('7');
+    expect(unfiltered.rows.map((r) => r.issueId)).toContain('7');
   });
 });

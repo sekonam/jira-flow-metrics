@@ -234,9 +234,14 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
   const format = formatFor(report.basis);
   const tiles: SummaryTile[] = [
     {
+      // The whole matching set, not this page: the tile says "Issues
+      // matching the current filters" and a page length is not that.
       label: 'Issues',
-      value: String(report.issueCount),
-      hint: 'Issues matching the current filters.',
+      value: String(report.matchingIssueCount),
+      hint:
+        report.matchingIssueCount === report.issueCount
+          ? 'Issues matching the current filters.'
+          : `Issues matching the current filters. ${report.issueCount} of them are shown below.`,
     },
   ];
   for (const column of report.columns) {

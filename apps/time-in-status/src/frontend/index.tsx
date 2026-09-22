@@ -153,7 +153,7 @@ export const App = (): React.JSX.Element => {
             banner={toCapBanner({
               capped: envelope.report.capped,
               included: envelope.report.issueCount,
-              total: envelope.report.projectIssueCount,
+              total: envelope.report.matchingIssueCount,
               noun: 'issues',
             })}
           />

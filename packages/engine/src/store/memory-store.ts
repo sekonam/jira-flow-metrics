@@ -2,6 +2,7 @@ import { ESTIMATED_ROW_BYTES } from './schema.js';
 import type {
   HistoryQuery,
   IndexStateRow,
+  IssueMetaQuery,
   IssueMetaRow,
   MetricsStore,
   StatusAggregateRow,
@@ -63,17 +64,38 @@ export class MemoryStore implements MetricsStore {
     return Promise.resolve(this.issueMeta.get(issueId) ?? null);
   }
 
-  queryIssueMeta(projectId: string, limit: number, offset: number): Promise<IssueMetaRow[]> {
-    const rows = [...this.issueMeta.values()]
-      .filter((m) => m.projectId === projectId)
-      .sort((a, b) => a.createdAt - b.createdAt || a.issueId.localeCompare(b.issueId));
-    return Promise.resolve(rows.slice(offset, offset + limit));
+  queryIssueMeta(query: IssueMetaQuery): Promise<IssueMetaRow[]> {
+    const rows = this.matchingIssueMeta(query).sort(
+      (a, b) => a.createdAt - b.createdAt || a.issueId.localeCompare(b.issueId),
+    );
+    const offset = query.offset ?? 0;
+    return Promise.resolve(rows.slice(offset, offset + (query.limit ?? rows.length)));
   }
 
-  countIssueMeta(projectId: string): Promise<number> {
-    return Promise.resolve(
-      [...this.issueMeta.values()].filter((m) => m.projectId === projectId).length,
-    );
+  countIssueMeta(query: IssueMetaQuery): Promise<number> {
+    return Promise.resolve(this.matchingIssueMeta(query).length);
+  }
+
+  /**
+   * The filter half of `queryIssueMeta`, shared with `countIssueMeta` so the
+   * two cannot disagree about which rows match — the same reason the SQL
+   * adapter factors its WHERE clauses into `issueMetaClauses`.
+   */
+  private matchingIssueMeta(query: IssueMetaQuery): IssueMetaRow[] {
+    return [...this.issueMeta.values()].filter((meta) => {
+      if (meta.projectId !== query.projectId) return false;
+      if (query.assigneeAccountIds !== undefined && query.assigneeAccountIds.length > 0) {
+        if (meta.assigneeAccountId === null) return false;
+        if (!query.assigneeAccountIds.includes(meta.assigneeAccountId)) return false;
+      }
+      if (query.issueTypeIds !== undefined && query.issueTypeIds.length > 0) {
+        if (meta.issueTypeId === null) return false;
+        if (!query.issueTypeIds.includes(meta.issueTypeId)) return false;
+      }
+      if (query.createdFrom !== undefined && meta.createdAt < query.createdFrom) return false;
+      if (query.createdTo !== undefined && meta.createdAt >= query.createdTo) return false;
+      return true;
+    });
   }
 
   listProjectStatusIds(projectId: string): Promise<StatusId[]> {

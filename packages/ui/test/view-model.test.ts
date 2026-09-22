@@ -53,7 +53,7 @@ function report(overrides: Partial<StatusReport> = {}): StatusReport {
     },
     issueCount: 1,
     anyTruncated: false,
-    projectIssueCount: 1,
+    matchingIssueCount: 1,
     capped: false,
     ...overrides,
   };

@@ -6,6 +6,7 @@ import {
   type HistoryQuery,
   type HistoryRecord,
   type IndexStateRow,
+  type IssueMetaQuery,
   type IssueMetaRow,
   type MetricsStore,
   type StatusAggregateRow,
@@ -161,7 +162,8 @@ export class SqlMetricsStore implements MetricsStore {
     return row === undefined ? null : issueMetaFromRow(row);
   }
 
-  async queryIssueMeta(projectId: string, limit: number, offset: number): Promise<IssueMetaRow[]> {
+  async queryIssueMeta(query: IssueMetaQuery): Promise<IssueMetaRow[]> {
+    const { clauses, params } = issueMetaClauses(query);
     // LIMIT/OFFSET are inlined, not bound, and that is deliberate: this is the
     // fourth Forge SQL call shape this repository has had to learn is unsafe
     // to assume from the docs rather than confirm live (see `settings.ts` and
@@ -169,18 +171,21 @@ export class SqlMetricsStore implements MetricsStore {
     // a `Math.trunc`ed, range-bound plain integer, so inlining carries no
     // injection risk — the same reasoning `placeholders()` already relies on
     // elsewhere in this file for a parameter *count*.
+    const limit = clampLimit(query.limit ?? 500);
+    const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
-      `SELECT * FROM issue_meta WHERE project_id = ?
-       ORDER BY created_at ASC, issue_id ASC LIMIT ${String(clampLimit(limit))} OFFSET ${String(clampOffset(offset))}`,
-      [projectId],
+      `SELECT * FROM issue_meta WHERE ${clauses.join(' AND ')}
+       ORDER BY created_at ASC, issue_id ASC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
+      params,
     );
     return rows.map(issueMetaFromRow);
   }
 
-  async countIssueMeta(projectId: string): Promise<number> {
+  async countIssueMeta(query: IssueMetaQuery): Promise<number> {
+    const { clauses, params } = issueMetaClauses(query);
     const rows = await this.sql.query<Record<string, unknown>>(
-      'SELECT COUNT(*) AS n FROM issue_meta WHERE project_id = ?',
-      [projectId],
+      `SELECT COUNT(*) AS n FROM issue_meta WHERE ${clauses.join(' AND ')}`,
+      params,
     );
     return toNumber(rows[0]?.['n'] ?? 0);
   }
@@ -415,6 +420,39 @@ function clampOffset(offset: number): number {
  * total can never disagree about which rows match. `limit`/`offset` are not
  * part of a WHERE clause and stay with the callers.
  */
+/**
+ * The WHERE clauses of a report's `issue_meta` filters.
+ *
+ * Shared by `queryIssueMeta` and `countIssueMeta` for the same reason
+ * `worklogClauses` is shared: a page and its total that build their own
+ * predicates can disagree about which rows match, and the report would then
+ * render "500 of 1,234" where neither number describes the other.
+ *
+ * An empty id list is treated as no filter rather than as `IN ()`, which is a
+ * syntax error in MySQL and would match nothing even if it parsed.
+ */
+function issueMetaClauses(query: IssueMetaQuery): { clauses: string[]; params: unknown[] } {
+  const clauses = ['project_id = ?'];
+  const params: unknown[] = [query.projectId];
+  if (query.assigneeAccountIds !== undefined && query.assigneeAccountIds.length > 0) {
+    clauses.push(`assignee_account_id IN (${placeholders(query.assigneeAccountIds.length)})`);
+    params.push(...query.assigneeAccountIds);
+  }
+  if (query.issueTypeIds !== undefined && query.issueTypeIds.length > 0) {
+    clauses.push(`issue_type_id IN (${placeholders(query.issueTypeIds.length)})`);
+    params.push(...query.issueTypeIds);
+  }
+  if (query.createdFrom !== undefined) {
+    clauses.push('created_at >= ?');
+    params.push(query.createdFrom);
+  }
+  if (query.createdTo !== undefined) {
+    clauses.push('created_at < ?');
+    params.push(query.createdTo);
+  }
+  return { clauses, params };
+}
+
 function worklogClauses(query: WorklogQuery): { clauses: string[]; params: unknown[] } {
   const clauses = ['project_id = ?'];
   const params: unknown[] = [query.projectId];

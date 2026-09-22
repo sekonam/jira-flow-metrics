@@ -356,7 +356,7 @@ describe('SqlMetricsStore statement generation', () => {
     // comment on queryIssueMeta for why — so the clamp is asserted there.
     const sql = new RecordingSqlExecutor();
     const store = new SqlMetricsStore(sql);
-    await store.queryIssueMeta('10000', 10_000_000, -5);
+    await store.queryIssueMeta({ projectId: '10000', limit: 10_000_000, offset: -5 });
     expect(sql.statements[0]?.params).toEqual(['10000']);
     expect(sql.sql[0]).toContain('LIMIT 10000 OFFSET 0');
   });
@@ -1092,6 +1092,59 @@ describe('SqlMetricsStore read and write paths not covered above', () => {
     expect(statement.params).toEqual(['10000', 100, 200, 'a', 'b']);
   });
 
+  it('pushes the report filters into the issue_meta WHERE clause', async () => {
+    const sql = new RecordingSqlExecutor();
+    await new SqlMetricsStore(sql).queryIssueMeta({
+      projectId: '10000',
+      assigneeAccountIds: ['a', 'b'],
+      issueTypeIds: ['10002'],
+      createdFrom: 100,
+      createdTo: 200,
+      limit: 25,
+      offset: 5,
+    });
+    const statement = sql.statements[0]!;
+    expect(statement.statement).toContain('assignee_account_id IN (?, ?)');
+    expect(statement.statement).toContain('issue_type_id IN (?)');
+    expect(statement.statement).toContain('created_at >= ?');
+    expect(statement.statement).toContain('created_at < ?');
+    // LIMIT/OFFSET are inlined, not bound — see queryIssueMeta's comment.
+    expect(statement.statement).toContain('LIMIT 25 OFFSET 5');
+    expect(statement.params).toEqual(['10000', 'a', 'b', '10002', 100, 200]);
+  });
+
+  it('counts issue meta through the identical WHERE clause it pages with', async () => {
+    // The page and the total must not build their own predicates: a report
+    // that says "500 of 1,234" where the two halves filter differently is
+    // exactly the silent wrongness TECHNICAL-SPEC § 11.1 is about.
+    const sql = new RecordingSqlExecutor();
+    const store = new SqlMetricsStore(sql);
+    const query = {
+      projectId: '10000',
+      assigneeAccountIds: ['a'],
+      createdFrom: 100,
+    };
+    await store.queryIssueMeta({ ...query, limit: 10 });
+    await store.countIssueMeta(query);
+    const [page, count] = sql.statements;
+    const whereOf = (statement: string): string =>
+      statement.slice(statement.indexOf('WHERE')).split('ORDER BY')[0]!.split('LIMIT')[0]!.trim();
+    expect(whereOf(count!.statement)).toBe(whereOf(page!.statement));
+    expect(count!.params).toEqual(page!.params);
+  });
+
+  it('omits an empty id list rather than emitting `IN ()`, which MySQL refuses', async () => {
+    const sql = new RecordingSqlExecutor();
+    await new SqlMetricsStore(sql).queryIssueMeta({
+      projectId: '10000',
+      assigneeAccountIds: [],
+      issueTypeIds: [],
+    });
+    const statement = sql.statements[0]!;
+    expect(statement.statement).not.toContain('IN ()');
+    expect(statement.params).toEqual(['10000']);
+  });
+
   it('lower-cases history field filters to match how they are stored', async () => {
     const sql = new RecordingSqlExecutor();
     await new SqlMetricsStore(sql).queryHistory({
@@ -1217,7 +1270,7 @@ describe('SqlMetricsStore read and write paths not covered above', () => {
           ];
     });
     const store = new SqlMetricsStore(sql);
-    expect(await store.queryIssueMeta('10000', 10, 0)).toHaveLength(1);
+    expect(await store.queryIssueMeta({ projectId: '10000', limit: 10 })).toHaveLength(1);
     expect(await store.queryStatusDurations({ projectId: '10000' })).toHaveLength(1);
     expect(await store.getStatusMeta()).toHaveLength(0);
   });
