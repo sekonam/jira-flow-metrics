@@ -218,11 +218,29 @@ export function computeRunChart(
   });
 }
 
-/** Inclusive list of `YYYY-MM-DD` keys between two instants, in `timeZone`. */
+/** ~3 years; beyond that a daily chart is unreadable anyway. */
+export const MAX_ENUMERATED_DAYS = 1100;
+
+/** Would {@link enumerateDays} truncate this range? */
+export function enumerateDaysCapped(from: Millis, to: Millis, timeZone: string): boolean {
+  return enumerateDays(from, to, timeZone).length >= MAX_ENUMERATED_DAYS;
+}
+
+/**
+ * Inclusive list of `YYYY-MM-DD` keys between two instants, in `timeZone`.
+ *
+ * ⚠️ Capped at {@link MAX_ENUMERATED_DAYS}. The cap is deliberate — beyond
+ * roughly three years a daily chart is unreadable — but it used to return
+ * the truncation with no way to tell: `enumerateDays` over six years handed
+ * back 1,100 days ending in 2023 and the caller could not distinguish "the
+ * project has three years of history" from "we dropped half your range".
+ * That is the same silent-ceiling shape `StatusReport.capped` exists to
+ * surface, so {@link enumerateDaysCapped} answers it.
+ */
 export function enumerateDays(from: Millis, to: Millis, timeZone: string): string[] {
   if (to < from) return [];
   const days: string[] = [];
-  const MAX_DAYS = 1100; // ~3 years; beyond that a daily chart is unreadable anyway
+  const MAX_DAYS = MAX_ENUMERATED_DAYS;
   let cursor = from;
   let last = '';
   while (cursor <= to && days.length < MAX_DAYS) {

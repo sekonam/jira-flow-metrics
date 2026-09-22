@@ -18,6 +18,7 @@ import {
   computeAging,
   computeRunChart,
   enumerateDays,
+  enumerateDaysCapped,
 } from '../src/metrics/wip-aging.js';
 import { evaluateDueDate, evaluateSla, attainmentRate, type SlaGoal } from '../src/metrics/sla.js';
 import { describeIndexError } from '../src/ingest/backfill.js';
@@ -751,5 +752,82 @@ describe('index errors crossing to the browser', () => {
     );
     expect(leaky).not.toContain('Contoso');
     expect(leaky).toContain('app logs');
+  });
+});
+
+describe('★ engine defects found by audit', () => {
+  it('summarises a large sample instead of overflowing the stack', () => {
+    // `Math.min(...sample)` puts every element on the argument stack, so the
+    // one function whose job is to survive a large sample threw
+    // `RangeError: Maximum call stack size exceeded` on one.
+    const big = Array.from({ length: 200_000 }, (_, i) => i + 1);
+    const summary = summariseDurations(big);
+    expect(summary.minMs).toBe(1);
+    expect(summary.maxMs).toBe(200_000);
+    expect(summary.count).toBe(200_000);
+  });
+
+  it('measures flow efficiency on the same clock as the cycle time beside it', () => {
+    // It ignored `calendar` while `cycleTimeBusinessMs` on the same result
+    // honoured it, so one row could read "26.5 business hours, 41%
+    // efficient" with the 41% computed over nights and weekends.
+    const elapsed = computeCycleTime(reentryTimeline(), TEST_RESOLVER, { now: NOW });
+    const business = computeCycleTime(reentryTimeline(), TEST_RESOLVER, {
+      now: NOW,
+      calendar: UTC_BUSINESS_CALENDAR,
+    });
+    expect(elapsed.flowEfficiency).not.toBeNull();
+    expect(business.flowEfficiency).not.toBeNull();
+    // Nights and weekends count as neither work nor waiting, so the two
+    // answers genuinely differ — which is the point.
+    expect(business.flowEfficiency).not.toBeCloseTo(elapsed.flowEfficiency!, 6);
+  });
+
+  it('groups worklog weeks in the calendar zone its days already use', () => {
+    // An entry at 22:00 UTC with an Asia/Tokyo calendar landed on
+    // 2026-03-02 — a Monday, ISO week 10 — and in week 09.
+    const tokyo = normaliseCalendar(standardBusinessCalendar('Asia/Tokyo'));
+    const record: WorklogRecord = {
+      worklogId: 'w1',
+      issueId: '1',
+      issueKey: 'FLOW-1',
+      projectId: '10000',
+      authorAccountId: 'anna',
+      authorDisplayName: 'Anna',
+      startedAt: T('2026-03-01T22:00:00Z'),
+      timeSpentMs: HOUR,
+      createdAt: null,
+      updatedAt: null,
+    };
+    const day = aggregateWorklogs([record], { groupBy: 'day', timeZone: 'UTC', calendar: tokyo });
+    const week = aggregateWorklogs([record], { groupBy: 'week', timeZone: 'UTC', calendar: tokyo });
+    expect(day.groups[0]?.key).toBe('2026-03-02');
+    expect(week.groups[0]?.key).toBe(isoWeekKey(T('2026-03-01T22:00:00Z'), 'Asia/Tokyo'));
+  });
+
+  it('says when a day range was truncated rather than handing back the truncation', () => {
+    // Six years in, 1,100 days out, and no way to tell that from a project
+    // with three years of history.
+    expect(enumerateDaysCapped(T('2020-01-01T00:00:00Z'), T('2026-01-01T00:00:00Z'), 'UTC')).toBe(
+      true,
+    );
+    expect(enumerateDaysCapped(T('2026-01-01T00:00:00Z'), T('2026-03-01T00:00:00Z'), 'UTC')).toBe(
+      false,
+    );
+  });
+
+  it('orders same-instant history entries numerically, as the timeline does', () => {
+    // Lexicographically, changelog entry 10000 sorts before 9999, so two
+    // listings built from one changelog showed the same two changes in
+    // opposite orders.
+    const at = '2026-03-02T09:00:00.000+0000';
+    const records = toHistoryRecords(
+      [
+        { id: '10000', created: at, items: [{ field: 'status', toString: 'B' }] },
+        { id: '9999', created: at, items: [{ field: 'status', toString: 'A' }] },
+      ],
+      { issueId: '1', issueKey: 'FLOW-1', projectId: '10000' },
+    );
+    expect(records.map((r) => r.changeId)).toEqual(['9999:0', '10000:0']);
   });
 });

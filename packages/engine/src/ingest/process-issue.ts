@@ -214,6 +214,11 @@ export async function processIssue(
     const fetched = await fetchAllWorklogs(issueId, issueKey, projectId, api, config);
     worklogs = fetched.records;
     requests += fetched.requests;
+    // The issue's own `truncated` flag already means "there is more history
+    // than we read" for the changelog; a truncated worklog fetch is the same
+    // statement about the same issue, and the report's "partial history"
+    // lozenge is the right place for both.
+    if (fetched.truncated) truncated = true;
   }
 
   const history = config.datasets.history
@@ -303,16 +308,23 @@ async function fetchAllChangelog(
   return { entries, truncated, requests };
 }
 
+/**
+ * Hard cap on worklog page requests for a single issue. Protects the request
+ * budget against a pathological issue; exceeding it sets `truncated`.
+ */
+const MAX_WORKLOG_REQUESTS = 50;
+
 async function fetchAllWorklogs(
   issueId: string,
   issueKey: string,
   projectId: string,
   api: JiraApi,
   config: IngestConfig,
-): Promise<{ records: WorklogRecord[]; requests: number }> {
+): Promise<{ records: WorklogRecord[]; requests: number; truncated: boolean }> {
   const records: WorklogRecord[] = [];
   let startAt = 0;
   let requests = 0;
+  let truncated = false;
 
   for (;;) {
     const page = await withRetry(
@@ -326,14 +338,19 @@ async function fetchAllWorklogs(
       if (record !== null) records.push(record);
     }
     const total = page.total;
-    if (
-      values.length === 0 ||
-      (typeof total === 'number' && startAt + values.length >= total) ||
-      requests > 50
-    ) {
+    if (values.length === 0 || (typeof total === 'number' && startAt + values.length >= total)) {
+      break;
+    }
+    if (requests > MAX_WORKLOG_REQUESTS) {
+      // Truncated, and said so. `fetchAllChangelog` has always set a
+      // `truncated` flag here; this loop just stopped, so an issue with more
+      // worklogs than the cap allows reported a total that was simply wrong
+      // — 5,100 hours where the truth was 10,000 — with nothing anywhere
+      // marking it as a floor.
+      truncated = true;
       break;
     }
     startAt += values.length;
   }
-  return { records, requests };
+  return { records, requests, truncated };
 }

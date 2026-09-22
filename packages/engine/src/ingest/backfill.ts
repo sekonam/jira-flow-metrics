@@ -233,6 +233,22 @@ export function encodeCursor(
   return encoded;
 }
 
+/**
+ * A cursor marker's instant, or `null` when it carries nothing usable.
+ *
+ * `Number('')` is `0`, and `0` passes `Number.isFinite` — so a cursor
+ * truncated mid-marker (`index_state.backfill_cursor` is `VARCHAR(512)`, and
+ * a long Jira token plus three markers is what would truncate it) decoded to
+ * the epoch. A corrupted-cursor recovery would then reseek bounded at
+ * `1970/01/01 00:00` and re-walk the customer's entire project history, on a
+ * platform that bills by invocation.
+ */
+function parseMarkerInstant(text: string): Millis | null {
+  if (text === '') return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function decodeCursor(raw: string | null): {
   token: string | null;
   skip: number;
@@ -244,15 +260,13 @@ export function decodeCursor(raw: string | null): {
   let attemptedSeek: Millis | null = null;
   const attemptedAt = rest.indexOf(CURSOR_ATTEMPTED_MARKER);
   if (attemptedAt !== -1) {
-    const parsed = Number(rest.slice(attemptedAt + CURSOR_ATTEMPTED_MARKER.length));
-    attemptedSeek = Number.isFinite(parsed) ? parsed : null;
+    attemptedSeek = parseMarkerInstant(rest.slice(attemptedAt + CURSOR_ATTEMPTED_MARKER.length));
     rest = rest.slice(0, attemptedAt);
   }
   let seekFrom: Millis | null = null;
   const seekAt = rest.indexOf(CURSOR_SEEK_MARKER);
   if (seekAt !== -1) {
-    const parsed = Number(rest.slice(seekAt + CURSOR_SEEK_MARKER.length));
-    seekFrom = Number.isFinite(parsed) ? parsed : null;
+    seekFrom = parseMarkerInstant(rest.slice(seekAt + CURSOR_SEEK_MARKER.length));
     rest = rest.slice(0, seekAt);
   }
   const skipAt = rest.indexOf(CURSOR_SKIP_MARKER);

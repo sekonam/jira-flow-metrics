@@ -124,7 +124,14 @@ function clipToWindow(
     // A zero-length *visit* inside the window is retained, because chained
     // transitions are real events the entry count must reflect. A non-empty
     // interval that merely touches the window edge contributes nothing.
-    return interval.end === interval.start ? { start, end } : null;
+    //
+    // "Inside" is half-open, like every other window test here: a chained
+    // transition landing exactly on `window.end` belongs to the next window,
+    // not this one. Without the bound it was counted in both, so an entry
+    // count summed across adjacent windows exceeded the real number of
+    // visits.
+    if (interval.end !== interval.start) return null;
+    return start >= window.start && start < window.end ? { start, end } : null;
   }
   return { start, end };
 }
@@ -144,10 +151,17 @@ export function mostRecentVisitMs(
   for (let i = timeline.intervals.length - 1; i >= 0; i -= 1) {
     const interval = timeline.intervals[i];
     if (interval === undefined || interval.statusId !== statusId) continue;
-    const closed = close(interval, now);
+    // Clipped to the same window `computeTimeInStatus` uses. This function
+    // exists to be shown *beside* the cumulative figure — that comparison is
+    // the product's whole argument — and it accepted a `window` it then
+    // ignored, so a windowed report put a one-hour cumulative next to a
+    // twenty-four-hour "most recent visit" and invited the reader to
+    // conclude the cumulative one was wrong.
+    const measured = clipToWindow(close(interval, now), options.window);
+    if (measured === null) continue;
     return options.calendar === undefined
-      ? duration(closed)
-      : businessMsIn(closed, options.calendar);
+      ? duration(measured)
+      : businessMsIn(measured, options.calendar);
   }
   return 0;
 }

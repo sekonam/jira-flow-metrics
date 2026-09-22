@@ -172,7 +172,12 @@ function bucketOf(
       return { key, label: key };
     }
     case 'week': {
-      const key = isoWeekKey(record.startedAt, timeZone);
+      // The calendar's zone, like `day` and `month` above. Reading the week
+      // in `timeZone` while the day was read in the calendar's put the same
+      // worklog in a day and a week that do not contain each other: an entry
+      // at 22:00 UTC with an Asia/Tokyo calendar landed on 2026-03-02 (a
+      // Monday, week 10) and in week 09.
+      const key = isoWeekKey(record.startedAt, calendar?.timeZone ?? timeZone);
       return { key, label: key };
     }
     case 'month': {

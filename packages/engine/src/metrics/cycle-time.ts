@@ -113,16 +113,28 @@ export function computeCycleTime(
           : businessMsIn(cycleSpan, calendar),
     startedAt,
     completedAt,
-    flowEfficiency: cycleSpan === null ? null : flowEfficiency(timeline, resolver, cycleSpan, now),
+    flowEfficiency:
+      cycleSpan === null ? null : flowEfficiency(timeline, resolver, cycleSpan, now, calendar),
     reopenCount: Math.max(0, doneEntries - 1),
   };
 }
 
+/**
+ * Working time as a share of working-plus-waiting time.
+ *
+ * ★ Measured on the **same clock as the cycle time beside it**. It used to
+ * ignore `calendar` while `cycleTimeBusinessMs` on the same result honoured
+ * it, so one row could read "11 business hours, 11% efficient" where the
+ * business-clock answer was 27% — two numbers on two different clocks,
+ * presented as describing the same issue. Nights and weekends count as
+ * neither work nor waiting once a working calendar is in play.
+ */
 function flowEfficiency(
   timeline: IssueTimeline,
   resolver: StatusCategoryResolver,
   span: ClosedInterval,
   now: Millis,
+  calendar?: WorkingCalendar,
 ): number | null {
   let working = 0;
   let waiting = 0;
@@ -132,8 +144,9 @@ function flowEfficiency(
     const end = Math.min(closed.end, span.end);
     if (end <= start) continue;
     const category = resolver.categoryOf(interval.statusId);
-    if (category === 'inprogress') working += end - start;
-    else if (category === 'todo') waiting += end - start;
+    const measured = calendar === undefined ? end - start : businessMsIn({ start, end }, calendar);
+    if (category === 'inprogress') working += measured;
+    else if (category === 'todo') waiting += measured;
   }
   const total = working + waiting;
   return total === 0 ? null : working / total;
@@ -190,7 +203,11 @@ export function summariseDurations(values: readonly (number | null)[]): Distribu
     medianMs: percentile(sample, 0.5),
     p85Ms: percentile(sample, 0.85),
     p95Ms: percentile(sample, 0.95),
-    minMs: Math.min(...sample),
-    maxMs: Math.max(...sample),
+    // Reduced, not spread. `Math.min(...sample)` puts every element on the
+    // argument stack, and a project-wide summary of 200,000 cycle times
+    // threw `RangeError: Maximum call stack size exceeded` — from the one
+    // function whose whole job is to survive a large sample.
+    minMs: sample.reduce((a, b) => (b < a ? b : a), sample[0]!),
+    maxMs: sample.reduce((a, b) => (b > a ? b : a), sample[0]!),
   };
 }
