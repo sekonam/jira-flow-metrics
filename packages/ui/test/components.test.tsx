@@ -38,6 +38,7 @@ const {
   DEFAULT_SLA_GOAL,
   EmptySurface,
   ErrorSurface,
+  ExtendHistoryControl,
   GadgetConfigForm,
   IndexingBanner,
   LoadingSurface,
@@ -598,6 +599,98 @@ describe('SimpleReportTable', () => {
     );
     expect(screen.getByText('FLOW-1').tagName).toBe('STRONG');
     expect(screen.getByText('9 Mar 2026 12:00').tagName).not.toBe('STRONG');
+  });
+});
+
+describe('ExtendHistoryControl', () => {
+  it('reads nothing until it is opened', () => {
+    // On a consumption-priced platform a control almost nobody opens must
+    // not put a resolver call on every page load.
+    const onLoad = vi.fn();
+    render(<ExtendHistoryControl onLoad={onLoad} onExtend={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Extend history' })).toBeTruthy();
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+
+  it('names the range in force and offers only wider ones', async () => {
+    const onLoad = vi.fn().mockResolvedValue({ months: 36 });
+    render(<ExtendHistoryControl onLoad={onLoad} onExtend={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    const dialog = await screen.findByRole('dialog');
+
+    expect(within(dialog).getByText(/last 3 years/)).toBeTruthy();
+    fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'ArrowDown' });
+    expect(within(dialog).getByText('Last 5 years')).toBeTruthy();
+    expect(within(dialog).getByText('All history')).toBeTruthy();
+    expect(within(dialog).queryByText('Last 12 months')).toBeNull();
+  });
+
+  it('says what re-indexing will do before it does it', async () => {
+    // It spends the installation's Jira requests and Forge invocations, so
+    // it must not be something a customer sets off by accident.
+    render(
+      <ExtendHistoryControl
+        onLoad={vi.fn().mockResolvedValue({ months: 12 })}
+        onExtend={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/read from Jira again/)).toBeTruthy();
+    await expectNoA11yViolations();
+  });
+
+  it('submits the chosen range and closes', async () => {
+    const onExtend = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ExtendHistoryControl
+        onLoad={vi.fn().mockResolvedValue({ months: 12 })}
+        onExtend={onExtend}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(within(dialog).getByText('Last 2 years'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Re-index' }));
+
+    await waitFor(() => {
+      expect(onExtend).toHaveBeenCalledWith(24);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+  });
+
+  it('keeps the dialog open and shows the refusal when the resolver says no', async () => {
+    const onExtend = vi.fn().mockRejectedValue(new Error('already indexed over a longer history'));
+    render(
+      <ExtendHistoryControl
+        onLoad={vi.fn().mockResolvedValue({ months: 12 })}
+        onExtend={onExtend}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(within(dialog).getByText('All history'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Re-index' }));
+
+    expect(await within(dialog).findByText(/already indexed over a longer history/)).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('offers no action once all history is already indexed', async () => {
+    render(
+      <ExtendHistoryControl
+        onLoad={vi.fn().mockResolvedValue({ months: null })}
+        onExtend={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/nothing further to extend/)).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Re-index' })).toBeNull();
   });
 });
 

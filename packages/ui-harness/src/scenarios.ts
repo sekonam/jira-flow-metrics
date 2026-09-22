@@ -4,6 +4,7 @@ import {
   handleGetReport,
   handleIndexProgress,
   handleHistoryReport,
+  handleHistoryWindow,
   handleListStatuses,
   handleSlaReport,
   handleWorklogReport,
@@ -42,6 +43,7 @@ export type ResolverKey =
   | 'getHistoryReport'
   | 'listStatuses'
   | 'exportCsv'
+  | 'getHistoryWindow'
   | 'startIndexing';
 
 /** Everything the five frontends can ask for, in one JSON-serialisable object. */
@@ -131,6 +133,9 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
     // Produced by the real exporter, like everything else here, so the modal
     // shows the CSV a user would actually get rather than a sample of one.
     exportCsv: await handleExportCsv(runtime, INVOCATION),
+    // The "extend history" control's current range. Read only when the
+    // control is opened, so no screen fetches it on load.
+    getHistoryWindow: await handleHistoryWindow(runtime, INVOCATION),
     startIndexing: { ok: true, data: { started: true } },
   };
 }
@@ -199,6 +204,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getHistoryReport',
   'listStatuses',
   'exportCsv',
+  'getHistoryWindow',
   'startIndexing',
 ];
 

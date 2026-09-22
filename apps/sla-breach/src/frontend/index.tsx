@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import ForgeReconciler, { Stack } from '@forge/react';
+import ForgeReconciler, { Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
 import type { SlaReport } from '@jfm/forge-runtime';
 import type { BackfillProgress, StatusMetaRow } from '@jfm/engine';
@@ -8,6 +8,7 @@ import {
   DEFAULT_SLA_GOAL,
   EmptySurface,
   ErrorSurface,
+  ExtendHistoryControl,
   IndexingBanner,
   LoadingSurface,
   PageHeader,
@@ -106,6 +107,29 @@ export const App = (): React.JSX.Element => {
     return result.data;
   }, [goal]);
 
+  /**
+   * The "extend history" control's two calls. Both are made only when the
+   * control is opened, so a reader who never opens it pays for neither.
+   */
+  const loadHistoryWindow = useCallback(async () => {
+    const result = (await invoke('getHistoryWindow', {})) as Result<{ months: number | null }>;
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
+  }, []);
+
+  const extendHistory = useCallback(
+    async (months: number | null) => {
+      const result = (await invoke('extendHistory', { months })) as Result<{
+        months: number | null;
+      }>;
+      if (!result.ok) throw new Error(result.error);
+      // Re-indexing has just started; reload so the banner shows it rather
+      // than leaving the page claiming the index is complete.
+      await load(goal);
+    },
+    [load, goal],
+  );
+
   useEffect(() => {
     void load(goal);
   }, [goal, load]);
@@ -123,7 +147,12 @@ export const App = (): React.JSX.Element => {
       <PageHeader
         title="SLA & Due Dates"
         subtitle="Working time against a target, plus plain due-date breaches."
-        actions={<CsvExport onRequestCsv={requestCsv} />}
+        actions={
+          <Inline space="space.100">
+            <CsvExport onRequestCsv={requestCsv} />
+            <ExtendHistoryControl onLoad={loadHistoryWindow} onExtend={extendHistory} />
+          </Inline>
+        }
       />
 
       {/*

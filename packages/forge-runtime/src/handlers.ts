@@ -353,6 +353,91 @@ export async function handleListStatuses(
 }
 
 /**
+ * Windows the "extend history" control offers, in months. `null` — all
+ * history — is offered separately and is always the widest.
+ *
+ * `parseSettings` clamps `backfillMonths` to 1-120, so 120 is the largest
+ * bounded window that can survive a round trip through storage.
+ */
+export const HISTORY_WINDOW_MONTHS: readonly number[] = [12, 24, 36, 60, 120];
+
+export const NARROWER_HISTORY =
+  'This project is already indexed over a longer history. Narrowing the window would leave ' +
+  'the older data in place while the page claimed a shorter range, so it is not offered.';
+
+export const UNUSABLE_HISTORY_WINDOW =
+  'That is not a history window this app offers. Choose one of the listed ranges.';
+
+/**
+ * The history window a client may ask for: one of `HISTORY_WINDOW_MONTHS`, or
+ * `null` for all history. Anything else — including a plausible-looking 18 —
+ * is refused rather than clamped, because silently indexing a different range
+ * from the one the user picked is the failure mode this product is sold
+ * against.
+ */
+export function parseHistoryWindow(payload: unknown): number | null | 'unusable' {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  const months = record['months'];
+  if (months === null) return null;
+  if (typeof months === 'number' && HISTORY_WINDOW_MONTHS.includes(months)) return months;
+  return 'unusable';
+}
+
+/** The project's current indexed-history window, for the extend-history control. */
+export async function handleHistoryWindow(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<{ months: number | null }>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  try {
+    return { ok: true, data: await runtime.historyWindow(auth.projectId) };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
+ * Widen the indexed-history window and re-index.
+ *
+ * Authorised exactly like `startIndexing`, and for the same reason: both
+ * spend the installation's Jira requests and Forge invocations on behalf of
+ * whoever clicks. Neither is an admin action in Jira's model — there is no
+ * project-admin permission this app holds a scope to check — so the honest
+ * position is that anyone who can read the report can also re-index it, and
+ * the control says what it is about to do before it does it.
+ *
+ * Only widening is accepted. A narrower window would not delete the older
+ * rows already stored, so the report would keep showing history the page
+ * claimed was out of range.
+ */
+export async function handleExtendHistory(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<{ months: number | null }>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const requested = parseHistoryWindow(invocation.payload);
+  if (requested === 'unusable') return { ok: false, error: UNUSABLE_HISTORY_WINDOW };
+  try {
+    const current = (await runtime.historyWindow(auth.projectId)).months;
+    // `null` is the widest window there is, so it is always accepted and
+    // never narrowed away from.
+    if (current === null && requested !== null) return { ok: false, error: NARROWER_HISTORY };
+    if (current !== null && requested !== null && requested <= current) {
+      return { ok: false, error: NARROWER_HISTORY };
+    }
+    await runtime.setHistoryWindow(auth.projectId, requested);
+    return { ok: true, data: { months: requested } };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
  * Product-event handler for `avi:jira:created|updated|deleted:issue`.
  *
  * Failures are swallowed after logging: a thrown error makes Forge retry the

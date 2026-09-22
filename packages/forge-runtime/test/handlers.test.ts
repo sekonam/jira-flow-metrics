@@ -15,6 +15,8 @@ import { ListingRuntime } from '../src/runtime.js';
 import {
   handleAgingReport,
   handleBackfillJob,
+  handleExtendHistory,
+  handleHistoryWindow,
   handleHistoryReport,
   handleSlaReport,
   handleWorklogReport,
@@ -24,8 +26,11 @@ import {
   handleListProjects,
   handleStartIndexing,
   handleStorageEstimate,
+  NARROWER_HISTORY,
   NOT_IN_PROJECT,
   NO_PERMISSION,
+  UNUSABLE_HISTORY_WINDOW,
+  parseHistoryWindow,
   parseReportRequest,
   projectIdFromContext,
   projectIdFromEvent,
@@ -577,5 +582,171 @@ describe('untrusted payload limits', () => {
       payload: { projectId: 'SOMEONE-ELSES-PROJECT' },
     });
     expect(projects).toEqual(['10000']);
+  });
+});
+
+/**
+ * A settings executor that actually remembers what was written.
+ *
+ * `RecordingSqlExecutor` answers every SELECT with no rows, which is right
+ * for statement-shape assertions and useless here: extending the history
+ * window is a write followed by a read, and the whole point is that the
+ * second sees the first.
+ */
+class StatefulSettingsSql extends RecordingSqlExecutor {
+  private readonly rows = new Map<string, string>();
+
+  override query<T>(statement: string, params: readonly unknown[] = []): Promise<T[]> {
+    void super.query(statement, params);
+    if (!statement.includes('app_settings')) return Promise.resolve([]);
+    const found = params
+      .filter((p): p is string => typeof p === 'string')
+      .flatMap((scope) => {
+        const settings = this.rows.get(scope);
+        return settings === undefined ? [] : [{ scope_key: scope, settings }];
+      });
+    return Promise.resolve(found as T[]);
+  }
+
+  override execute(statement: string, params: readonly unknown[] = []): Promise<void> {
+    void super.execute(statement, params);
+    if (statement.includes('app_settings')) {
+      this.rows.set(String(params[0]), String(params[1]));
+    }
+    return Promise.resolve();
+  }
+}
+
+function buildWithSettings() {
+  const built = build();
+  // Same runtime, but with a settings store that persists. Rebuilt rather
+  // than mutated so the other suites keep the cheap recording executor.
+  const sql = new StatefulSettingsSql();
+  const runtime = new ListingRuntime(
+    {
+      api: built.jira,
+      store: built.store,
+      settings: new SettingsStore(sql),
+      scheduler: {
+        enqueueBackfill: (job) => {
+          built.jobs.push(job);
+          return Promise.resolve();
+        },
+      },
+      sleeper: { sleep: () => Promise.resolve() },
+      clock: { now: () => Date.parse('2026-03-06T00:00:00Z') },
+    },
+    { listingId: 'time-in-status', datasets: DATASETS_TIME_IN_STATUS },
+  );
+  return { ...built, runtime, sql };
+}
+
+describe('the history window — ROADMAP stage 5, "extend history beyond 12 months"', () => {
+  it('parses only the windows the app offers', () => {
+    expect(parseHistoryWindow({ months: 24 })).toBe(24);
+    expect(parseHistoryWindow({ months: null })).toBe(null);
+    // 18 is plausible and is not offered. Clamping it to the nearest listed
+    // window would index a different range from the one the user chose,
+    // which is the class of quiet difference this product is sold against.
+    expect(parseHistoryWindow({ months: 18 })).toBe('unusable');
+    expect(parseHistoryWindow({ months: 'twelve' })).toBe('unusable');
+    expect(parseHistoryWindow({})).toBe('unusable');
+    expect(parseHistoryWindow(null)).toBe('unusable');
+  });
+
+  it('reports the default twelve-month window before anything has been changed', async () => {
+    const { runtime } = buildWithSettings();
+    const result = await handleHistoryWindow(runtime, { context: CONTEXT });
+    expect(result).toEqual({ ok: true, data: { months: 12 } });
+  });
+
+  it('widens the window, persists it, and restarts the backfill', async () => {
+    const { runtime, jobs } = buildWithSettings();
+    const result = await handleExtendHistory(runtime, {
+      context: CONTEXT,
+      payload: { months: 36 },
+    });
+    expect(result).toEqual({ ok: true, data: { months: 36 } });
+    // Persisted: the next read sees it, which is what makes the next
+    // backfill slice use the new bound.
+    expect(await handleHistoryWindow(runtime, { context: CONTEXT })).toEqual({
+      ok: true,
+      data: { months: 36 },
+    });
+    // And re-indexing actually started, rather than the setting quietly
+    // applying to some future backfill nobody triggers.
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.projectId).toBe('10000');
+  });
+
+  it('refuses to narrow the window, and does not start a backfill', async () => {
+    const { runtime, jobs } = buildWithSettings();
+    await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: 60 } });
+    jobs.length = 0;
+    const narrowed = await handleExtendHistory(runtime, {
+      context: CONTEXT,
+      payload: { months: 24 },
+    });
+    // Narrowing would not delete the rows already stored, so the report
+    // would keep showing history the page claimed was out of range.
+    expect(narrowed).toEqual({ ok: false, error: NARROWER_HISTORY });
+    expect(jobs).toHaveLength(0);
+    expect(await handleHistoryWindow(runtime, { context: CONTEXT })).toEqual({
+      ok: true,
+      data: { months: 60 },
+    });
+  });
+
+  it('refuses to re-apply the window already in force', async () => {
+    const { runtime, jobs } = buildWithSettings();
+    const same = await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: 12 } });
+    expect(same).toEqual({ ok: false, error: NARROWER_HISTORY });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('treats all-history as the widest window there is', async () => {
+    const { runtime } = buildWithSettings();
+    expect(
+      await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: null } }),
+    ).toEqual({ ok: true, data: { months: null } });
+    // Nothing is wider, so every bounded window is now a narrowing.
+    expect(
+      await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: 120 } }),
+    ).toEqual({ ok: false, error: NARROWER_HISTORY });
+  });
+
+  it('refuses an unlisted window before touching settings or the queue', async () => {
+    const { runtime, jobs } = buildWithSettings();
+    const result = await handleExtendHistory(runtime, {
+      context: CONTEXT,
+      payload: { months: 18 },
+    });
+    expect(result).toEqual({ ok: false, error: UNUSABLE_HISTORY_WINDOW });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('refuses both calls to a caller who cannot browse the project', async () => {
+    const { runtime, jira, jobs } = buildWithSettings();
+    jira.canBrowse = false;
+    expect(await handleHistoryWindow(runtime, { context: CONTEXT })).toEqual({
+      ok: false,
+      error: NO_PERMISSION,
+    });
+    expect(
+      await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: 24 } }),
+    ).toEqual({ ok: false, error: NO_PERMISSION });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('refuses both calls outside a project context', async () => {
+    const { runtime } = buildWithSettings();
+    expect(await handleHistoryWindow(runtime, { context: {} })).toEqual({
+      ok: false,
+      error: NOT_IN_PROJECT,
+    });
+    expect(await handleExtendHistory(runtime, { context: {}, payload: { months: 24 } })).toEqual({
+      ok: false,
+      error: NOT_IN_PROJECT,
+    });
   });
 });

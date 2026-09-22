@@ -6,6 +6,7 @@ import {
   CsvExport,
   EmptySurface,
   ErrorSurface,
+  ExtendHistoryControl,
   IndexingBanner,
   LoadingSurface,
   PageHeader,
@@ -72,6 +73,29 @@ export const App = (): React.JSX.Element => {
     return result.data;
   }, [basis]);
 
+  /**
+   * The "extend history" control's two calls. Both are made only when the
+   * control is opened, so a reader who never opens it pays for neither.
+   */
+  const loadHistoryWindow = useCallback(async () => {
+    const result = (await invoke('getHistoryWindow', {})) as Result<{ months: number | null }>;
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
+  }, []);
+
+  const extendHistory = useCallback(
+    async (months: number | null) => {
+      const result = (await invoke('extendHistory', { months })) as Result<{
+        months: number | null;
+      }>;
+      if (!result.ok) throw new Error(result.error);
+      // Re-indexing has just started; reload so the banner shows it rather
+      // than leaving the page claiming the index is complete.
+      await load(basis);
+    },
+    [load, basis],
+  );
+
   useEffect(() => {
     void load(basis);
   }, [basis, load]);
@@ -107,6 +131,7 @@ export const App = (): React.JSX.Element => {
               Working hours
             </Button>
             <CsvExport onRequestCsv={requestCsv} />
+            <ExtendHistoryControl onLoad={loadHistoryWindow} onExtend={extendHistory} />
           </ButtonGroup>
         }
       />

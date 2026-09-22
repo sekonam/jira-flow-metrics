@@ -313,6 +313,46 @@ export class ListingRuntime {
     };
   }
 
+  /**
+   * The project's indexed-history window, in months. `null` means all history.
+   *
+   * Its own resolver rather than a field on the report envelope, and read
+   * only when the user opens the control that needs it: every page load pays
+   * for what the envelope carries, on a consumption-priced platform, and
+   * almost nobody opens this.
+   */
+  async historyWindow(projectId: string): Promise<{ months: number | null }> {
+    const settings = await this.deps.settings.get(projectId);
+    return { months: settings.backfillMonths };
+  }
+
+  /**
+   * Widen the indexed-history window and re-index the project.
+   *
+   * ROADMAP stage 5, "extend history beyond 12 months". The backfill has
+   * always taken its lower bound from `settings.backfillMonths` — twelve
+   * months by default, to keep a first backfill bounded on a large instance —
+   * and nothing could change it, so the mitigation the settings docstring
+   * promised did not exist.
+   *
+   * Writes the setting, then restarts the backfill from scratch. Not a
+   * partial "fetch only the older part": Jira's enhanced search pages forward
+   * from a bound and ingestion is idempotent (`putIssueAggregate` replaces an
+   * issue's rows outright), so re-reading the newer issues costs requests but
+   * cannot produce a wrong number. A resumable older-only pass would need its
+   * own cursor state and its own failure modes to save those requests, which
+   * is not a trade worth making before a customer asks.
+   */
+  async setHistoryWindow(projectId: string, months: number | null): Promise<void> {
+    const settings = await this.deps.settings.get(projectId);
+    await this.deps.settings.put(
+      projectId,
+      { ...settings, backfillMonths: months },
+      this.clock.now(),
+    );
+    await this.startBackfill(projectId);
+  }
+
   /** Projects the calling user may browse — the dashboard gadget's picker. */
   async listProjects(): Promise<readonly JiraProjectRef[]> {
     return this.deps.api.listProjects();

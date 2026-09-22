@@ -334,3 +334,55 @@ export function toHistoryChartData(report: HistoryReport): ChartPoint[] {
     .slice(0, CHART_CATEGORY_LIMIT)
     .map((field) => ({ label: field.fieldLabel, value: field.changes }));
 }
+
+// -------------------------------------------------- the history window ---
+
+/**
+ * Windows the "extend history" control offers. Mirrors
+ * `HISTORY_WINDOW_MONTHS` in `@jfm/forge-runtime`, which is what actually
+ * accepts or refuses the value — `@jfm/ui` must not depend on the runtime for
+ * a constant, and a resolver must never trust a list the client sent anyway.
+ */
+export const HISTORY_WINDOW_MONTHS: readonly number[] = [12, 24, 36, 60, 120];
+
+export interface HistoryWindowOption {
+  readonly label: string;
+  /** `String(months)`, or `all`. Parsed back by `parseHistoryWindowValue`. */
+  readonly value: string;
+}
+
+/** How a window reads on screen. `null` is all history. */
+export function describeHistoryWindow(months: number | null): string {
+  if (months === null) return 'All history';
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return years === 1 ? 'Last 12 months' : `Last ${years} years`;
+  }
+  return `Last ${months} months`;
+}
+
+/**
+ * The windows offered given the one in force — wider ones only.
+ *
+ * Narrowing is not offered because it would not delete the rows already
+ * stored: the report would keep showing history the page claimed was out of
+ * range. The resolver refuses it too; this just keeps the control from
+ * offering what it knows will be refused.
+ */
+export function historyWindowOptions(current: number | null): HistoryWindowOption[] {
+  if (current === null) return [];
+  return [
+    ...HISTORY_WINDOW_MONTHS.filter((months) => months > current).map((months) => ({
+      label: describeHistoryWindow(months),
+      value: String(months),
+    })),
+    { label: describeHistoryWindow(null), value: 'all' },
+  ];
+}
+
+/** `all` → `null`; a listed month count → that number; anything else → `undefined`. */
+export function parseHistoryWindowValue(value: string): number | null | undefined {
+  if (value === 'all') return null;
+  const months = Number(value);
+  return HISTORY_WINDOW_MONTHS.includes(months) ? months : undefined;
+}

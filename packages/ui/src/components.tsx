@@ -33,6 +33,9 @@ import type {
 } from './view-model.js';
 import {
   SLA_TARGET_OPTIONS,
+  describeHistoryWindow,
+  historyWindowOptions,
+  parseHistoryWindowValue,
   toggleCountedStatus,
   type SimpleTable,
   type SlaGoalChoice,
@@ -453,6 +456,147 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
         </Text>
       ))}
     </Stack>
+  );
+}
+
+/**
+ * The "extend history" control.
+ *
+ * A backfill covers twelve months by default, to keep a first index bounded
+ * on a large instance. Until now nothing could change that, so the "extend
+ * history once the initial pass is complete" mitigation the settings
+ * docstring has always promised did not exist.
+ *
+ * It loads the current window only when opened, not on every page render:
+ * almost nobody opens it, and on a consumption-priced platform a field on the
+ * report envelope would be paid for by every reader of every page.
+ *
+ * The modal states what pressing the button does — re-read this project from
+ * Jira, from the beginning — because it spends the installation's Jira
+ * requests and its Forge invocations, and a control that quietly does that is
+ * not one a customer should meet by accident.
+ */
+export function ExtendHistoryControl({
+  onLoad,
+  onExtend,
+}: {
+  onLoad: () => Promise<{ months: number | null }>;
+  onExtend: (months: number | null) => Promise<void>;
+}): React.JSX.Element {
+  const [open, setOpen] = React.useState(false);
+  const [current, setCurrent] = React.useState<number | null | undefined>(undefined);
+  const [chosen, setChosen] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const close = React.useCallback(() => {
+    setOpen(false);
+    setError(null);
+    setChosen(null);
+  }, []);
+
+  const load = React.useCallback(() => {
+    setOpen(true);
+    setError(null);
+    setCurrent(undefined);
+    onLoad()
+      .then((window) => {
+        setCurrent(window.months);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'The current range could not be read.');
+      });
+  }, [onLoad]);
+
+  const submit = React.useCallback(() => {
+    if (chosen === null) return;
+    const months = parseHistoryWindowValue(chosen);
+    if (months === undefined) {
+      setError('Choose one of the listed ranges.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    onExtend(months)
+      .then(close)
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'The range could not be changed.');
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }, [chosen, close, onExtend]);
+
+  const options = current === undefined || current === null ? [] : historyWindowOptions(current);
+
+  return (
+    <>
+      <Button onClick={load}>Extend history</Button>
+      <ModalTransition>
+        {open && (
+          <Modal onClose={close}>
+            <ModalHeader>
+              <ModalTitle>Extend indexed history</ModalTitle>
+            </ModalHeader>
+            <ModalBody>
+              {current === undefined && error === null ? (
+                <LoadingSurface label="Reading the current range" />
+              ) : (
+                <Stack space="space.150">
+                  <Text>
+                    This project is indexed over{' '}
+                    <Strong>{describeHistoryWindow(current ?? null).toLowerCase()}</Strong>.
+                  </Text>
+                  {options.length === 0 ? (
+                    <Text>
+                      All available history is already indexed. There is nothing further to extend.
+                    </Text>
+                  ) : (
+                    <>
+                      <Label labelFor="extend-history-range">New range</Label>
+                      <Select
+                        inputId="extend-history-range"
+                        options={options}
+                        placeholder="Choose a range"
+                        isDisabled={busy}
+                        onChange={(option) => {
+                          const value = (option as { value?: string } | null)?.value;
+                          setChosen(value ?? null);
+                        }}
+                      />
+                      <Text size="small">
+                        Re-indexes this project from the beginning: every issue in the new range is
+                        read from Jira again. Reports stay readable while it runs and the banner
+                        shows progress. Figures cannot change except by covering more history —
+                        indexing replaces an issue&apos;s stored rows rather than adding to them.
+                      </Text>
+                    </>
+                  )}
+                  {error !== null && (
+                    <SectionMessage title="Could not extend the range" appearance="error">
+                      <Text>{error}</Text>
+                    </SectionMessage>
+                  )}
+                </Stack>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button onClick={close}>Cancel</Button>
+              {options.length === 0 ? null : (
+                <LoadingButton
+                  appearance="primary"
+                  isLoading={busy}
+                  isDisabled={chosen === null}
+                  onClick={submit}
+                >
+                  Re-index
+                </LoadingButton>
+              )}
+            </ModalFooter>
+          </Modal>
+        )}
+      </ModalTransition>
+    </>
   );
 }
 

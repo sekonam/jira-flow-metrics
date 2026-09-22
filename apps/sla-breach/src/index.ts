@@ -2,7 +2,9 @@ import Resolver from '@forge/resolver';
 import {
   handleBackfillJob,
   handleExportCsv,
+  handleExtendHistory,
   handleGetReport,
+  handleHistoryWindow,
   handleIndexProgress,
   handleIssueEvent,
   handleListProjects,
@@ -35,6 +37,10 @@ resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), r
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
+// The "extend history" control. Both are read only when the control is
+// opened, so a page that nobody extends pays nothing for it.
+resolver.define('getHistoryWindow', (req) => handleHistoryWindow(getRuntime(), req));
+resolver.define('extendHistory', (req) => handleExtendHistory(getRuntime(), req));
 
 resolver.define('getSlaReport', (req) => handleSlaReport(getRuntime(), req));
 // The goal picker's options: statuses the store has seen for this instance.

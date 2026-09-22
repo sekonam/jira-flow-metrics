@@ -4,6 +4,9 @@ import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
 import {
   CHART_CATEGORY_LIMIT,
   DEFAULT_SLA_GOAL,
+  describeHistoryWindow,
+  historyWindowOptions,
+  parseHistoryWindowValue,
   toAgingChartData,
   toAgingTable,
   toAgingTiles,
@@ -352,5 +355,38 @@ describe('chart series', () => {
 
   it('plots history changes per field, busiest first', () => {
     expect(toHistoryChartData(history)).toEqual([{ label: 'status', value: 1 }]);
+  });
+});
+
+describe('the history window', () => {
+  it('reads as years once the months divide evenly', () => {
+    expect(describeHistoryWindow(12)).toBe('Last 12 months');
+    expect(describeHistoryWindow(24)).toBe('Last 2 years');
+    expect(describeHistoryWindow(120)).toBe('Last 10 years');
+    expect(describeHistoryWindow(null)).toBe('All history');
+  });
+
+  it('offers only wider windows, plus all history', () => {
+    // Narrowing is not offered because it would not delete the rows already
+    // stored — the report would keep showing history the page claimed was
+    // out of range. The resolver refuses it too.
+    expect(historyWindowOptions(36).map((o) => o.label)).toEqual([
+      'Last 5 years',
+      'Last 10 years',
+      'All history',
+    ]);
+  });
+
+  it('offers nothing once all history is already indexed', () => {
+    expect(historyWindowOptions(null)).toEqual([]);
+  });
+
+  it('round-trips the values the Select carries', () => {
+    expect(parseHistoryWindowValue('all')).toBe(null);
+    expect(parseHistoryWindowValue('24')).toBe(24);
+    // Not an offered window, so not accepted — matching the resolver, which
+    // is what actually decides.
+    expect(parseHistoryWindowValue('18')).toBeUndefined();
+    expect(parseHistoryWindowValue('')).toBeUndefined();
   });
 });
