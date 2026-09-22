@@ -126,6 +126,19 @@ const GadgetView = (): React.JSX.Element => {
       <Heading as="h3">Time in Status</Heading>
       <SummaryTiles tiles={toSummaryTiles(envelope.report).slice(0, 4)} />
       {/*
+        A capped report must say so here too. Each of these files says a
+        gadget is "often the only surface someone who did not install the app
+        ever sees" — and only the indexing half of that was implemented, so a
+        dashboard could publish an attainment percentage over a 500-issue
+        slice of a 5,000-issue project with no qualifier at all.
+      */}
+      {envelope.report.capped ? (
+        <Text size="small">
+          Covering {envelope.report.issueCount} of {envelope.report.matchingIssueCount} issues, so
+          every figure here is a lower bound.
+        </Text>
+      ) : null}
+      {/*
         Read from `progress`, not from `envelope.partial`. `partial` also folds
         in per-row changelog truncation across the *returned page*, so what it
         answers depends on the page size it was asked for. The gadget's claim

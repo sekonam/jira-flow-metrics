@@ -20,6 +20,7 @@ import {
   toAgingTable,
   toAgingTiles,
   toCapBanner,
+  toReadCapBanner,
   toFlowChartData,
   toProgressBanner,
 } from '@jfm/ui';
@@ -198,11 +199,17 @@ export const App = (): React.JSX.Element => {
                 report, and it said so nowhere: every other report in the
                 product renders `toCapBanner` and this one quietly did not.
               */}
+              {/*
+                `toReadCapBanner`, not `toCapBanner`: the flow report has no
+                honest denominator — `issueCount` counts what was read, not
+                what exists — and passing it as both halves produced the
+                flatly self-contradicting "Report capped at 412 of 412
+                issues".
+              */}
               <IndexingBanner
-                banner={toCapBanner({
+                banner={toReadCapBanner({
                   capped: flow.capped,
                   included: flow.issueCount,
-                  total: flow.issueCount,
                   noun: 'issues',
                 })}
               />

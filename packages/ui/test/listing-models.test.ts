@@ -630,3 +630,47 @@ describe('the admin storage view models', () => {
     expect(tiles[1]?.value).toBe('0');
   });
 });
+
+describe('★ tiles that must not contradict the data beside them', () => {
+  it('never rounds attainment up to 100% while a breach is on screen', () => {
+    // 498 of 500 met is 99.6%, and `Math.round` made that "Attainment 100%"
+    // sitting directly beside "Breached 2" — two tiles on one row stating
+    // incompatible things about the same issues, in the healthy case rather
+    // than an edge one.
+    const almost = toSlaTiles({
+      ...sla,
+      rows: sla.rows,
+      attainment: 0.996,
+      breachedCount: 2,
+    });
+    expect(almost[0]?.value).toBe('99%');
+
+    // 100% is reserved for exactly what it claims.
+    const clean = toSlaTiles({ ...sla, attainment: 1, breachedCount: 0 });
+    expect(clean[0]?.value).toBe('100%');
+  });
+
+  it('counts every matching change, not just the page, in the Changes tile', () => {
+    // `report.total` is documented as "changes on this page", and using it
+    // here put "Changes 3" directly under a banner reading "Report capped at
+    // 3 of 3,000 changes".
+    const capped = toHistoryTiles({ ...history, total: 3, totalMatching: 3000, capped: true });
+    expect(capped[0]?.value).toBe('3000');
+    expect(capped[0]?.hint).toContain('cover 3 of them');
+
+    // Uncapped, the hint stays the plain sentence.
+    expect(toHistoryTiles(history)[0]?.hint).toBe('Field changes in the selected range.');
+  });
+
+  it('shows the working-hours ageing column its own footnote promises', () => {
+    // `ageInStatusBusinessMs` was populated, the footnote said it "is shown
+    // separately rather than blended in", and the only place it appeared was
+    // the CSV — so a reader following the footnote hunted a column that did
+    // not exist.
+    const table = toAgingTable(aging);
+    expect(table.headers).toContain('Working hours');
+    const column = table.headers.indexOf('Working hours');
+    expect(table.rows[0]?.[column]).toBe('30h');
+    expect(table.footnotes.join(' ')).toContain('shown separately');
+  });
+});

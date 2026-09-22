@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import ForgeReconciler, { Heading, Stack, Text } from '@forge/react';
 import { invoke, view } from '@forge/bridge';
-import { NOT_IN_PROJECT } from '@jfm/forge-runtime';
-import type { BackfillProgress, JiraProjectRef, WorklogAggregateResult } from '@jfm/engine';
+import { NOT_IN_PROJECT, type WorklogReport } from '@jfm/forge-runtime';
+import type { BackfillProgress, JiraProjectRef } from '@jfm/engine';
 import {
   ErrorSurface,
   GadgetConfigForm,
@@ -75,7 +75,7 @@ const GadgetEdit = (): React.JSX.Element => {
 
 /** View mode: the report itself, for whichever project was configured. */
 const GadgetView = (): React.JSX.Element => {
-  const [report, setReport] = useState<WorklogAggregateResult | null>(null);
+  const [report, setReport] = useState<WorklogReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [partial, setPartial] = useState(false);
@@ -84,7 +84,7 @@ const GadgetView = (): React.JSX.Element => {
     let cancelled = false;
     void (async () => {
       try {
-        const result = (await invoke('getWorklogReport', {})) as Result<WorklogAggregateResult>;
+        const result = (await invoke('getWorklogReport', {})) as Result<WorklogReport>;
         if (cancelled) return;
         if (result.ok) setReport(result.data);
         else setError(result.error);
@@ -137,6 +137,19 @@ const GadgetView = (): React.JSX.Element => {
     <Stack space="space.150">
       <Heading as="h3">Worklog Reports</Heading>
       <SummaryTiles tiles={toWorklogTiles(report)} />
+      {/*
+        A capped report must say so here too. Each of these files says a
+        gadget is "often the only surface someone who did not install the app
+        ever sees" — and only the indexing half of that was implemented, so a
+        dashboard could publish an attainment percentage over a 500-issue
+        slice of a 5,000-issue project with no qualifier at all.
+      */}
+      {report.capped ? (
+        <Text size="small">
+          Covering {report.entries} of {report.totalEntries} worklog entries, so every figure here
+          is a lower bound.
+        </Text>
+      ) : null}
       {partial ? <Text size="small">Indexing is still in progress.</Text> : null}
     </Stack>
   );

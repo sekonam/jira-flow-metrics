@@ -96,11 +96,17 @@ export function toWorklogTiles(result: WorklogAggregateResult): SummaryTile[] {
 
 export function toAgingTable(report: AgingReport): SimpleTable {
   return {
-    headers: ['Issue', 'Status', 'Age in status', 'Age total', 'Entered status'],
+    // "Working hours" is a real column now. The footnote below has always
+    // promised the working-hours figure "is shown separately rather than
+    // blended in", `AgingReportRow.ageInStatusBusinessMs` has always been
+    // populated, and the only place it actually appeared was the CSV — so a
+    // reader following the footnote hunted a column that did not exist.
+    headers: ['Issue', 'Status', 'Age in status', 'Working hours', 'Age total', 'Entered status'],
     rows: report.rows.map((row) => [
       row.issueKey,
       row.statusName,
       formatDurationForHumans(row.ageInStatusMs),
+      formatDurationForHumans(row.ageInStatusBusinessMs, WORKING_TIME),
       formatDurationForHumans(row.ageTotalMs),
       formatDate(row.enteredStatusAt),
     ]),
@@ -297,7 +303,15 @@ export function toSlaTiles(report: SlaReport): SummaryTile[] {
   return [
     {
       label: 'Attainment',
-      value: report.attainment === null ? '—' : `${Math.round(report.attainment * 100)}%`,
+      // ★ Never round *up* to 100%. `Math.round` turned 498 of 500 met into
+      // "Attainment 100%" sitting directly beside "Breached 2" — two tiles
+      // on one row stating incompatible things about the same issues, in the
+      // normal healthy case rather than an edge one. 100% now means exactly
+      // what it says: nothing breached.
+      value:
+        report.attainment === null
+          ? '—'
+          : `${report.breachedCount === 0 ? 100 : Math.min(99, Math.floor(report.attainment * 100))}%`,
       hint: `${report.rows.length} issues measured against "${report.goalName}".`,
     },
     {
@@ -341,9 +355,17 @@ export function toHistoryTiles(report: HistoryReport): SummaryTile[] {
   const busiest = report.byField[0];
   return [
     {
+      // The matching total, not the page. `report.total` is documented as
+      // "changes on this page", and using it here put "Changes 3 · Field
+      // changes in the selected range" directly under a banner reading
+      // "Report capped at 3 of 3,000 changes". `view-model.ts` solved the
+      // same problem for the status report; history had not caught up.
       label: 'Changes',
-      value: String(report.total),
-      hint: 'Field changes in the selected range.',
+      value: String(report.totalMatching),
+      hint:
+        report.totalMatching === report.total
+          ? 'Field changes in the selected range.'
+          : `Field changes in the selected range. These figures cover ${report.total} of them.`,
     },
     {
       label: 'Busiest field',

@@ -273,7 +273,18 @@ export function SlaGoalForm({
       <Select
         inputId="sla-goal-target"
         options={SLA_TARGET_OPTIONS}
-        {...(defaultTarget === undefined ? {} : { value: defaultTarget })}
+        // ★ Always controlled, even when the target is not one of the
+        // presets. Dropping `value` for an unlisted target left the control
+        // showing whatever was last picked while the page computed against
+        // something else — a saved 6-hour goal rendered under "8 working
+        // hours". That is verbatim the defect the comment on the saved-goal
+        // `Select` above says was fixed, still live on the next control.
+        value={
+          defaultTarget ?? {
+            label: `${String(Math.round(goal.targetMs / 3_600_000))} working hours`,
+            value: String(goal.targetMs),
+          }
+        }
         onChange={(option) => {
           const value = (option as { value?: string } | null)?.value;
           if (value !== undefined) onChange(withTarget(goal, Number(value)));

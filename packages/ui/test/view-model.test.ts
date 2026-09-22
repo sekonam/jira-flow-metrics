@@ -9,6 +9,7 @@ import {
   isIndexIncomplete,
   surfaceStateOf,
   toProgressBanner,
+  toReadCapBanner,
   toProjectOptions,
   toHours,
   toReportTable,
@@ -366,17 +367,28 @@ describe('toProjectOptions', () => {
 });
 
 describe('toHours', () => {
-  it('reports hours to one decimal', () => {
+  it('reports hours to two decimals', () => {
     expect(toHours(90 * 60_000)).toBe(1.5);
     expect(toHours(HOUR)).toBe(1);
-    // 1h 3m — the rounding has to land somewhere, and a chart axis reading
-    // "1.1" against a table reading "1h 3m" is the same number, legibly.
-    expect(toHours(63 * 60_000)).toBe(1.1);
+    // 1h 3m — the chart axis reads 1.05 against a table reading "1h 3m".
+    expect(toHours(63 * 60_000)).toBe(1.05);
+  });
+
+  it('★ never renders a real duration as zero', () => {
+    // A zero bar is documented by `toStatusChartData` as "a different and
+    // wrong claim" — it reads as "no time is spent here". At one decimal,
+    // anything under three minutes became exactly that bar, so a status with
+    // a real two-minute median passed the guard and was then plotted as the
+    // thing the guard exists to prevent.
+    expect(toHours(2 * 60_000)).toBeGreaterThan(0);
+    expect(toHours(3_000)).toBeGreaterThan(0);
+    expect(toHours(1)).toBe(0.01);
   });
 
   it('treats a missing or negative duration as zero rather than NaN', () => {
     // A NaN reaching `BarChart` is a bar of undefined height, which renders
-    // as a silently absent category rather than an error.
+    // as a silently absent category rather than an error. Genuine zero stays
+    // zero — the floor is for measured time, not for its absence.
     expect(toHours(Number.NaN)).toBe(0);
     expect(toHours(-HOUR)).toBe(0);
     expect(toHours(0)).toBe(0);
@@ -417,5 +429,34 @@ describe('toStatusChartData', () => {
       }),
     );
     expect(data).toEqual([]);
+  });
+});
+
+describe('★ a cap banner must not contradict itself', () => {
+  it('says only what a report without a denominator knows', () => {
+    // The cumulative flow report has no honest total — `issueCount` counts
+    // what was read, not what exists — and passing it as both halves of
+    // `toCapBanner` produced "Report capped at 412 of 412 issues": a title
+    // saying nothing was left out above a body saying the rest are missing.
+    const banner = toReadCapBanner({ capped: true, included: 412, noun: 'issues' });
+    expect(banner).not.toBeNull();
+    expect(banner?.title).toBe('Showing 412 issues, and there are more');
+    expect(banner?.title).not.toContain('of 412');
+    expect(banner?.body).toContain('lower bound');
+  });
+
+  it('is silent when nothing was truncated', () => {
+    expect(toReadCapBanner({ capped: false, included: 12, noun: 'issues' })).toBeNull();
+  });
+});
+
+describe('★ the summary tile hint has to be true on every surface', () => {
+  it('does not promise rows "below" — a gadget renders tiles and no table', () => {
+    // It read "1,500 issues … 200 of them are shown below" on a dashboard
+    // gadget, above nothing at all.
+    const tiles = toSummaryTiles(report({ issueCount: 200, matchingIssueCount: 1500 }));
+    expect(tiles[0]?.value).toBe('1500');
+    expect(tiles[0]?.hint).not.toContain('below');
+    expect(tiles[0]?.hint).toContain('cover 200 of them');
   });
 });

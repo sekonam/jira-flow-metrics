@@ -137,6 +137,19 @@ const GadgetView = (): React.JSX.Element => {
     <Stack space="space.150">
       <Heading as="h3">SLA & Due Dates</Heading>
       <SummaryTiles tiles={toSlaTiles(report)} />
+      {/*
+        A capped report must say so here too. Each of these files says a
+        gadget is "often the only surface someone who did not install the app
+        ever sees" — and only the indexing half of that was implemented, so a
+        dashboard could publish an attainment percentage over a 500-issue
+        slice of a 5,000-issue project with no qualifier at all.
+      */}
+      {report.capped ? (
+        <Text size="small">
+          Covering {report.rows.length} of {report.projectIssueCount} issues, so every figure here
+          is a lower bound.
+        </Text>
+      ) : null}
       {partial ? <Text size="small">Indexing is still in progress.</Text> : null}
     </Stack>
   );

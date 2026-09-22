@@ -246,10 +246,14 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
       // matching the current filters" and a page length is not that.
       label: 'Issues',
       value: String(report.matchingIssueCount),
+      // "below" was a lie on the dashboard gadget, which renders these tiles
+      // and no table at all — it read "1,500 issues … 200 of them are shown
+      // below" above nothing. The wording has to be true on every surface
+      // that renders a tile.
       hint:
         report.matchingIssueCount === report.issueCount
           ? 'Issues matching the current filters.'
-          : `Issues matching the current filters. ${report.issueCount} of them are shown below.`,
+          : `Issues matching the current filters. These figures cover ${report.issueCount} of them.`,
     },
   ];
   for (const column of report.columns) {
@@ -379,6 +383,36 @@ export function toCapBanner(input: {
   };
 }
 
+/**
+ * The cap banner for a report that knows it was truncated but cannot say
+ * against what.
+ *
+ * `toCapBanner` needs an honest denominator. The cumulative flow report has
+ * none — its `issueCount` is "distinct issues appearing in the window,
+ * counted from the visits read", which is a property of what was read rather
+ * than of what exists — and passing it as both halves produced the flatly
+ * self-contradicting **"Report capped at 412 of 412 issues"**, a title saying
+ * nothing was left out above a body saying the rest are missing.
+ *
+ * So this says only what is known: the figures are a lower bound, and why.
+ */
+export function toReadCapBanner(input: {
+  capped: boolean;
+  included: number;
+  noun: string;
+}): ProgressBanner | null {
+  if (!input.capped) return null;
+  return {
+    appearance: 'warning',
+    title: `Showing ${input.included.toLocaleString('en-GB')} ${input.noun}, and there are more`,
+    body:
+      'This report reached the maximum number of rows it will read in one pass, so every ' +
+      'figure on it is a lower bound. Narrow the range to cover the remainder.',
+    showSpinner: false,
+    showRetry: false,
+  };
+}
+
 function describeProgress(progress: BackfillProgress): string {
   if (progress.fraction === null) {
     return `${progress.issuesProcessed.toLocaleString('en-GB')} issues indexed.`;
@@ -425,16 +459,26 @@ export function toProjectOptions(projects: readonly JiraProjectRef[]): ProjectOp
 }
 
 /**
- * Hours, to one decimal — the unit every chart y-axis in this product uses.
+ * Hours, for a chart axis — two decimals, and never zero for a real duration.
  *
  * Charts cannot show "2d 4h": a bar's height is a number, and the axis has to
  * be labelled in something. Hours is the only unit that stays honest for both
  * bases — see `DurationFormat` for why days are wrong for working time — so
  * every chart states "hours" in its subtitle and every value is one.
+ *
+ * ★ The floor is the part worth reading. At one decimal, anything under three
+ * minutes rounded to `0`, and `toStatusChartData` right below documents a zero
+ * bar as "a different and wrong claim" — so a status with a real two-minute
+ * median passed its own guard and was then plotted as exactly the bar that
+ * guard exists to prevent. Two decimals plus a floor of 0.01 means a measured
+ * duration is always visibly non-zero. It overstates a three-second visit as
+ * ~36 seconds, which is the right way round to be wrong: the table beside it
+ * carries the exact figure (`<1m`), and the reader needs to know the status
+ * was visited at all far more than they need its third decimal place.
  */
 export function toHours(ms: Millis): number {
   if (!Number.isFinite(ms) || ms <= 0) return 0;
-  return Math.round((ms / 3_600_000) * 10) / 10;
+  return Math.max(0.01, Math.round((ms / 3_600_000) * 100) / 100);
 }
 
 /**
