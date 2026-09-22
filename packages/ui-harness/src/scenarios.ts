@@ -1,5 +1,6 @@
 import {
   handleAgingReport,
+  handleFlowReport,
   handleExportCsv,
   handleGetReport,
   handleIndexProgress,
@@ -40,6 +41,7 @@ export type ResolverKey =
   | 'getIndexProgress'
   | 'getWorklogReport'
   | 'getAgingReport'
+  | 'getFlowReport'
   | 'getSlaReport'
   | 'getHistoryReport'
   | 'listStatuses'
@@ -122,6 +124,10 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
     getIndexProgress: await handleIndexProgress(runtime, INVOCATION),
     getWorklogReport: await handleWorklogReport(runtime, INVOCATION),
     getAgingReport: await handleAgingReport(runtime, INVOCATION),
+    // The cumulative flow diagram. `unavailable` on every scenario whose
+    // pipeline runs the time-in-status datasets, which store no visits —
+    // which is exactly the state the UI has to render something honest for.
+    getFlowReport: await handleFlowReport(runtime, INVOCATION),
     getSlaReport: await handleSlaReport(runtime, {
       ...INVOCATION,
       // Working time in the two active statuses against a one-working-day
@@ -205,6 +211,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getIndexProgress',
   'getWorklogReport',
   'getAgingReport',
+  'getFlowReport',
   'getSlaReport',
   'getHistoryReport',
   'listStatuses',

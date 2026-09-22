@@ -9,6 +9,8 @@ import type {
   StatusDurationQuery,
   StatusMetaRow,
   StatusNameHistoryRow,
+  StatusVisitQuery,
+  StatusVisitRow,
   WorklogQuery,
 } from './types.js';
 import type { HistoryRecord } from '../metrics/history.js';
@@ -27,6 +29,7 @@ import type { StatusId } from '../types.js';
 export class MemoryStore implements MetricsStore {
   private readonly issueMeta = new Map<string, IssueMetaRow>();
   private readonly aggregates = new Map<string, StatusAggregateRow[]>();
+  private readonly visits = new Map<string, StatusVisitRow[]>();
   private readonly statusMeta = new Map<StatusId, StatusMetaRow>();
   private readonly statusNames = new Map<string, StatusNameHistoryRow>();
   private readonly worklogs = new Map<string, WorklogRecord[]>();
@@ -55,6 +58,7 @@ export class MemoryStore implements MetricsStore {
   deleteIssue(issueId: string): Promise<void> {
     this.issueMeta.delete(issueId);
     this.aggregates.delete(issueId);
+    this.visits.delete(issueId);
     this.worklogs.delete(issueId);
     this.history.delete(issueId);
     return Promise.resolve();
@@ -124,6 +128,35 @@ export class MemoryStore implements MetricsStore {
     const offset = query.offset ?? 0;
     const limit = query.limit ?? rows.length;
     return Promise.resolve(rows.slice(offset, offset + limit));
+  }
+
+  putIssueVisits(issueId: string, visits: readonly StatusVisitRow[]): Promise<void> {
+    // Replace, never merge — the same rule as every other write here, and
+    // what keeps a re-ingested issue from accumulating duplicate visits.
+    this.visits.set(issueId, [...visits]);
+    return Promise.resolve();
+  }
+
+  queryStatusVisits(query: StatusVisitQuery): Promise<StatusVisitRow[]> {
+    const issueFilter = query.issueIds === undefined ? null : new Set(query.issueIds);
+    const rows: StatusVisitRow[] = [];
+    for (const [issueId, visits] of this.visits) {
+      const meta = this.issueMeta.get(issueId);
+      if (meta === undefined || meta.projectId !== query.projectId) continue;
+      if (issueFilter !== null && !issueFilter.has(issueId)) continue;
+      for (const visit of visits) {
+        // Overlap, not containment: a visit that began before the window and
+        // is still running is exactly the row a flow diagram needs most.
+        if (query.to !== undefined && visit.enteredAt >= query.to) continue;
+        if (query.from !== undefined && visit.exitedAt !== null && visit.exitedAt <= query.from) {
+          continue;
+        }
+        rows.push(visit);
+      }
+    }
+    rows.sort((a, b) => a.issueId.localeCompare(b.issueId) || a.seq - b.seq);
+    const offset = query.offset ?? 0;
+    return Promise.resolve(rows.slice(offset, offset + (query.limit ?? rows.length)));
   }
 
   upsertStatusMeta(rows: readonly StatusMetaRow[]): Promise<void> {
@@ -249,9 +282,11 @@ export class MemoryStore implements MetricsStore {
     const aggregateRows = [...this.aggregates.values()].reduce((n, rows) => n + rows.length, 0);
     const worklogRows = [...this.worklogs.values()].reduce((n, rows) => n + rows.length, 0);
     const historyRows = [...this.history.values()].reduce((n, rows) => n + rows.length, 0);
+    const visitRows = [...this.visits.values()].reduce((n, rows) => n + rows.length, 0);
     return Promise.resolve(
       this.issueMeta.size * ESTIMATED_ROW_BYTES.issue_meta +
         aggregateRows * ESTIMATED_ROW_BYTES.issue_status_agg +
+        visitRows * ESTIMATED_ROW_BYTES.issue_status_visit +
         worklogRows * ESTIMATED_ROW_BYTES.worklog +
         historyRows * ESTIMATED_ROW_BYTES.issue_history +
         this.statusMeta.size * ESTIMATED_ROW_BYTES.status_meta +

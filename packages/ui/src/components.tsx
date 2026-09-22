@@ -8,6 +8,7 @@ import {
   EmptyState,
   Heading,
   Inline,
+  LineChart,
   LoadingButton,
   Lozenge,
   Modal,
@@ -28,6 +29,7 @@ import {
 import type {
   ChartPoint,
   ProgressBanner,
+  SeriesPoint,
   ProjectOption,
   ReportTableModel,
   SummaryTile,
@@ -435,6 +437,41 @@ export function ReportBarChart({
       data={data as unknown[]}
       xAccessor="label"
       yAccessor="value"
+      title={title}
+      subtitle={subtitle}
+    />
+  );
+}
+
+/**
+ * A multi-series line chart — the cumulative flow diagram's shape.
+ *
+ * `colorAccessor` is what makes one flat array of points render as several
+ * lines; `@forge/react` ships that natively, so as with `ReportBarChart`
+ * there is no hand-rolled chart here.
+ *
+ * ⚠️ `colorPalette` is deliberately not passed. Forge's own chart components
+ * accept the prop and, as of a confirmed and still-open Atlassian defect
+ * (ECO-1390, raised March 2026), ignore it — so passing one would read as a
+ * choice this code had made and the platform had honoured, and it would not
+ * have been.
+ */
+export function ReportLineChart({
+  data,
+  title,
+  subtitle,
+}: {
+  data: readonly SeriesPoint[];
+  title: string;
+  subtitle: string;
+}): React.JSX.Element | null {
+  if (data.length === 0) return null;
+  return (
+    <LineChart
+      data={data as unknown[]}
+      xAccessor="label"
+      yAccessor="value"
+      colorAccessor="series"
       title={title}
       subtitle={subtitle}
     />

@@ -22,8 +22,8 @@ describeScreen(
     name: 'wip-aging project page',
     Component: App,
     surface: 'page',
-    resolverKeys: ['getAgingReport', 'getIndexProgress', 'startIndexing'],
-    invokedOnLoad: ['getAgingReport', 'getIndexProgress'],
+    resolverKeys: ['getAgingReport', 'getIndexProgress', 'startIndexing', 'getFlowReport'],
+    invokedOnLoad: ['getAgingReport', 'getIndexProgress', 'getFlowReport'],
     heading: 'WIP Aging',
     emptyText: 'Nothing in flight',
     populatedText: 'FLOW-1',
@@ -89,6 +89,29 @@ describe('wip-aging: the listing-specific behaviour', () => {
     expect(
       screen.getByText(/1 finished issue is excluded; ageing only applies to work in flight/),
     ).toBeDefined();
+    cleanup();
+  });
+});
+
+describe('wip-aging: the cumulative flow diagram', () => {
+  it('draws one line per status the project used in the window', async () => {
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    expect(await screen.findByText('Cumulative flow')).toBeDefined();
+    // The caption has to name the zone: the buckets are UTC days and the
+    // reader's Jira may not be.
+    expect(screen.getByText(/last 30 days \(UTC\)/)).toBeDefined();
+    cleanup();
+  });
+
+  it('★ withholds the chart entirely when no visits are stored', async () => {
+    // The "empty" scenario indexes a project with no issues, so nothing has
+    // visits. A flat chart of zeroes would assert "nothing was in flight for
+    // 30 days", which is a different claim from "there is nothing to read".
+    setBridgeResolvers(resolversFor(scenarios.empty.responses));
+    render(<App />);
+    await screen.findByText('Nothing in flight');
+    expect(screen.queryByText('Cumulative flow')).toBeNull();
     cleanup();
   });
 });

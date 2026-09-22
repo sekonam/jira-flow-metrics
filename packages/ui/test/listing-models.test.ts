@@ -10,6 +10,7 @@ import {
   toAgingChartData,
   toAgingTable,
   toAgingTiles,
+  toFlowChartData,
   toHistoryChartData,
   toHistoryTable,
   toHistoryTiles,
@@ -435,5 +436,44 @@ describe('saved SLA goals', () => {
     expect(matchesSavedGoal({ countedStatusIds: ['10200', '3'], targetMs: 4 * HOUR }, saved)).toBe(
       true,
     );
+  });
+});
+
+describe('the cumulative flow series', () => {
+  it('names each line after its status and dates each point', () => {
+    const at = Date.parse('2026-03-09T00:00:00Z');
+    expect(
+      toFlowChartData({
+        bands: [{ statusId: '3', name: 'In Progress', category: 'inprogress' }],
+        points: [
+          { at, statusId: '3', count: 2 },
+          { at: at + DAY, statusId: '3', count: 5 },
+        ],
+        from: at,
+        to: at + 2 * DAY,
+        issueCount: 7,
+        capped: false,
+        unavailable: false,
+      }),
+    ).toEqual([
+      { label: '9 Mar 2026', series: 'In Progress', value: 2 },
+      { label: '10 Mar 2026', series: 'In Progress', value: 5 },
+    ]);
+  });
+
+  it('falls back to the status id when the status has no stored name', () => {
+    const at = Date.parse('2026-03-09T00:00:00Z');
+    const data = toFlowChartData({
+      bands: [],
+      points: [{ at, statusId: '999', count: 1 }],
+      from: at,
+      to: at + DAY,
+      issueCount: 1,
+      capped: false,
+      unavailable: false,
+    });
+    // An unnamed line is still a line with a real count on it; dropping the
+    // point would make the bands stop summing to the work in flight.
+    expect(data[0]?.series).toBe('999');
   });
 });

@@ -14,6 +14,8 @@ import {
   type StatusId,
   type StatusMetaRow,
   type StatusNameHistoryRow,
+  type StatusVisitQuery,
+  type StatusVisitRow,
   type WorklogQuery,
   type WorklogRecord,
 } from '@jfm/engine';
@@ -29,6 +31,8 @@ import {
   statusAggregateFromRow,
   statusAggregateToParams,
   statusMetaFromRow,
+  statusVisitFromRow,
+  statusVisitToParams,
   statusNameHistoryFromRow,
   toNumber,
   worklogFromRow,
@@ -222,6 +226,50 @@ export class SqlMetricsStore implements MetricsStore {
     return rows.map(statusAggregateFromRow);
   }
 
+  async putIssueVisits(issueId: string, visits: readonly StatusVisitRow[]): Promise<void> {
+    // Delete-then-insert rather than upsert: a re-ingested issue can have
+    // *fewer* visits than before (history edited, an issue moved), and an
+    // upsert keyed on (issue_id, seq) would leave the surplus rows behind as
+    // phantom visits nothing ever deletes.
+    await this.sql.execute('DELETE FROM issue_status_visit WHERE issue_id = ?', [issueId]);
+    if (visits.length === 0) return;
+    const values = visits.map(() => `(${placeholders(6)})`).join(', ');
+    await this.sql.execute(
+      `INSERT INTO issue_status_visit (
+         issue_id, seq, status_id, project_id, entered_at, exited_at
+       ) VALUES ${values}`,
+      visits.flatMap(statusVisitToParams),
+    );
+  }
+
+  async queryStatusVisits(query: StatusVisitQuery): Promise<StatusVisitRow[]> {
+    const clauses = ['project_id = ?'];
+    const params: unknown[] = [query.projectId];
+    if (query.issueIds !== undefined && query.issueIds.length > 0) {
+      clauses.push(`issue_id IN (${placeholders(query.issueIds.length)})`);
+      params.push(...query.issueIds);
+    }
+    if (query.to !== undefined) {
+      clauses.push('entered_at < ?');
+      params.push(query.to);
+    }
+    if (query.from !== undefined) {
+      // Overlap, not containment: a visit that began before the window and
+      // has not ended is exactly the row a flow diagram needs most, and
+      // `exited_at IS NULL` is how that row says so.
+      clauses.push('(exited_at IS NULL OR exited_at > ?)');
+      params.push(query.from);
+    }
+    const limit = clampLimit(query.limit ?? 10_000);
+    const offset = clampOffset(query.offset ?? 0);
+    const rows = await this.sql.query<Record<string, unknown>>(
+      `SELECT * FROM issue_status_visit WHERE ${clauses.join(' AND ')}
+       ORDER BY issue_id ASC, seq ASC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
+      params,
+    );
+    return rows.map(statusVisitFromRow);
+  }
+
   async upsertStatusMeta(rows: readonly StatusMetaRow[]): Promise<void> {
     if (rows.length === 0) return;
     const values = rows.map(() => `(${placeholders(5)})`).join(', ');
@@ -381,6 +429,7 @@ export class SqlMetricsStore implements MetricsStore {
       `SELECT
          (SELECT COUNT(*) FROM issue_meta)          AS issue_meta,
          (SELECT COUNT(*) FROM issue_status_agg)    AS issue_status_agg,
+         (SELECT COUNT(*) FROM issue_status_visit)  AS issue_status_visit,
          (SELECT COUNT(*) FROM worklog)             AS worklog,
          (SELECT COUNT(*) FROM issue_history)       AS issue_history,
          (SELECT COUNT(*) FROM status_meta)         AS status_meta,

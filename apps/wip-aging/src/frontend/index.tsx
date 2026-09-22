@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ForgeReconciler, { Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
-import type { AgingReport } from '@jfm/forge-runtime';
+import type { AgingReport, FlowReport } from '@jfm/forge-runtime';
 import type { BackfillProgress } from '@jfm/engine';
 import {
   AgingHistogram,
@@ -12,6 +12,7 @@ import {
   IndexingBanner,
   LoadingSurface,
   PageHeader,
+  ReportLineChart,
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
@@ -19,6 +20,7 @@ import {
   toAgingTable,
   toAgingTiles,
   toCapBanner,
+  toFlowChartData,
   toProgressBanner,
 } from '@jfm/ui';
 
@@ -44,6 +46,7 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export const App = (): React.JSX.Element => {
   const [report, setReport] = useState<AgingReport | null>(null);
+  const [flow, setFlow] = useState<FlowReport | null>(null);
   const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +64,12 @@ export const App = (): React.JSX.Element => {
       // consumption-priced.
       const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
       if (state.ok) setProgress(state.data);
+      // The flow diagram is a second resolver rather than a field on the
+      // aging report: it scans a different table over a different window,
+      // and folding it in would make every gadget render pay for a chart it
+      // does not show.
+      const flowResult = (await invoke('getFlowReport', { days: 30 })) as Result<FlowReport>;
+      if (flowResult.ok) setFlow(flowResult.data);
     } catch {
       setError('The report could not be loaded. Try again in a moment.');
     } finally {
@@ -176,6 +185,19 @@ export const App = (): React.JSX.Element => {
           />
           <SummaryTiles tiles={toAgingTiles(report)} />
           <AgingHistogram data={toAgingChartData(report)} />
+          {/*
+            Withheld rather than drawn empty when no visits are stored:
+            "indexing has not recorded the visits yet" and "nothing was in
+            flight for 30 days" are different answers, and a flat chart of
+            zeroes asserts the second one.
+          */}
+          {flow !== null && !flow.unavailable ? (
+            <ReportLineChart
+              data={toFlowChartData(flow)}
+              title="Cumulative flow"
+              subtitle="Issues in each status at the end of each day, last 30 days (UTC)."
+            />
+          ) : null}
           <SimpleReportTable model={toAgingTable(report)} />
         </Stack>
       ) : null}

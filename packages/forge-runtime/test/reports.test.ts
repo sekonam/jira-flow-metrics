@@ -8,6 +8,7 @@ import {
 } from '@jfm/engine';
 import {
   buildAgingReport,
+  buildFlowReport,
   buildHistoryReport,
   buildSlaReport,
   buildWorklogReport,
@@ -286,5 +287,143 @@ describe('history report (listing 5)', () => {
       limit: 10,
     });
     expect(filtered.total).toBe(1);
+  });
+});
+
+describe('cumulative flow (listing 3) — the report the aggregate cannot answer', () => {
+  const DAY_0 = NOW - 4 * DAY;
+
+  /**
+   * One issue that moved To Do → In Progress → Done over four days, and one
+   * that has sat in To Do the whole time.
+   */
+  async function flowStore(): Promise<MemoryStore> {
+    const store = new MemoryStore();
+    await store.migrate();
+    await store.upsertStatusMeta([
+      { statusId: '1', name: 'To Do', category: 'todo', firstSeenAt: 0, lastSeenAt: NOW },
+      {
+        statusId: '3',
+        name: 'In Progress',
+        category: 'inprogress',
+        firstSeenAt: 0,
+        lastSeenAt: NOW,
+      },
+      { statusId: '5', name: 'Done', category: 'done', firstSeenAt: 0, lastSeenAt: NOW },
+    ]);
+    await store.putIssueAggregate(meta({ issueId: '1', createdAt: DAY_0 }), []);
+    await store.putIssueAggregate(meta({ issueId: '2', createdAt: DAY_0 }), []);
+    await store.putIssueVisits('1', [
+      {
+        issueId: '1',
+        seq: 0,
+        statusId: '1',
+        projectId: '10000',
+        enteredAt: DAY_0,
+        exitedAt: DAY_0 + 2 * DAY,
+      },
+      {
+        issueId: '1',
+        seq: 1,
+        statusId: '3',
+        projectId: '10000',
+        enteredAt: DAY_0 + 2 * DAY,
+        exitedAt: DAY_0 + 3 * DAY,
+      },
+      {
+        issueId: '1',
+        seq: 2,
+        statusId: '5',
+        projectId: '10000',
+        enteredAt: DAY_0 + 3 * DAY,
+        exitedAt: null,
+      },
+    ]);
+    await store.putIssueVisits('2', [
+      { issueId: '2', seq: 0, statusId: '1', projectId: '10000', enteredAt: DAY_0, exitedAt: null },
+    ]);
+    return store;
+  }
+
+  function countOn(
+    report: Awaited<ReturnType<typeof buildFlowReport>>,
+    dayIndex: number,
+    statusId: string,
+  ): number {
+    const at = report.from + dayIndex * DAY;
+    return report.points.find((p) => p.at === at && p.statusId === statusId)?.count ?? 0;
+  }
+
+  it('counts each issue in exactly one status per day', async () => {
+    const report = await buildFlowReport(await flowStore(), '10000', NOW, { days: 5 });
+    for (let day = 0; day < 5; day += 1) {
+      const total = report.bands.reduce(
+        (sum, band) => sum + countOn(report, day, band.statusId),
+        0,
+      );
+      // The bands summing to the work in flight is what makes this a
+      // cumulative flow diagram rather than a chart of status touches.
+      expect(total).toBe(2);
+    }
+  });
+
+  it('follows one issue across the bands as it moves', async () => {
+    const report = await buildFlowReport(await flowStore(), '10000', NOW, { days: 5 });
+    // Day 0 and 1 in To Do (with the other issue), day 2 in In Progress —
+    // the visit ends at the start of day 2, so the *end* of day 2 finds it
+    // in the next status.
+    expect(countOn(report, 0, '1')).toBe(2);
+    expect(countOn(report, 1, '1')).toBe(2);
+    expect(countOn(report, 2, '3')).toBe(1);
+    expect(countOn(report, 3, '5')).toBe(1);
+    expect(countOn(report, 4, '5')).toBe(1);
+    // And the issue that never moved is in To Do on every one of them.
+    expect(countOn(report, 4, '1')).toBe(1);
+  });
+
+  it('emits a point for every band on every day, zeroes included', async () => {
+    const report = await buildFlowReport(await flowStore(), '10000', NOW, { days: 5 });
+    // A line chart that omits the days a band was empty draws a straight
+    // line across the gap, which reads as "steady" where the truth is
+    // "none".
+    expect(report.points).toHaveLength(report.bands.length * 5);
+    expect(countOn(report, 0, '5')).toBe(0);
+  });
+
+  it('orders the bands by workflow category, not alphabetically', async () => {
+    const report = await buildFlowReport(await flowStore(), '10000', NOW, { days: 5 });
+    expect(report.bands.map((b) => b.name)).toEqual(['To Do', 'In Progress', 'Done']);
+  });
+
+  it('★ says the data is unavailable rather than drawing a flat zero', async () => {
+    // A listing that does not set `datasets.statusVisits` stores no visits.
+    // "Indexing has not recorded the visits" and "nothing was in flight for
+    // 30 days" are different answers, and a chart of zeroes asserts the
+    // second one.
+    const store = new MemoryStore();
+    await store.migrate();
+    await store.putIssueAggregate(meta({ issueId: '1' }), []);
+    const report = await buildFlowReport(store, '10000', NOW);
+    expect(report.unavailable).toBe(true);
+    expect(report.points).toEqual([]);
+  });
+
+  it('clamps an absurd window instead of scanning the whole table', async () => {
+    const store = await flowStore();
+    const huge = await buildFlowReport(store, '10000', NOW, { days: 100_000 });
+    const tiny = await buildFlowReport(store, '10000', NOW, { days: 0 });
+    expect((huge.to - huge.from) / DAY).toBe(180);
+    expect((tiny.to - tiny.from) / DAY).toBe(1);
+  });
+
+  it('scopes to the project, like every other report', async () => {
+    const store = await flowStore();
+    await store.putIssueAggregate(meta({ issueId: '9', projectId: '20000' }), []);
+    await store.putIssueVisits('9', [
+      { issueId: '9', seq: 0, statusId: '3', projectId: '20000', enteredAt: DAY_0, exitedAt: null },
+    ]);
+    const report = await buildFlowReport(store, '10000', NOW, { days: 5 });
+    expect(report.bands.map((b) => b.statusId)).not.toContain('3-other');
+    expect(countOn(report, 4, '3')).toBe(0);
   });
 });

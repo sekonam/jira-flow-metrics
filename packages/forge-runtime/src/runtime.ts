@@ -32,10 +32,12 @@ import {
 } from './settings.js';
 import {
   buildAgingReport,
+  buildFlowReport,
   buildHistoryReport,
   buildSlaReport,
   buildWorklogReport,
   type AgingReport,
+  type FlowReport,
   type HistoryReport,
   type HistoryReportRequest,
   type SlaCountedGoal,
@@ -293,6 +295,20 @@ export class ListingRuntime {
   async agingReport(projectId: string, limit = 500): Promise<AgingReport> {
     await this.deps.store.migrate();
     return buildAgingReport(this.deps.store, projectId, this.clock.now(), limit);
+  }
+
+  /**
+   * Listing 3 — cumulative flow: how many issues sat in each status at the
+   * end of each day.
+   *
+   * The only report that reads `issue_status_visit`, because it is the only
+   * one that asks where an issue was on a day in the past. Listings that do
+   * not set `datasets.statusVisits` have no visits stored and get
+   * `unavailable: true` rather than a chart of zeroes.
+   */
+  async flowReport(projectId: string, days = 30, limit = 500): Promise<FlowReport> {
+    await this.deps.store.migrate();
+    return buildFlowReport(this.deps.store, projectId, this.clock.now(), { days, limit });
   }
 
   /** Listing 4 — working time in the counted statuses against a target. */

@@ -11,6 +11,7 @@ import {
   type Millis,
   type StatusAggregateRow,
   type StatusId,
+  type StatusCategory,
   type StatusMetaRow,
   type WorklogAggregateResult,
   type WorklogGroupBy,
@@ -336,5 +337,148 @@ export async function buildHistoryReport(
     total: records.length,
     totalMatching,
     capped: totalMatching > offset + records.length,
+  };
+}
+
+// ------------------------------------------------- listing 3: flow ---
+
+export interface FlowBand {
+  readonly statusId: StatusId;
+  readonly name: string;
+  readonly category: StatusCategory;
+}
+
+export interface FlowPoint {
+  /** Midnight UTC of the day this point describes. */
+  readonly at: Millis;
+  readonly statusId: StatusId;
+  readonly count: number;
+}
+
+export interface FlowReport {
+  readonly bands: readonly FlowBand[];
+  readonly points: readonly FlowPoint[];
+  readonly from: Millis;
+  readonly to: Millis;
+  /** Issues whose visits were read. A real count, not a page length. */
+  readonly issueCount: number;
+  /** True when more issues exist than the report could read visits for. */
+  readonly capped: boolean;
+  /**
+   * True when nothing has stored visits for this project.
+   *
+   * Distinct from "no work happened": one means the listing has not indexed
+   * with `datasets.statusVisits` yet, the other is a real and readable
+   * answer. The UI renders different things for each, because telling a user
+   * their team did nothing for 30 days when the truth is "not indexed" is the
+   * failure this product is built to avoid.
+   */
+  readonly unavailable: boolean;
+}
+
+/** Midnight UTC on or before `ms`. */
+function startOfDayUtc(ms: Millis): Millis {
+  return Math.floor(ms / DAY_MS) * DAY_MS;
+}
+
+/**
+ * Cumulative flow — how many issues sat in each status at the end of each day.
+ *
+ * ROADMAP stage 5: "the most-requested shape in this niche". It is the one
+ * report in the product that cannot be answered from `issue_status_agg`,
+ * because that table collapses every visit to a status into one row and so
+ * has no way to say where an issue was on a Tuesday three weeks ago. It reads
+ * `issue_status_visit` instead — see `StatusVisitRow`.
+ *
+ * ## The rule, stated once
+ *
+ * An issue counts in status S on day D when a visit to S covers **the end of
+ * day D**: `enteredAt <= dayEnd` and (`exitedAt` is null or `exitedAt >
+ * dayEnd`). One instant per day, so an issue that passed through four
+ * statuses in one afternoon contributes to exactly one band that day — the
+ * one it finished in. A "touched this status today" rule would make the
+ * bands sum to more than the issue count, and a cumulative flow diagram
+ * whose total is not the work in flight is not one.
+ *
+ * Days are UTC, matching `formatDate`/`formatDateTime` and for the same
+ * reason: the alternative is a chart whose buckets depend on the reader's
+ * timezone while the caption does not say so.
+ */
+export async function buildFlowReport(
+  store: MetricsStore,
+  projectId: string,
+  now: Millis,
+  options: { days?: number; limit?: number } = {},
+): Promise<FlowReport> {
+  const days = Math.max(1, Math.min(180, Math.trunc(options.days ?? 30)));
+  const limit = options.limit ?? 500;
+  // `to` is the end of today; `from` is midnight `days - 1` days earlier, so
+  // a 30-day window has 30 points and the last one is today.
+  const lastDay = startOfDayUtc(now);
+  const from = lastDay - (days - 1) * DAY_MS;
+  const to = lastDay + DAY_MS;
+
+  const metas = await store.queryIssueMeta({ projectId, limit });
+  const issueCount = await store.countIssueMeta({ projectId });
+  const visits = await store.queryStatusVisits({
+    projectId,
+    issueIds: metas.map((m) => m.issueId),
+    from,
+    to,
+  });
+
+  const statusMeta = await store.getStatusMeta();
+  const byId = new Map(statusMeta.map((s) => [s.statusId, s]));
+
+  const counts = new Map<string, number>();
+  const usedStatuses = new Set<StatusId>();
+  for (let day = 0; day < days; day += 1) {
+    // The last instant of the day, so an issue that entered a status at
+    // 09:00 and left at 17:00 counts on that day only if it was still there
+    // at midnight — the same instant for every band, which is what keeps the
+    // bands summing to the work in flight.
+    const dayEnd = from + (day + 1) * DAY_MS - 1;
+    for (const visit of visits) {
+      if (visit.enteredAt > dayEnd) continue;
+      if (visit.exitedAt !== null && visit.exitedAt <= dayEnd) continue;
+      usedStatuses.add(visit.statusId);
+      const key = `${String(day)}:${visit.statusId}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+
+  const bands = [...usedStatuses]
+    .map((statusId) => ({
+      statusId,
+      name: byId.get(statusId)?.name ?? statusId,
+      category: byId.get(statusId)?.category ?? 'unknown',
+    }))
+    .sort((a, b) => {
+      const rank: Record<string, number> = { todo: 0, inprogress: 1, done: 2, unknown: 3 };
+      return (rank[a.category] ?? 3) - (rank[b.category] ?? 3) || a.name.localeCompare(b.name);
+    });
+
+  const points: FlowPoint[] = [];
+  for (let day = 0; day < days; day += 1) {
+    for (const band of bands) {
+      points.push({
+        at: from + day * DAY_MS,
+        statusId: band.statusId,
+        // Every band gets a point on every day, zero included: a line chart
+        // that simply omits the days a band was empty draws a straight line
+        // across the gap, which reads as "steady" where the truth is "none".
+        count: counts.get(`${String(day)}:${band.statusId}`) ?? 0,
+      });
+    }
+  }
+
+  return {
+    bands,
+    points,
+    from,
+    to,
+    issueCount,
+    capped: issueCount > metas.length,
+    unavailable: visits.length === 0,
   };
 }

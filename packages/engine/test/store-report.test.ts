@@ -100,7 +100,7 @@ describe('store schema', () => {
   it('deletes an issue from every table that holds its rows', () => {
     const tables = DELETE_ISSUE_STATEMENTS.map((s) => /FROM (\w+)/.exec(s)?.[1]);
     expect(new Set(tables)).toEqual(
-      new Set(['issue_status_agg', 'worklog', 'issue_history', 'issue_meta']),
+      new Set(['issue_status_agg', 'issue_status_visit', 'worklog', 'issue_history', 'issue_meta']),
     );
     // issue_meta is removed last, so a partial failure leaves the issue visible
     // and therefore re-processable rather than orphaning its aggregate rows.

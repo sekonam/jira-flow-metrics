@@ -57,6 +57,29 @@ export const CREATE_STATEMENTS: readonly string[] = [
      KEY idx_agg_project_updated (project_id, updated_at)
    )`,
 
+  // One row per *visit*, not per status: the aggregate above collapses every
+  // visit to a status into one row, which is all four v1 reports need and is
+  // not enough for either of the two things ROADMAP stage 5 asks for. A
+  // cumulative flow diagram needs to know what each issue's status was on a
+  // day in the past, and an issue panel needs the visits in order. Both are
+  // exactly this table.
+  //
+  // Sizing: rows scale with *transitions* rather than with distinct statuses
+  // — roughly 8 per issue against the aggregate's 3-6 — so a 20,000-issue
+  // instance is ~160,000 rows at ~70 bytes ≈ 11 MB. Only listings that set
+  // `datasets.statusVisits` write it; see IngestDatasets.
+  `CREATE TABLE IF NOT EXISTS issue_status_visit (
+     issue_id    VARCHAR(32) NOT NULL,
+     seq         INT         NOT NULL,
+     status_id   VARCHAR(32) NOT NULL,
+     project_id  VARCHAR(32) NOT NULL,
+     entered_at  BIGINT      NOT NULL,
+     exited_at   BIGINT      NULL,
+     PRIMARY KEY (issue_id, seq),
+     KEY idx_visit_project_entered (project_id, entered_at),
+     KEY idx_visit_project_exited (project_id, exited_at)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS status_meta (
      status_id     VARCHAR(32)  NOT NULL,
      name          VARCHAR(255) NOT NULL,
@@ -164,6 +187,7 @@ export const MIGRATIONS: readonly { name: string; statement: string }[] = CREATE
 /** Rows to delete, in order, when an issue is removed from Jira. */
 export const DELETE_ISSUE_STATEMENTS: readonly string[] = [
   'DELETE FROM issue_status_agg WHERE issue_id = ?',
+  'DELETE FROM issue_status_visit WHERE issue_id = ?',
   'DELETE FROM worklog WHERE issue_id = ?',
   'DELETE FROM issue_history WHERE issue_id = ?',
   'DELETE FROM issue_meta WHERE issue_id = ?',
@@ -177,6 +201,7 @@ export const DELETE_ISSUE_STATEMENTS: readonly string[] = [
 export const ESTIMATED_ROW_BYTES = {
   issue_meta: 160,
   issue_status_agg: 100,
+  issue_status_visit: 70,
   worklog: 200,
   issue_history: 320,
   status_meta: 80,

@@ -1,12 +1,13 @@
 import type { WorklogAggregateResult } from '@jfm/engine';
-import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
+import type { AgingReport, FlowReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
 import {
   WORKING_TIME,
-  formatDate,
   formatDateTime,
   formatDurationForHumans,
   toHours,
+  formatDate,
   type ChartPoint,
+  type SeriesPoint,
   type SummaryTile,
 } from './view-model.js';
 
@@ -133,6 +134,22 @@ export function toAgingTiles(report: AgingReport): SummaryTile[] {
 /** Bar-chart series for the aging histogram. */
 export function toAgingChartData(report: AgingReport): ChartPoint[] {
   return report.buckets.map((bucket) => ({ label: bucket.label, value: bucket.count }));
+}
+
+/**
+ * The cumulative flow series — one line per status, one point per day.
+ *
+ * Day labels are the short date `formatDate` produces everywhere else, and
+ * the caption has to say UTC for the same reason the history table's header
+ * does: the buckets are UTC days and the reader's Jira may not be.
+ */
+export function toFlowChartData(report: FlowReport): SeriesPoint[] {
+  const nameOf = new Map(report.bands.map((band) => [band.statusId, band.name]));
+  return report.points.map((point) => ({
+    label: formatDate(point.at),
+    series: nameOf.get(point.statusId) ?? point.statusId,
+    value: point.count,
+  }));
 }
 
 // ------------------------------------------------------ listing 4: SLA ---

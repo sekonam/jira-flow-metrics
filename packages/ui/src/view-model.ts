@@ -228,6 +228,14 @@ export interface ChartPoint {
   readonly value: number;
 }
 
+/**
+ * One point in a multi-series chart — a `ChartPoint` that also says which
+ * line it belongs to. `LineChart`'s `colorAccessor` names this field.
+ */
+export interface SeriesPoint extends ChartPoint {
+  readonly series: string;
+}
+
 /** The tiles above the table. Median and 85th percentile, never the mean alone —
  * cycle-time distributions are right-skewed and a mean misleads. */
 export function toSummaryTiles(report: StatusReport): SummaryTile[] {

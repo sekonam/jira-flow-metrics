@@ -5,6 +5,7 @@ import type {
   StatusAggregateRow,
   StatusMetaRow,
   StatusNameHistoryRow,
+  StatusVisitRow,
   WorklogRecord,
   BackfillState,
   StatusCategory,
@@ -116,6 +117,21 @@ export function statusAggregateToParams(row: StatusAggregateRow, projectId: stri
     row.lastExitedAt,
     row.updatedAt,
   ];
+}
+
+export function statusVisitFromRow(row: Row): StatusVisitRow {
+  return {
+    issueId: toText(row['issue_id']),
+    seq: toNumber(row['seq']),
+    statusId: toText(row['status_id']),
+    projectId: toText(row['project_id']),
+    enteredAt: toNumber(row['entered_at']),
+    exitedAt: toNullableNumber(row['exited_at']),
+  };
+}
+
+export function statusVisitToParams(row: StatusVisitRow): unknown[] {
+  return [row.issueId, row.seq, row.statusId, row.projectId, row.enteredAt, row.exitedAt];
 }
 
 const STATUS_CATEGORIES: readonly StatusCategory[] = ['todo', 'inprogress', 'done', 'unknown'];

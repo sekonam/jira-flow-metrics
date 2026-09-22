@@ -29,6 +29,38 @@ export interface StatusAggregateRow {
   readonly updatedAt: Millis;
 }
 
+/**
+ * One row of `issue_status_visit`: a single stay in a status.
+ *
+ * `StatusAggregateRow` above is this collapsed — every visit to a status
+ * summed into one row. That is all four v1 reports need, and it cannot
+ * answer either of the two questions ROADMAP stage 5 asks: what an issue's
+ * status was on a day in the past (the cumulative flow diagram), and what
+ * the visits were in order (the issue panel).
+ *
+ * `exitedAt` is `null` for the visit still in progress. `seq` is the visit's
+ * position in the issue's own timeline, so rows sort without a timestamp
+ * comparison and two visits entered in the same millisecond stay ordered.
+ */
+export interface StatusVisitRow {
+  readonly issueId: string;
+  readonly seq: number;
+  readonly statusId: StatusId;
+  readonly projectId: string;
+  readonly enteredAt: Millis;
+  readonly exitedAt: Millis | null;
+}
+
+export interface StatusVisitQuery {
+  readonly projectId: string;
+  readonly issueIds?: readonly string[];
+  /** Visits overlapping `[from, to)`. A visit still open has no end to compare. */
+  readonly from?: Millis;
+  readonly to?: Millis;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
 /** One row of `issue_meta`: the small amount of issue state reports filter on. */
 export interface IssueMetaRow {
   readonly issueId: string;
@@ -178,6 +210,18 @@ export interface MetricsStore {
    * live with two seeded projects.
    */
   listProjectStatusIds(projectId: string): Promise<StatusId[]>;
+
+  /**
+   * Replace one issue's stored visits.
+   *
+   * Separate from `putIssueAggregate` rather than folded into it, matching
+   * `putWorklogs`/`putHistory`: only the listings that set
+   * `datasets.statusVisits` pay for the table, and the write path already
+   * branches per dataset. Replace-not-merge for the same reason every other
+   * write here does — it is what keeps ingestion idempotent.
+   */
+  putIssueVisits(issueId: string, visits: readonly StatusVisitRow[]): Promise<void>;
+  queryStatusVisits(query: StatusVisitQuery): Promise<StatusVisitRow[]>;
 
   upsertStatusMeta(rows: readonly StatusMetaRow[]): Promise<void>;
   getStatusMeta(): Promise<StatusMetaRow[]>;

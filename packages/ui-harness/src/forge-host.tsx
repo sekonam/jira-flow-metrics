@@ -229,6 +229,71 @@ export const BarChart = ({
   );
 };
 
+export interface LineChartProps {
+  readonly data?: readonly Record<string, unknown>[];
+  readonly xAccessor?: string;
+  readonly yAccessor?: string;
+  readonly colorAccessor?: string;
+  readonly title?: string;
+  readonly subtitle?: string;
+}
+
+/**
+ * `LineChart` stands in as one labelled row per series, each listing its
+ * points in order.
+ *
+ * No line is drawn — jsdom has no layout, and a `<path>` proves nothing a
+ * test can read. What it does prove is what every stand-in here proves: the
+ * right numbers reach the DOM, grouped into the right series, in the right
+ * order, as real text nodes an accessibility audit can see.
+ */
+export const LineChart = ({
+  data,
+  xAccessor,
+  yAccessor,
+  colorAccessor,
+  title,
+  subtitle,
+}: LineChartProps): React.JSX.Element => {
+  const rows = data ?? [];
+  const xKey = xAccessor ?? 'label';
+  const yKey = yAccessor ?? 'value';
+  const seriesKey = colorAccessor ?? 'series';
+  const bySeries = new Map<string, { x: string; y: string }[]>();
+  // `Record<string, unknown>` values are stringified explicitly rather than
+  // interpolated: a row carrying an object would otherwise render as
+  // "[object Object]" and a test asserting on the label would pass.
+  const text = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return '';
+  };
+  for (const row of rows) {
+    const series = text(row[seriesKey]);
+    const points = bySeries.get(series) ?? [];
+    points.push({ x: text(row[xKey]), y: text(row[yKey]) });
+    bySeries.set(series, points);
+  }
+  return (
+    <Stack space="space.100">
+      {title === undefined ? null : <Heading as="h3">{title}</Heading>}
+      {subtitle === undefined ? null : <Text size="small">{subtitle}</Text>}
+      <Stack space="space.050">
+        {[...bySeries.entries()].map(([series, points]) => (
+          <Inline key={series} space="space.100" alignBlock="center" shouldWrap>
+            <Text size="small">{series}</Text>
+            {points.map((point, index) => (
+              <Text key={`${point.x}-${String(index)}`} size="small">
+                {`${point.x}: ${point.y}`}
+              </Text>
+            ))}
+          </Inline>
+        ))}
+      </Stack>
+    </Stack>
+  );
+};
+
 export interface ButtonProps {
   readonly children?: React.ReactNode;
   readonly onClick?: (() => void) | undefined;

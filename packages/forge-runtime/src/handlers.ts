@@ -2,6 +2,7 @@ import { jobFromPayload } from './scheduler.js';
 import type { ListingRuntime, ReportEnvelope, StatusReportRequest } from './runtime.js';
 import type {
   AgingReport,
+  FlowReport,
   HistoryReport,
   HistoryReportRequest,
   SlaCountedGoal,
@@ -567,6 +568,35 @@ export async function handleAgingReport(
   const projectId = auth.projectId;
   try {
     return { ok: true, data: await runtime.agingReport(projectId) };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
+ * Listing 3 — the cumulative flow diagram.
+ *
+ * `days` is a view choice the client may set, clamped by `buildFlowReport`
+ * to 1-180: the window decides how many rows of visits are scanned, and an
+ * unbounded one is a client-chosen cost on a metered database.
+ */
+export async function handleFlowReport(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<FlowReport>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const record =
+    typeof invocation.payload === 'object' && invocation.payload !== null
+      ? (invocation.payload as Record<string, unknown>)
+      : {};
+  const days = finiteNumber(record['days']);
+  try {
+    return {
+      ok: true,
+      data: await runtime.flowReport(auth.projectId, days === null ? 30 : days),
+    };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }

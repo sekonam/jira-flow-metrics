@@ -1,7 +1,7 @@
 import api, { route } from '@forge/api';
 import { Queue } from '@forge/events';
 import sql, { migrationRunner } from '@forge/sql';
-import { DATASETS_TIME_IN_STATUS, realSleeper, systemClock } from '@jfm/engine';
+import { DATASETS_TIME_IN_STATUS_WITH_VISITS, realSleeper, systemClock } from '@jfm/engine';
 import {
   JiraRestClient,
   ListingRuntime,
@@ -72,7 +72,7 @@ export function getRuntime(): ListingRuntime {
         },
       },
     },
-    { listingId: 'wip-aging', datasets: DATASETS_TIME_IN_STATUS },
+    { listingId: 'wip-aging', datasets: DATASETS_TIME_IN_STATUS_WITH_VISITS },
   );
   return cached;
 }

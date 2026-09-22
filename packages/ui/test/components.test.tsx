@@ -44,6 +44,7 @@ const {
   LoadingSurface,
   PageHeader,
   ReportBarChart,
+  ReportLineChart,
   ReportTable,
   SimpleReportTable,
   SlaGoalForm,
@@ -605,6 +606,36 @@ describe('ReportBarChart', () => {
     // below it already says.
     const { container } = render(
       <ReportBarChart data={[]} title="Median time in status" subtitle="Hours per status." />,
+    );
+    expect(container.textContent).toBe('');
+  });
+});
+
+describe('ReportLineChart', () => {
+  it('groups the points into one labelled series per status', async () => {
+    render(
+      <ReportLineChart
+        data={[
+          { label: '1 Mar 2026', series: 'To Do', value: 4 },
+          { label: '2 Mar 2026', series: 'To Do', value: 3 },
+          { label: '1 Mar 2026', series: 'In Progress', value: 1 },
+          { label: '2 Mar 2026', series: 'In Progress', value: 2 },
+        ]}
+        title="Cumulative flow"
+        subtitle="Issues in each status at the end of each day."
+      />,
+    );
+    expect(screen.getByText('Cumulative flow')).toBeDefined();
+    expect(screen.getByText('To Do')).toBeDefined();
+    expect(screen.getByText('In Progress')).toBeDefined();
+    expect(screen.getByText('1 Mar 2026: 4')).toBeDefined();
+    expect(screen.getByText('2 Mar 2026: 2')).toBeDefined();
+    await expectNoA11yViolations();
+  });
+
+  it('renders nothing for an empty series', () => {
+    const { container } = render(
+      <ReportLineChart data={[]} title="Cumulative flow" subtitle="x" />,
     );
     expect(container.textContent).toBe('');
   });

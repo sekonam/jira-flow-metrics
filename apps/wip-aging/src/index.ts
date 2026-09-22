@@ -3,6 +3,7 @@ import {
   handleBackfillJob,
   handleExportCsv,
   handleExtendHistory,
+  handleFlowReport,
   handleGetReport,
   handleHistoryWindow,
   handleIndexProgress,
@@ -42,6 +43,10 @@ resolver.define('getHistoryWindow', (req) => handleHistoryWindow(getRuntime(), r
 resolver.define('extendHistory', (req) => handleExtendHistory(getRuntime(), req));
 
 resolver.define('getAgingReport', (req) => handleAgingReport(getRuntime(), req));
+// The cumulative flow diagram. The only resolver in any listing that reads
+// `issue_status_visit`, which is why only this app's runtime sets
+// `datasets.statusVisits`.
+resolver.define('getFlowReport', (req) => handleFlowReport(getRuntime(), req));
 
 export const handler = resolver.getDefinitions();
 

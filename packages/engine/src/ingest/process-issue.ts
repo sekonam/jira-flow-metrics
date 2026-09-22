@@ -10,6 +10,7 @@ import type {
   MetricsStore,
   StatusAggregateRow,
   StatusNameHistoryRow,
+  StatusVisitRow,
 } from '../store/types.js';
 import type { Millis } from '../types.js';
 import { withRetry, type RetryOptions } from './retry.js';
@@ -29,12 +30,37 @@ export interface IngestDatasets {
   readonly statusDurations: boolean;
   readonly worklogs: boolean;
   readonly history: boolean;
+  /**
+   * Store each visit individually as well as the aggregate.
+   *
+   * Costs storage and **no extra Jira request**: the changelog these are
+   * derived from is already fetched whenever `statusDurations` is set. Only
+   * the listings that draw a cumulative flow diagram or an issue timeline
+   * need it, and they pay for it alone — which is the same "listings pay
+   * only for what they read" rule the other three flags express.
+   */
+  readonly statusVisits?: boolean;
 }
 
 export const DATASETS_TIME_IN_STATUS: IngestDatasets = {
   statusDurations: true,
   worklogs: false,
   history: false,
+};
+
+/**
+ * Status durations plus the individual visits behind them.
+ *
+ * What the WIP-aging listing ingests: the cumulative flow diagram needs to
+ * know what each issue's status was on a past day, which the collapsed
+ * aggregate cannot answer. No extra Jira call — the changelog is already
+ * fetched for `statusDurations`.
+ */
+export const DATASETS_TIME_IN_STATUS_WITH_VISITS: IngestDatasets = {
+  statusDurations: true,
+  worklogs: false,
+  history: false,
+  statusVisits: true,
 };
 
 export const DATASETS_WORKLOG: IngestDatasets = {
@@ -53,6 +79,7 @@ export const DATASETS_ALL: IngestDatasets = {
   statusDurations: true,
   worklogs: true,
   history: true,
+  statusVisits: true,
 };
 
 export interface IngestConfig {
@@ -72,6 +99,7 @@ export interface ProcessedIssue {
   readonly worklogs: readonly WorklogRecord[];
   readonly history: readonly HistoryRecord[];
   readonly statusNames: readonly StatusNameHistoryRow[];
+  readonly visits: readonly StatusVisitRow[];
   /** Requests made to Jira for this issue. Surfaced so the UI can show progress cost. */
   readonly requests: number;
 }
@@ -157,6 +185,21 @@ export async function processIssue(
     }
   }
 
+  // The visit list is the timeline itself, one row per interval. Derived
+  // from the same reconstruction the aggregate above collapses, so the two
+  // cannot disagree about what happened.
+  const visits: StatusVisitRow[] =
+    config.datasets.statusVisits === true
+      ? timeline.intervals.map((interval, index) => ({
+          issueId,
+          seq: index,
+          statusId: interval.statusId,
+          projectId,
+          enteredAt: interval.start,
+          exitedAt: interval.end,
+        }))
+      : [];
+
   let worklogs: WorklogRecord[] = [];
   if (config.datasets.worklogs) {
     const fetched = await fetchAllWorklogs(issueId, issueKey, projectId, api, config);
@@ -189,7 +232,7 @@ export async function processIssue(
     updatedAt: now,
   };
 
-  return { meta, aggregates, worklogs, history, statusNames, requests };
+  return { meta, aggregates, worklogs, history, statusNames, visits, requests };
 }
 
 /** Persist a batch of processed issues with the minimum number of store calls. */
@@ -206,6 +249,9 @@ export async function writeProcessed(
   } else {
     // Other listings still need issue_meta for filtering, but write no aggregates.
     await store.putIssueAggregates(processed.map((p) => ({ meta: p.meta, rows: [] })));
+  }
+  if (datasets.statusVisits === true) {
+    for (const p of processed) await store.putIssueVisits(p.meta.issueId, p.visits);
   }
   if (datasets.worklogs) {
     for (const p of processed) await store.putWorklogs(p.meta.issueId, p.worklogs);

@@ -366,6 +366,7 @@ describe('SqlMetricsStore statement generation', () => {
     await new SqlMetricsStore(sql).deleteIssue('1');
     expect(sql.sql).toEqual([
       'DELETE FROM issue_status_agg WHERE issue_id = ?',
+      'DELETE FROM issue_status_visit WHERE issue_id = ?',
       'DELETE FROM worklog WHERE issue_id = ?',
       'DELETE FROM issue_history WHERE issue_id = ?',
       'DELETE FROM issue_meta WHERE issue_id = ?',
