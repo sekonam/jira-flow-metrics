@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseArgs, reset } from '../tools/seed-dev-site.mjs';
-import { isoDaysFromNow } from '../tools/jira-seed-lib.mjs';
+import { deletionMeansGone, isoDaysFromNow } from '../tools/jira-seed-lib.mjs';
 import {
   SCENARIOS,
   VISIBLE_EXCESS_MS,
@@ -416,6 +416,44 @@ describe('parseArgs — rejecting a malformed command line', () => {
       reset: false,
       help: false,
     });
+  });
+});
+
+describe('★ deletionMeansGone reads the status, not the path', () => {
+  // The one decision both seeders' --reset makes about a caught error, now
+  // in one place because round three fixed two copies and tested one. Keys
+  // here are the shape `Jira.request` really produces: `<method> <path> →
+  // <status>`, path first, so the key is always in the string being matched.
+  const del = (key: string, tail: string): string =>
+    `DELETE /rest/api/3/issue/${key}?deleteSubtasks=true → ${tail}`;
+
+  it('forgets a key only on a genuine 404', () => {
+    expect(deletionMeansGone(del('FLOW-1', '404\n{}'))).toBe(true);
+    expect(deletionMeansGone(del('FLOW-1', '401\n{}'))).toBe(false);
+    expect(deletionMeansGone(del('FLOW-1', '403\n{}'))).toBe(false);
+  });
+
+  it('★ is not fooled by an issue key that ends in 404', () => {
+    // `/\b404\b/` matched this, because `-` and `?` are both word
+    // boundaries — so the one issue per project whose key ends in -404 was
+    // forgotten while every other 401 was correctly kept.
+    expect(deletionMeansGone(del('FLOW-404', '401\n{}'))).toBe(false);
+    expect(deletionMeansGone(del('FLOW-404', '404\n{}'))).toBe(true);
+    expect(deletionMeansGone(del('FLOW-4040', '401\n{}'))).toBe(false);
+  });
+
+  it('keeps a key when the request gave up after retrying', () => {
+    // Repeated 429 or 5xx. No status in the message at all, and the issue
+    // certainly still exists.
+    expect(deletionMeansGone('DELETE /rest/api/3/issue/FLOW-404 — gave up after 5 attempts')).toBe(
+      false,
+    );
+  });
+
+  it('ignores a response body that happens to contain the same text', () => {
+    // The body is appended after a newline and only the first line is read,
+    // so a Jira error payload quoting "→ 404" cannot forge a deletion.
+    expect(deletionMeansGone(`${del('FLOW-1', '400')}\n{"errorMessages":["→ 404"]}`)).toBe(false);
   });
 });
 

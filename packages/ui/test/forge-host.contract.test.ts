@@ -92,37 +92,68 @@ function productionSources(): string[] {
  */
 function standInPropsNeverRead(source: string): string[] {
   const problems: string[] = [];
-  const interfaces = source.matchAll(
-    /export interface (\w+Props)\s*(?:extends [\w, ]+)?\{([\s\S]*?)\n\}/g,
+  // `interface X extends Y<Z> {` and `type X = {` both count. The first
+  // version matched only `interface`, with an `extends [\w, ]+` that could
+  // not span a generic argument — so two one-line edits made a stand-in
+  // invisible to this scan entirely, which is the hole it exists to close.
+  const declarations = source.matchAll(
+    /export (?:interface|type) (\w+Props)\b[^{]*\{([\s\S]*?)\n\}/g,
   );
-  for (const [, name, body] of interfaces) {
+  let checked = 0;
+  for (const [, name, body] of declarations) {
     const declared = [...body!.matchAll(/^\s*(?:readonly\s+)?([a-zA-Z]\w*)\??\s*:/gm)].map(
       (m) => m[1]!,
     );
     const component = name!.replace(/Props$/, '');
-    const signature = new RegExp(
-      `export (?:const ${component}\\s*=\\s*|function ${component}\\s*)\\(([\\s\\S]*?)\\)\\s*:\\s*(?:React\\.)?JSX\\.Element`,
-    ).exec(source);
-    // ★ An unmatched signature fails rather than being skipped.
+    const params = componentParams(source, component);
+    // ★ An unreadable signature fails rather than being skipped.
     //
     // It used to `continue` under the comment "not a component; checked
     // elsewhere" — and it is not checked elsewhere: the sibling test only
-    // asserts the name exists on the host. So a stand-in written as
-    // `export function Widget(props: WidgetProps)`, or returning
-    // `JSX.Element` without the `React.` prefix, silently left this whole
-    // check. A scan that quietly covers less than it claims is the failure
-    // this file exists to catch, one level up.
-    if (signature === null) {
-      problems.push(`${component}: has a ${name} interface but no signature this scan can read`);
+    // asserts the name exists on the host. A scan that quietly covers less
+    // than it claims is the failure this file exists to catch, one level up.
+    if (params === null) {
+      problems.push(`${component}: has a ${name} declaration but no signature this scan can read`);
       continue;
     }
-    const params = signature[1]!;
+    checked += 1;
     if (/\.\.\.\w+/.test(params)) continue; // spreads the remainder
     const ignored = declared.filter((prop) => !new RegExp(`\\b${prop}\\b`).test(params));
     if (ignored.length > 0)
       problems.push(`${component}: declares ${ignored.join(', ')} and reads neither`);
   }
+  // A scan that parsed nothing must not report success — the same guard the
+  // sibling `USED` check has, for the same reason.
+  if (checked === 0) problems.push('the scan read no stand-in signatures at all');
   return problems;
+}
+
+/**
+ * The parameter list of `export const X = (…)` or `export function X(…)`.
+ *
+ * Braces and parentheses are counted rather than matched by regex, so a
+ * destructured parameter with a default (`{ size = 'small' }`), a generic
+ * (`<T,>`), any return-type annotation and an inferred return type are all
+ * read correctly. The first attempt at this pinned the return type to
+ * `React.JSX.Element`, which reported six perfectly correct shapes as
+ * broken — and a check that cries wolf teaches people to route around it,
+ * which is worse than the silent skip it replaced.
+ */
+function componentParams(source: string, component: string): string | null {
+  const declaration = new RegExp(`export (?:const|function) ${component}\\b`).exec(source);
+  if (declaration === null) return null;
+  const open = source.indexOf('(', declaration.index);
+  if (open === -1) return null;
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return null;
 }
 
 /** Names imported from `@forge/react`, default import included as `default`. */

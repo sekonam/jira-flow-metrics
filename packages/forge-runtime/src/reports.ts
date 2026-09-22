@@ -16,6 +16,7 @@ import {
   type WorklogAggregateResult,
   type WorklogGroupBy,
 } from '@jfm/engine';
+import { SQL_MAX_ROWS } from './sql/sql-store.js';
 
 /**
  * Reports for listings 2-5, built from the same stored aggregates as listing 1.
@@ -129,22 +130,35 @@ export interface AgingReport {
  * failure this codebase exists to avoid, so the cap is now explicit and
  * hitting it is reported rather than absorbed.
  */
-const AGGREGATE_ROW_CAP = 10_000;
+const AGGREGATE_ROW_CAP = SQL_MAX_ROWS - 1;
 
 /**
  * Read the aggregate rows for a page of issues, and say whether the cap cut
  * them off.
  *
- * ★ Asks for one row more than the cap. `length >= cap` cannot tell "exactly
- * 10,000 rows" from "truncated at 10,000" — 500 issues on a 20-status
- * workflow is exactly 10,000 and nothing was dropped — and since the SLA
- * report started withholding `attainment` on a capped read, that false
- * positive stopped costing a spurious banner and started blanking the
- * report's headline figure on a complete, correct report. The extra row is
- * the cheapest possible discriminator and is dropped before it is used.
+ * ★ Asks for one row more than the cap, and the cap is one below the store's
+ * ceiling so that the extra row can actually be delivered.
  *
- * Same `>= MAX` shape as the `enumerateDaysCapped` false positive fixed one
- * commit earlier, one file over.
+ * Two mistakes in sequence, both worth keeping written down.
+ *
+ * `length >= cap` cannot tell "exactly `cap` rows" from "truncated at `cap`"
+ * — 500 issues on a 20-status workflow is exactly 10,000 and nothing was
+ * dropped — and since the SLA report started withholding `attainment` on a
+ * capped read, that false positive stopped costing a spurious banner and
+ * started blanking the headline figure on a complete, correct report.
+ *
+ * The fix for that asked for `10_000 + 1` while `AGGREGATE_ROW_CAP` was
+ * 10,000 — which is exactly `SQL_MAX_ROWS`, so `clampLimit` silently handed
+ * back 10,000 and `length > cap` could never be true on the store that
+ * ships. That turned a conservative over-report into silence on the real
+ * truncation: the tail issues' rows are dropped by `ORDER BY issue_id`, they
+ * read as `consumedMs = 0` — fully compliant — and the SLA page prints an
+ * inflated attainment with no banner at all. Precisely the failure this
+ * cap's own docstring says it exists to prevent. `MemoryStore` has no clamp,
+ * so the test written for the fix exercised the one store where it worked.
+ *
+ * Deriving the cap from `SQL_MAX_ROWS` is what stops the two drifting again:
+ * the probe cannot be silently swallowed by the ceiling it is probing.
  */
 async function readAggregates(
   store: MetricsStore,

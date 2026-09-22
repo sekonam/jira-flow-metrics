@@ -167,6 +167,45 @@ export class SettingsSqlExecutor extends RecordingSqlExecutor {
   }
 }
 
+/**
+ * A `RecordingSqlExecutor` that serves rows from in-memory tables and
+ * **honours `LIMIT` and `OFFSET`**.
+ *
+ * ★ The reason this exists is worth stating plainly, because four rounds of
+ * defect-hunting found the same shape four times: every cap and ceiling in
+ * this product has been tested against `MemoryStore`, which has no clamp, and
+ * never against `SqlMetricsStore`, which does. A report that detects
+ * truncation by over-reading — asking for `cap + 1` and checking whether it
+ * got it — is silently defeated by `clampLimit`, and the test written for it
+ * passes, because it runs on the store where the clamp is absent. That is
+ * exactly how `AGGREGATE_ROW_CAP` came to be unable to detect anything on the
+ * store that ships, while its own test was green.
+ *
+ * ⚠️ This is not a SQL engine. It reads the table name, `LIMIT` and `OFFSET`
+ * out of the statement and ignores every `WHERE`, `ORDER BY` and `JOIN` — so
+ * it is the right tool for asserting on *ceilings and paging* and the wrong
+ * one for asserting on filtering, which `MemoryStore` covers properly.
+ * `COUNT(*) AS n` is answered from the whole table, unfiltered, for the same
+ * reason.
+ */
+export class LimitHonouringSqlExecutor extends RecordingSqlExecutor {
+  constructor(private readonly tables: Readonly<Record<string, readonly unknown[]>> = {}) {
+    super();
+  }
+
+  override query<T>(statement: string, params: readonly unknown[] = []): Promise<T[]> {
+    void super.query(statement, params);
+    const table = /\bFROM\s+(\w+)/i.exec(statement)?.[1];
+    const rows = table === undefined ? [] : (this.tables[table] ?? []);
+    if (/COUNT\s*\(/i.test(statement)) {
+      return Promise.resolve([{ n: rows.length }] as T[]);
+    }
+    const limit = Number(/\bLIMIT\s+(\d+)/i.exec(statement)?.[1] ?? rows.length);
+    const offset = Number(/\bOFFSET\s+(\d+)/i.exec(statement)?.[1] ?? 0);
+    return Promise.resolve(rows.slice(offset, offset + limit) as T[]);
+  }
+}
+
 function normalise(statement: string): string {
   return statement.replace(/\s+/g, ' ').trim();
 }

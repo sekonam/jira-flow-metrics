@@ -548,6 +548,22 @@ describe('★ a cap banner must not contradict itself', () => {
         noun: 'issues',
       }),
     ).toBeNull();
+
+    // ★ Both ceilings. This branch was added with the banner's and tested
+    // only there: all three assertions above pass with it deleted, and
+    // deleting it drops the "of 5,000" denominator from the gadget — the
+    // exact information the banner side was fixed to keep.
+    expect(
+      toCapNotice({
+        capped: true,
+        aggregatesCapped: true,
+        included: 400,
+        total: 5000,
+        noun: 'issues',
+      }),
+    ).toBe(
+      'Covering 400 of 5,000 issues, and some of those are missing measurements, so every figure here is a lower bound.',
+    );
   });
 });
 

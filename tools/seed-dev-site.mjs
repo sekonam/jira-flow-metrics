@@ -71,6 +71,7 @@ import {
   discoverRoles as discoverRolesOf,
   transitionTo as transitionToRole,
   logWork as logWorkOn,
+  deletionMeansGone,
 } from './jira-seed-lib.mjs';
 
 /**
@@ -237,17 +238,8 @@ export async function reset(jira, state, save = saveState) {
       // A 404 means somebody already removed it by hand, which is fine — the
       // issue is gone either way, so its record may go too. Anything else
       // means it is still there.
-      // ★ Anchored on the status position, not a bare word boundary.
-      //
-      // `jira-seed-lib` formats the message as `DELETE <path> → <status>`,
-      // and the path contains the issue key — so `/\b404\b/` matched
-      // `DELETE /rest/api/3/issue/FLOW-404?… → 401`, forgetting the one
-      // issue whose key happens to end in -404 while every other 401 was
-      // correctly kept. A bulk seed of thousands produces such a key with
-      // near certainty, so the fix against orphaning orphaned one issue per
-      // project. It also matched the "gave up after 5 attempts" message,
-      // where the issue certainly still exists.
-      if (!/→ 404\b/.test(message)) remaining[key] = state.issues[key];
+      // Only a genuine 404 forgets the key — see `deletionMeansGone`.
+      if (!deletionMeansGone(message)) remaining[key] = state.issues[key];
       say(`      ⤳ ${key}: ${message}`);
     }
   }

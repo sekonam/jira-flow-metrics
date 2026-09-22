@@ -11,7 +11,8 @@ import {
   type StatusMeta,
   type WorklogRecord,
 } from '@jfm/engine';
-import { RecordingSqlExecutor } from '../src/sql/executor.js';
+import { LimitHonouringSqlExecutor, RecordingSqlExecutor } from '../src/sql/executor.js';
+import { SQL_MAX_ROWS, SqlMetricsStore } from '../src/sql/sql-store.js';
 import { SettingsStore } from '../src/settings.js';
 import { ListingRuntime } from '../src/runtime.js';
 import {
@@ -178,13 +179,17 @@ describe('capped reports carry the real total', () => {
   });
 
   it('★ does not call an exactly-full aggregate read truncated', async () => {
-    // 500 issues on a 20-status workflow is exactly 10,000 aggregate rows,
-    // and nothing was dropped. `length >= cap` cannot tell that from a real
-    // truncation — and since this report started withholding `attainment`
-    // on a capped read, the false positive stopped costing a spurious
-    // banner and started blanking the headline figure on a complete report.
+    // A read that exactly fills the cap dropped nothing, and `length >= cap`
+    // cannot tell that from a real truncation — and since this report
+    // withholds `attainment` on a capped read, that false positive blanks
+    // the headline figure on a complete, correct report.
+    //
+    // 303 issues on a 33-status workflow is exactly 9,999 rows, which is
+    // `AGGREGATE_ROW_CAP`: one below the store's own `SQL_MAX_ROWS` ceiling,
+    // so the `cap + 1` probe is a limit the store will actually honour. See
+    // `readAggregates` for why that last part is the whole fix.
     const store = new MemoryStore();
-    const statusIds = Array.from({ length: 20 }, (_u, i) => String(100 + i));
+    const statusIds = Array.from({ length: 33 }, (_u, i) => String(100 + i));
     await store.upsertStatusMeta(
       statusIds.map((statusId) => ({
         statusId,
@@ -195,7 +200,7 @@ describe('capped reports carry the real total', () => {
       })),
     );
     await store.putIssueAggregates(
-      Array.from({ length: 500 }, (_u, i) => ({
+      Array.from({ length: 303 }, (_u, i) => ({
         meta: meta({ issueId: String(i + 1), currentStatusId: '100' }),
         rows: statusIds.map((statusId) => agg(String(i + 1), statusId, 20)),
       })),
@@ -205,14 +210,14 @@ describe('capped reports carry the real total', () => {
     const sla = await buildSlaReport(store, '10000', goal, NOW);
     expect(sla.aggregatesCapped).toBe(false);
     expect(sla.capped).toBe(false);
-    // Every one of the 500 breaches, and the report says so rather than
+    // Every one of the 303 breaches, and the report says so rather than
     // withholding the figure.
     expect(sla.attainment).toBe(0);
     expect((await buildAgingReport(store, '10000', NOW, 500)).aggregatesCapped).toBe(false);
 
     // One row past the cap is a real truncation. It has to land on an issue
-    // already in the page — a 501st issue would be outside the 500-issue
-    // limit and would change nothing about the aggregate read.
+    // already in the page — a 304th issue would change nothing about which
+    // rows the aggregate read returns first.
     await store.putIssueAggregates([
       {
         meta: meta({ issueId: '1', currentStatusId: '100' }),
@@ -220,6 +225,69 @@ describe('capped reports carry the real total', () => {
       },
     ]);
     expect((await buildSlaReport(store, '10000', goal, NOW)).aggregatesCapped).toBe(true);
+  });
+
+  it('★ detects a truncated aggregate read against the store that actually ships', async () => {
+    // The defect this exists to prevent, stated plainly: every cap in this
+    // product had only ever been tested against `MemoryStore`, which has no
+    // `LIMIT` clamp. `SqlMetricsStore` clamps every read to `SQL_MAX_ROWS`,
+    // so a truncation check that over-reads — asking for `cap + 1` and
+    // seeing whether it arrives — was silently defeated, and its test was
+    // green because it ran on the store where the clamp is absent.
+    //
+    // The consequence is the one `AGGREGATE_ROW_CAP`'s docstring names: the
+    // tail issues' rows are dropped by `ORDER BY issue_id`, those issues
+    // read as `consumedMs = 0` — fully compliant — and the page prints an
+    // inflated attainment with no banner at all.
+    const issues = 500;
+    const statuses = 21; // 10,500 rows: past the cap, and past the ceiling
+    const metaRows = Array.from({ length: issues }, (_u, i) => ({
+      issue_id: String(i + 1),
+      issue_key: `FLOW-${String(i + 1)}`,
+      project_id: '10000',
+      issue_type_id: null,
+      priority_id: null,
+      assignee_account_id: null,
+      current_status_id: '100',
+      created_at: NOW - 30 * DAY,
+      resolved_at: null,
+      due_at: null,
+      history_through_at: NOW,
+      truncated: 0,
+      updated_at: NOW,
+    }));
+    const aggRows = metaRows.flatMap((row) =>
+      Array.from({ length: statuses }, (_u, s) => ({
+        issue_id: row.issue_id,
+        status_id: String(100 + s),
+        project_id: '10000',
+        elapsed_ms: 600 * HOUR,
+        business_ms: 600 * HOUR,
+        entries: 1,
+        last_entered_at: NOW - DAY,
+        last_exited_at: null,
+        updated_at: NOW,
+      })),
+    );
+
+    const sqlStore = new SqlMetricsStore(
+      new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
+      { migrate: () => Promise.resolve() },
+    );
+    const goal = { id: 'g', name: 'Goal', countedStatusIds: ['100'], targetMs: 8 * HOUR };
+    const sla = await buildSlaReport(sqlStore, '10000', goal, NOW);
+
+    expect(aggRows.length).toBeGreaterThan(SQL_MAX_ROWS);
+    expect(sla.rows).toHaveLength(issues);
+    expect(sla.aggregatesCapped).toBe(true);
+    expect(sla.capped).toBe(true);
+    // Withheld, not inflated. Without the cap detection this reads as a
+    // healthy attainment over a project where every issue is 600 working
+    // hours against an eight-hour target.
+    expect(sla.attainment).toBeNull();
+
+    const aging = await buildAgingReport(sqlStore, '10000', NOW, issues);
+    expect(aging.aggregatesCapped).toBe(true);
   });
 
   it('worklog report: capped when more entries match than were fetched', async () => {

@@ -77,6 +77,29 @@ export class Jira {
   del = (path) => this.request('DELETE', path);
 }
 
+/**
+ * Did a failed DELETE mean the issue is already gone?
+ *
+ * The one decision both seeders' `--reset` makes about a caught error, and
+ * it belongs here rather than in each of them: they had a copy each, round
+ * three fixed both and tested one, and a copy that is only *currently*
+ * identical is a copy that will drift.
+ *
+ * Only a genuine 404 forgets the key. Everything else — 401 on an expired
+ * token, 403, a give-up after retrying a 429 — means the issue is still in
+ * Jira, and the state file is the only record of it: clearing that record
+ * orphans the issue beyond the reach of the tool that created it, forever.
+ *
+ * ★ Anchored on the status position. `Jira.request` formats the message as
+ * `${method} ${path} → ${status}`, and the path contains the issue key — so
+ * a bare `/\b404\b/` matched `DELETE /rest/api/3/issue/FLOW-404?… → 401`
+ * and forgot the one issue per project whose key ends in -404, while
+ * correctly keeping every other 401. The fix against orphaning, orphaning.
+ */
+export function deletionMeansGone(message) {
+  return /→ 404\b/.test(String(message).split('\n')[0]);
+}
+
 export function isoDaysFromNow(days, from = new Date()) {
   const date = new Date(from.getTime());
   date.setDate(date.getDate() + days);

@@ -469,13 +469,20 @@ export class SqlMetricsStore implements MetricsStore {
 /**
  * Keep `LIMIT` inside sane bounds; an unbounded read is a cost incident.
  *
+ * ⚠️ `SQL_MAX_ROWS` is a hard ceiling, not a default: a caller asking for
+ * more silently gets this many. Any caller that detects truncation by
+ * over-reading has to stay *below* it — see `AGGREGATE_ROW_CAP`, which was
+ * briefly set to exactly this value and so could never detect anything.
+ *
  * `Math.trunc(NaN)` is `NaN` and both `Math.min` and `Math.max` propagate it,
  * so a bare clamp would pass `NaN` straight into the statement. These fail
  * closed on any non-finite input instead.
  */
+export const SQL_MAX_ROWS = 10_000;
+
 function clampLimit(limit: number): number {
-  if (!Number.isFinite(limit)) return 10_000;
-  return Math.max(1, Math.min(10_000, Math.trunc(limit)));
+  if (!Number.isFinite(limit)) return SQL_MAX_ROWS;
+  return Math.max(1, Math.min(SQL_MAX_ROWS, Math.trunc(limit)));
 }
 
 function clampOffset(offset: number): number {
