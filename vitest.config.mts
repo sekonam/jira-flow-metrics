@@ -4,10 +4,31 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      // `@jfm/ui-harness` is dev-only tooling. Pointing it at source rather
-      // than `dist` keeps the UI suites runnable without a build step and
-      // makes stack traces land on the file being edited. Every other
-      // workspace package resolves through its `exports` map, as the apps do.
+      // ★ Every workspace package resolves to **source**, not to `dist`.
+      //
+      // Only `@jfm/ui-harness` used to, with the rest going through their
+      // `exports` maps "as the apps do". That sounded principled and was a
+      // hole in the safety net: `pnpm test` runs no build, and `verify` runs
+      // `build` *last*, after `coverage` — so the thirteen `apps/*` suites,
+      // which reach `@jfm/ui` transitively, were asserting against whatever
+      // `dist` happened to be lying around.
+      //
+      // Measured, not assumed: replacing the whole body of
+      // `formatDurationForHumans` with `return "MUTANT"` left all twelve app
+      // suites green, and dropping `WORKING_TIME` from the worklog table —
+      // the factor-of-three bug `DurationFormat` exists to prevent — left all
+      // forty browser flows green. Both were caught the moment the alias
+      // pointed at source.
+      //
+      // `pnpm run build` still runs in `verify`, so a genuine build failure
+      // is still caught; what changed is that the tests now test the code in
+      // front of you.
+      '@jfm/engine': fileURLToPath(new URL('./packages/engine/src', import.meta.url)),
+      '@jfm/forge-runtime/testing': fileURLToPath(
+        new URL('./packages/forge-runtime/src/testing/pipeline.ts', import.meta.url),
+      ),
+      '@jfm/forge-runtime': fileURLToPath(new URL('./packages/forge-runtime/src', import.meta.url)),
+      '@jfm/ui': fileURLToPath(new URL('./packages/ui/src', import.meta.url)),
       '@jfm/ui-harness': fileURLToPath(new URL('./packages/ui-harness/src', import.meta.url)),
     },
   },

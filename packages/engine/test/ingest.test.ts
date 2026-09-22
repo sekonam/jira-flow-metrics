@@ -953,6 +953,60 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     };
   }
 
+  it('★ does not call a project complete because one page happened to be empty', async () => {
+    // Regression. `pageWasLast` used to include `issues.length === 0`, which
+    // conflates "Jira has no more issues" with "this page yielded none" —
+    // and the second happens for ordinary reasons: Jira can answer
+    // `{issues: [], isLast: false, nextPageToken: …}`, and a page re-fetched
+    // after a mid-page stop comes back shorter than the pending skip
+    // whenever issues were deleted or moved between slices.
+    //
+    // The consequence was terminal rather than merely wrong: the project was
+    // marked `complete`, and `runBackfillSlice` returns immediately on
+    // `complete`, so no later slice ever retried. The reports sat on a
+    // partial corpus permanently with nothing on screen saying so.
+    const api = new ScriptedSearchApi([
+      { issues: [issue(1)], isLast: false, nextPageToken: 'P2', total: 2 },
+      { issues: [], isLast: false, nextPageToken: 'P3', total: 2 },
+      { issues: [issue(2)], isLast: true, nextPageToken: null, total: 2 },
+    ]);
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.issuesProcessed).toBe(2);
+    expect(result.stoppedBecause).toBe('complete');
+    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(2);
+  });
+
+  it('★ stops rather than spinning when Jira returns an empty page without advancing', async () => {
+    // The other half of the fix above, and the reason it needed a guard: the
+    // deadline and the issue budget are only checked inside the per-issue
+    // loop, which an empty page skips entirely. Once empty pages stopped
+    // ending the walk, a Jira answering `{issues: [], nextPageToken: <same>}`
+    // forever would have spun here until Forge killed the invocation.
+    //
+    // `ScriptedSearchApi` replays its last page once the script runs out, so
+    // this is exactly that shape: a token that never advances.
+    const api = new ScriptedSearchApi([
+      { issues: [issue(1)], isLast: false, nextPageToken: 'STUCK', total: 2 },
+      { issues: [], isLast: false, nextPageToken: 'STUCK', total: 2 },
+    ]);
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    // It terminates, and it terminates having kept what it did read.
+    expect(result.issuesProcessed).toBe(1);
+    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(1);
+  });
+
   it('reseeks by created date instead of trusting a corrupted token, and finishes', async () => {
     // Page 1 ok, page 2 ok (hands back a token that decodes to corrupted).
     // The *next* iteration detects that before sending it — no third call

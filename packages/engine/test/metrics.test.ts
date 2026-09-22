@@ -496,24 +496,116 @@ describe('SLA evaluation', () => {
     expect(attainmentRate([])).toBeNull();
   });
 
-  it('evaluates plain due dates', () => {
+  it('★ reports the breach instant past the paused time, not through it', () => {
+    // Regression. The already-breached branch walked `targetMs` of working
+    // time from the start of the whole span, straight through the very
+    // statuses the goal is defined to exclude. Any goal that paused at all
+    // reported breaching earlier than it did — and at the instant it named,
+    // the clock had been stopped with part of the target still unspent.
+    //
+    // Mon-Fri 09:00-17:00 UTC. In Progress 09:00, Blocked (paused) 10:00 to
+    // 15:00, In Progress again after. Target 2 working hours: one hour is
+    // spent by 10:00, the clock stops for five, and the second hour runs
+    // 15:00-16:00. The breach instant is Mon 16:00, not Mon 11:00.
+    const timeline = reconstructTimeline({
+      issueId: '1',
+      issueKey: 'FLOW-1',
+      projectId: '10000',
+      createdAt: T('2026-03-02T09:00:00Z'),
+      currentStatusId: '3',
+      currentStatusName: 'In Progress',
+      entries: [
+        entry('1', '2026-03-02T10:00:00.000+0000', '3', 'In Progress', '10100', 'Blocked'),
+        entry('2', '2026-03-02T15:00:00.000+0000', '10100', 'Blocked', '3', 'In Progress'),
+      ],
+    });
+    const goal: SlaGoal = {
+      id: 'g',
+      name: 'Two working hours',
+      startStatusIds: ['3'],
+      stopStatusIds: ['10001'],
+      pauseStatusIds: ['10100'],
+      targetMs: 2 * HOUR,
+      calendar: UTC_BUSINESS_CALENDAR,
+    };
+    const result = evaluateSla(timeline, goal, T('2026-03-03T13:00:00Z'));
+
+    expect(result.breached).toBe(true);
+    expect(result.pausedMs).toBe(5 * HOUR);
+    expect(result.breachAt).toBe(T('2026-03-02T16:00:00Z'));
+  });
+
+  it('★ treats a Jira due date as a whole day, not as midnight', () => {
+    // Regression, and the worst kind: it made listing 4's headline column
+    // wrong for the *common* case. Jira stores a due date as `YYYY-MM-DD`
+    // and the parser lands it on UTC midnight, so comparing a resolution
+    // instant against it directly reported every issue finished ON its due
+    // date as late — "breached, over by 14h" for work delivered at 2pm on
+    // the day it was due.
+    const due = T('2026-03-04T00:00:00Z');
+    const onTheDay = evaluateDueDate(
+      { issueId: '1', issueKey: 'A', dueAt: due, resolvedAt: T('2026-03-04T14:00:00Z') },
+      NOW,
+    );
+    expect(onTheDay.breached).toBe(false);
+    // Negative means early, and it is measured from the end of the due day.
+    expect(onTheDay.overdueByMs).toBe(-10 * 3_600_000);
+
+    // The last instant of the due day is still on time; the first of the
+    // next day is not.
+    expect(
+      evaluateDueDate(
+        { issueId: '1', issueKey: 'A', dueAt: due, resolvedAt: T('2026-03-04T23:59:59Z') },
+        NOW,
+      ).breached,
+    ).toBe(false);
+    const late = evaluateDueDate(
+      { issueId: '1', issueKey: 'A', dueAt: due, resolvedAt: T('2026-03-05T02:00:00Z') },
+      NOW,
+    );
+    expect(late.breached).toBe(true);
+    expect(late.overdueByMs).toBe(2 * 3_600_000);
+  });
+
+  it('ends the due day in the instance timezone, not in UTC', () => {
+    // The same instant is on time for one team and late for another, and the
+    // difference is only which zone their day ends in. Due 4 March, resolved
+    // 2026-03-05T04:00Z:
+    //
+    //   Los Angeles (UTC-8): their 4 March ends 2026-03-05T08:00Z — on time.
+    //   Auckland    (UTC+13): their 4 March ended 2026-03-04T11:00Z — late.
+    //
+    // Reading the boundary in UTC for everyone gets one of them wrong.
+    const due = T('2026-03-04T00:00:00Z');
+    const resolved = T('2026-03-05T04:00:00Z');
+    expect(
+      evaluateDueDate(
+        { issueId: '1', issueKey: 'A', dueAt: due, resolvedAt: resolved },
+        NOW,
+        'America/Los_Angeles',
+      ).breached,
+    ).toBe(false);
+    expect(
+      evaluateDueDate(
+        { issueId: '1', issueKey: 'A', dueAt: due, resolvedAt: resolved },
+        NOW,
+        'Pacific/Auckland',
+      ).breached,
+    ).toBe(true);
+    // UTC is the default, and sits between the two.
+    expect(
+      evaluateDueDate({ issueId: '1', issueKey: 'A', dueAt: due, resolvedAt: resolved }, NOW)
+        .breached,
+    ).toBe(true);
+  });
+
+  it('reports an unresolved issue past its due day as breached', () => {
     expect(
       evaluateDueDate(
         { issueId: '1', issueKey: 'A', dueAt: T('2026-03-04T00:00:00Z'), resolvedAt: null },
         NOW,
       ).breached,
     ).toBe(true);
-    expect(
-      evaluateDueDate(
-        {
-          issueId: '1',
-          issueKey: 'A',
-          dueAt: T('2026-03-04T00:00:00Z'),
-          resolvedAt: T('2026-03-03T00:00:00Z'),
-        },
-        NOW,
-      ),
-    ).toMatchObject({ breached: false, overdueByMs: -DAY });
     expect(
       evaluateDueDate({ issueId: '1', issueKey: 'A', dueAt: null, resolvedAt: null }, NOW),
     ).toMatchObject({ breached: false, overdueByMs: null });

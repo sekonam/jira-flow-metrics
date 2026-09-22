@@ -22,6 +22,15 @@ export default defineConfig({
   resolve: {
     alias: {
       '@forge/react': here('../src/forge-host.tsx'),
+      // ★ The workspace packages resolve to **source**, for the same reason
+      // `vitest.config.mts` aliases them: nothing rebuilds `dist` before
+      // `pnpm run e2e:ui`, so the browser flows were driving whatever build
+      // artifact happened to be lying around. Dropping `WORKING_TIME` from
+      // the worklog table — the factor-of-three bug `DurationFormat` exists
+      // to prevent — left all forty flows green until this was added.
+      '@jfm/engine': here('../../engine/src'),
+      '@jfm/forge-runtime': here('../../forge-runtime/src'),
+      '@jfm/ui': here('../../ui/src'),
     },
   },
   server: { port: 5183, strictPort: true },

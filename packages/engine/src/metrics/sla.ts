@@ -1,5 +1,6 @@
 import { addBusinessMs, businessMsIn, type WorkingCalendar } from '../time/calendar.js';
 import { close, duration, subtract } from '../time/interval.js';
+import { addDays, toZonedParts, zonedToInstant } from '../time/zone.js';
 import type { ClosedInterval, IssueTimeline, Millis, StatusId } from '../types.js';
 
 /**
@@ -122,7 +123,14 @@ export function evaluateSla(
     stoppedAt,
     elapsedWorkingMs,
     remainingMs,
-    breachAt: projectBreachInstant(span, elapsedWorkingMs, goal, stoppedAt, currentlyPaused, now),
+    breachAt: projectBreachInstant(
+      countedSpans,
+      elapsedWorkingMs,
+      goal,
+      stoppedAt,
+      currentlyPaused,
+      now,
+    ),
     breached,
     pausedMs,
   };
@@ -138,7 +146,7 @@ export function evaluateSla(
  * wrongness this codebase is trying to avoid.
  */
 function projectBreachInstant(
-  span: ClosedInterval,
+  countedSpans: readonly ClosedInterval[],
   elapsedWorkingMs: Millis,
   goal: SlaGoal,
   stoppedAt: Millis | null,
@@ -148,9 +156,28 @@ function projectBreachInstant(
   if (stoppedAt !== null || currentlyPaused) return null;
   const remaining = goal.targetMs - elapsedWorkingMs;
   if (remaining <= 0) {
-    // Already breached: report the instant it happened, found by walking the
-    // counted span forward by exactly `targetMs` of working time.
-    return addBusinessMs(span.start, goal.targetMs, goal.calendar);
+    // ★ Already breached: report the instant it happened, walking the
+    // **counted** spans — the ones left after paused statuses were
+    // subtracted — rather than the whole span.
+    //
+    // This used to be `addBusinessMs(span.start, targetMs, calendar)`, which
+    // walks straight through the pauses the goal is defined to exclude. Any
+    // goal that paused at all reported a breach instant *earlier* than the
+    // truth, and at that instant the clock had been stopped with part of the
+    // target still unspent: an issue blocked for five hours was told it
+    // breached five hours before it did. `pausedMs` exists so a user can
+    // audit this number, which makes disagreeing with it worse than useless.
+    let toSpend = goal.targetMs;
+    for (const span of countedSpans) {
+      const inSpan = businessMsIn(span, goal.calendar);
+      if (inSpan >= toSpend) return addBusinessMs(span.start, toSpend, goal.calendar);
+      toSpend -= inSpan;
+    }
+    // Only reachable if the counted spans hold less working time than the
+    // target, which contradicts `remaining <= 0`; fall back to the end of
+    // the last counted span rather than inventing an instant.
+    const last = countedSpans[countedSpans.length - 1];
+    return last === undefined ? null : last.end;
   }
   return addBusinessMs(now, remaining, goal.calendar);
 }
@@ -165,7 +192,26 @@ export interface DueDateResult {
   readonly overdueByMs: Millis | null;
 }
 
-/** Plain due-date breach, which is what most non-JSM projects actually track. */
+/**
+ * Plain due-date breach, which is what most non-JSM projects actually track.
+ *
+ * ★ **A Jira due date is a whole day, not an instant.** Jira stores it as
+ * `YYYY-MM-DD` and `parseJiraTimestamp` lands it on UTC midnight, so
+ * comparing a resolution time against it directly makes every issue finished
+ * *on* its due date late — an issue due the 4th and resolved at 14:00 on the
+ * 4th came back "breached, over by 14h". That is the headline column of
+ * listing 4, and it would have marked a large share of perfectly on-time work
+ * as late.
+ *
+ * An issue is late only once the whole due day has passed, and the due day
+ * ends where the *instance's* day ends: for a team on UTC+13, 23:00 UTC on
+ * the 4th is already the 5th locally and their due date has not expired.
+ * `timeZone` therefore decides the boundary; it defaults to UTC, which is
+ * what the stored date is expressed in.
+ *
+ * `overdueByMs` is measured from that boundary, so "late by 2h" means two
+ * hours past the end of the due day rather than two hours past its midnight.
+ */
 export function evaluateDueDate(
   input: {
     readonly issueId: string;
@@ -174,12 +220,19 @@ export function evaluateDueDate(
     readonly resolvedAt: Millis | null;
   },
   now: Millis = Date.now(),
+  timeZone = 'UTC',
 ): DueDateResult {
   if (input.dueAt === null) {
     return { ...input, breached: false, overdueByMs: null };
   }
   const reference = input.resolvedAt ?? now;
-  const overdueByMs = reference - input.dueAt;
+  // The stored instant is UTC midnight of the date Jira gave, so its UTC
+  // calendar fields *are* that date. The day it names then ends at local
+  // midnight of the following day in the reader's own zone.
+  const due = toZonedParts(input.dueAt, 'UTC');
+  const nextDay = addDays(due.year, due.month, due.day, 1);
+  const endOfDueDay = zonedToInstant(nextDay.year, nextDay.month, nextDay.day, 0, 0, 0, timeZone);
+  const overdueByMs = reference - endOfDueDay;
   return { ...input, breached: overdueByMs > 0, overdueByMs };
 }
 

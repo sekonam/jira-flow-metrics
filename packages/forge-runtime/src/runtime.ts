@@ -316,7 +316,18 @@ export class ListingRuntime {
   /** Listing 4 — working time in the counted statuses against a target. */
   async slaReport(projectId: string, goal: SlaCountedGoal, limit = 500): Promise<SlaReport> {
     await this.deps.store.migrate();
-    return buildSlaReport(this.deps.store, projectId, goal, this.clock.now(), limit);
+    const settings = await this.deps.settings.get(projectId);
+    return buildSlaReport(
+      this.deps.store,
+      projectId,
+      goal,
+      this.clock.now(),
+      limit,
+      // A due date is a whole day in the *instance's* zone, so the same
+      // resolution instant is on time for one team and late for another.
+      // See `evaluateDueDate`.
+      settings.calendar.timeZone,
+    );
   }
 
   /** Listing 5 — filtered, exportable field-change history across issues. */

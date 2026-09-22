@@ -488,6 +488,33 @@ export async function runBackfillSlice(
         }
       }
 
+      // ★ A page that yielded nothing still costs a request and still has to
+      // respect the clock.
+      //
+      // The per-issue loop above is the only place the deadline and the issue
+      // budget are checked, and it does not run at all for an empty page — so
+      // once empty pages stopped ending the walk (see `pageWasLast` below),
+      // a Jira that keeps answering `{issues: [], nextPageToken: …}` would
+      // spin here until Forge killed the invocation. Two guards, in order of
+      // how much they tell us:
+      //
+      //   1. an unchanged token alongside an empty page is Jira looping, and
+      //      no number of retries will move it;
+      //   2. otherwise the walk is merely slow, so it yields the way any
+      //      budget exhaustion does — the next slice resumes from this token.
+      if (issues.length === 0) {
+        const tokenNow = page.nextPageToken ?? null;
+        if (tokenNow !== null && tokenNow === cursor) {
+          deps.logger?.log('warn', 'jira returned an empty page without advancing its cursor', {
+            projectId: options.projectId,
+            slice,
+          });
+          stoppedBecause = 'complete';
+        } else if (deps.clock.now() >= deadline) {
+          stoppedBecause = 'time_budget';
+        }
+      }
+
       // Step 4: write results *before* advancing the cursor.
       await writeProcessed(deps.store, batch, deps.config.datasets);
       if (batch.length > 0) {
@@ -498,7 +525,22 @@ export async function runBackfillSlice(
       }
 
       const nextToken = page.nextPageToken ?? null;
-      const pageWasLast = page.isLast === true || nextToken === null || issues.length === 0;
+      // ★ An empty page is **not** proof the search is exhausted.
+      //
+      // This used to read `|| issues.length === 0`, which conflates "Jira has
+      // no more issues" with "this page happened to yield none" — and the
+      // second happens for ordinary reasons: Jira can answer
+      // `{issues: [], isLast: false, nextPageToken: "…"}`, and a page
+      // re-fetched after a mid-page stop comes back shorter than the pending
+      // `::skip=` whenever issues were deleted or moved between slices.
+      //
+      // Treating that as the end marked the project `complete` with part of
+      // it unindexed, and `runBackfillSlice` returns immediately on
+      // `complete`, so nothing ever retried: the reports sat on a partial
+      // corpus permanently, with no banner saying so. Only Jira's own
+      // end-of-results signals — `isLast`, or the absence of a next token —
+      // may end the walk.
+      const pageWasLast = page.isLast === true || nextToken === null;
       const pageFullyConsumed = handledInPage === issues.length;
 
       if (stoppedBecause !== 'complete') {

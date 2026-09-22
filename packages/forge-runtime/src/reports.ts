@@ -233,6 +233,10 @@ export async function buildSlaReport(
   goal: SlaCountedGoal,
   now: Millis,
   limit = 500,
+  // The project's own timezone decides where its due *day* ends. Defaulting
+  // to UTC keeps every existing caller behaving as before; the runtime passes
+  // the configured calendar's zone, which is the one the customer set.
+  timeZone = 'UTC',
 ): Promise<SlaReport> {
   const metas = await store.queryIssueMeta({ projectId, limit });
   const projectIssueCount = await store.countIssueMeta({ projectId });
@@ -267,6 +271,7 @@ export async function buildSlaReport(
           resolvedAt: meta.resolvedAt,
         },
         now,
+        timeZone,
       ),
     };
   });

@@ -40,7 +40,16 @@ describeScreen(
     invokedOnLoad: ['getAgingReport', 'getIndexProgress'],
     heading: 'WIP Aging',
     emptyText: /Nothing to show for this project yet/,
-    populatedText: 'In flight',
+    // ★ Data-derived, not a static label.
+    //
+    // This used to be the tile's *caption*, which a gadget renders whether
+    // or not the report behind it holds anything: emptying the report's rows
+    // and re-running left every assertion in this contract green, including
+    // the ★ partial-data one. A gadget is described three files over as
+    // "often the only surface someone who did not install the app ever
+    // sees", so a contract that cannot tell a populated one from an empty
+    // one is the wrong contract.
+    populatedText: /FLOW-1 in In Progress/,
   },
   scenarios,
 );
