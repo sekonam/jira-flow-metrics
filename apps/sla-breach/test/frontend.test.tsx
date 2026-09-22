@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describeScreen, loadScenarios, resolversFor, setBridgeResolvers } from '@jfm/ui-harness';
+import type { SlaReport } from '@jfm/forge-runtime';
 
 /**
  * The SLA & Due Dates project page and dashboard gadget, rendered.
@@ -114,6 +115,56 @@ describe('sla-breach: the saved-goal picker', () => {
     });
     render(<App />);
     expect(await screen.findByText('Saved goal')).toBeDefined();
+    cleanup();
+  });
+});
+
+describe('sla-breach: an out-of-order answer must not win', () => {
+  it('★ ignores a slow first report that lands after the goal has changed', async () => {
+    // The race the pages had and the gadgets did not: every chip click
+    // re-runs `load`, each invoke is a separate Forge lambda, and answers
+    // arrive in whatever order they finish. The older reply landing last
+    // left chips saying one goal above numbers computed from another, with
+    // nothing loading to hint at it.
+    const populated = scenarios.populated.responses;
+    let firstResolve: ((value: unknown) => void) | null = null;
+    let call = 0;
+
+    setBridgeResolvers({
+      ...resolversFor(populated),
+      getSlaReport: () => {
+        call += 1;
+        if (call === 1) {
+          // The first request hangs until we release it, below.
+          return new Promise((resolve) => {
+            firstResolve = resolve;
+          });
+        }
+        return {
+          ok: true,
+          data: {
+            ...(populated.getSlaReport as { data: SlaReport }).data,
+            goalName: 'SECOND',
+            breachedCount: 0,
+            rows: [],
+          },
+        };
+      },
+    });
+
+    render(<App />);
+    // Change the goal, which fires the second request.
+    fireEvent.click(await screen.findByRole('button', { name: 'Blocked' }));
+    // The second answer arrives and renders.
+    await screen.findByText('No issues measured yet');
+
+    // Now let the *first* one land. It must be discarded.
+    expect(firstResolve).not.toBeNull();
+    firstResolve!({ ok: true, data: (populated.getSlaReport as { data: SlaReport }).data });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText('No issues measured yet')).toBeDefined();
+    expect(screen.queryByText('FLOW-3')).toBeNull();
     cleanup();
   });
 });

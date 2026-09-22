@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ForgeReconciler, { Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
 import type { SlaReport } from '@jfm/forge-runtime';
@@ -56,8 +56,26 @@ export const App = (): React.JSX.Element => {
   const [goal, setGoal] = useState<SlaGoalChoice>(DEFAULT_SLA_GOAL);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
 
   const load = useCallback(async (nextGoal: SlaGoalChoice) => {
+    // ★ Only the newest request may write to the screen.
+    //
+    // Every control on this page re-runs `load`, each `invoke` is a separate
+    // Forge lambda, and answers arrive in whatever order they finish — so
+    // without this the *older* reply can land last and win. The gadgets
+    // guarded against it with a `cancelled` flag from the start; the pages
+    // never did.
+    //
+    // What that looked like: click a status chip, the narrowed report
+    // renders, the original answer then arrives and overwrites it — leaving
+    // chips that say one goal above numbers computed from another, with
+    // nothing loading and no way to tell. On the time-in-status page it also
+    // stranded the reader: the basis had already been set, so pressing the
+    // same button again changed no state, re-ran no effect, and the caption
+    // kept contradicting the control until they toggled twice.
+    const mine = requestId.current + 1;
+    requestId.current = mine;
     setLoading(true);
     setError(null);
     try {
@@ -66,6 +84,7 @@ export const App = (): React.JSX.Element => {
       // client could have altered on the way. `toGoalPayload` owns that
       // choice and the export below uses the same function.
       const result = (await invoke('getSlaReport', toGoalPayload(nextGoal))) as Result<SlaReport>;
+      if (mine !== requestId.current) return;
       if (result.ok) setReport(result.data);
       else setError(result.error);
       // The indexing banner is shared across all five listings. It reads the
@@ -73,11 +92,18 @@ export const App = (): React.JSX.Element => {
       // call ran a whole report aggregation to return one enum, and Forge is
       // consumption-priced.
       const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
+      if (mine !== requestId.current) return;
       if (state.ok) setProgress(state.data);
     } catch {
-      setError('The report could not be loaded. Try again in a moment.');
+      // Guarded too: a superseded request that fails must not paint an error
+      // over the screen a newer, successful one has already drawn.
+      if (mine === requestId.current) {
+        setError('The report could not be loaded. Try again in a moment.');
+      }
     } finally {
-      setLoading(false);
+      // A superseded request must not clear the spinner the newer one
+      // put up, or the page reads as settled while it is still fetching.
+      if (mine === requestId.current) setLoading(false);
     }
   }, []);
 

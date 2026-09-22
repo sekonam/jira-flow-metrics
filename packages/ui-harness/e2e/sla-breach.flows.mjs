@@ -51,7 +51,29 @@ async function summaryTiles(page) {
 }
 
 /** The banded chart, by band label. Scoped to the chart, not the page. */
-async function chartBands(page) {
+/**
+ * The chart's bands, waiting for it to actually be on screen.
+ *
+ * Sampling once was flaky, and for a real reason rather than a slow machine:
+ * changing the goal re-fetches, the ready state unmounts while the request is
+ * in flight, and `waitForTableChange` can return in the window where the
+ * table has already re-rendered and the chart has not. The read then hit a
+ * `null` heading and the flow died on `Cannot read properties of null`.
+ *
+ * Polling until the bands are present is the honest fix: the assertion is
+ * about what the chart eventually shows, not about when React got there.
+ */
+async function chartBands(page, { timeout = 20_000 } = {}) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const bands = await readChartBands(page);
+    if (bands !== null && Object.keys(bands).length > 0) return bands;
+    if (Date.now() > deadline) return bands;
+    await page.waitForTimeout(50);
+  }
+}
+
+async function readChartBands(page) {
   return page.evaluate(() => {
     const heading = [...document.querySelectorAll('h3')].find(
       (node) => node.textContent?.trim() === 'How close to the target',
@@ -110,9 +132,26 @@ async function pickerOptions(page, inputId) {
 }
 
 /** Wait for the report to come back changed, rather than sleeping and hoping. */
+/**
+ * Wait for the table to be *re-rendered with different content* — not merely
+ * to differ from what it said before.
+ *
+ * The obvious version (`innerText !== before`) is satisfied the instant the
+ * table **disappears**: changing the goal puts the page into its loading
+ * state, where there is no table at all, so `?? ''` compared unequal and the
+ * wait returned while the request was still in flight. The flow then read an
+ * empty table and reported the perfectly healthy page as having lost a row —
+ * a failure that looked like a product bug and was a race in the test.
+ *
+ * Requiring a present, non-empty table that also differs waits for the thing
+ * the assertion is actually about.
+ */
 async function waitForTableChange(page, previousText) {
   await page.waitForFunction(
-    (before) => (document.querySelector('table')?.innerText ?? '') !== before,
+    (before) => {
+      const text = document.querySelector('table')?.innerText ?? '';
+      return text !== '' && text !== before;
+    },
     previousText,
     { timeout: 20_000 },
   );
