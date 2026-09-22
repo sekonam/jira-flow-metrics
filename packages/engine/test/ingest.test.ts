@@ -921,6 +921,9 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     listProjects(): Promise<readonly never[]> {
       throw new Error('not used by this test');
     }
+    isAdmin(): Promise<boolean> {
+      return Promise.resolve(true);
+    }
   }
 
   /** created ASC, one minute apart, so each carries a distinct seek bound. */
@@ -1201,6 +1204,7 @@ describe('issue security levels', () => {
     let calls = 0;
     const api = {
       canBrowseProject: () => Promise.resolve(true),
+      isAdmin: () => Promise.resolve(true),
       searchIssues: (params: { jql: string }) => {
         calls += 1;
         if (calls === 1) {
@@ -1234,6 +1238,7 @@ describe('issue security levels', () => {
   it('does not swallow an unrelated 400', async () => {
     const api = {
       canBrowseProject: () => Promise.resolve(true),
+      isAdmin: () => Promise.resolve(true),
       searchIssues: () =>
         Promise.reject(new HttpError(400, 'bad request', null, 'Unable to parse JQL')),
       getIssue: () => Promise.reject(new Error('unused')),

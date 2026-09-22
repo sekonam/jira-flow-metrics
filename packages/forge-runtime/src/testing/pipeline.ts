@@ -236,6 +236,7 @@ export class FixtureJira implements JiraApi {
     /** Changelog page size. Small values force the pager to run. */
     private readonly changelogPageSize = 2,
     private readonly browseAllowed = true,
+    private readonly adminAllowed = true,
     /**
      * The status catalogue this Jira reports. Defaults to the canned one, so
      * every existing suite is unaffected; a caller driving the pipeline with
@@ -248,6 +249,11 @@ export class FixtureJira implements JiraApi {
   canBrowseProject(): Promise<boolean> {
     this.requests.push('mypermissions');
     return Promise.resolve(this.browseAllowed);
+  }
+
+  /** The pipeline's caller is an administrator unless a test says otherwise. */
+  isAdmin(): Promise<boolean> {
+    return Promise.resolve(this.adminAllowed);
   }
 
   searchIssues(params: SearchParams): Promise<JiraSearchPage> {
@@ -334,6 +340,11 @@ export interface PipelineOptions {
    * the product would actually produce rather than a message invented here.
    */
   readonly browseAllowed?: boolean;
+  /**
+   * Whether the calling user administers the instance. Only the admin
+   * storage surface asks, and it fails closed — see `handleStorageEstimate`.
+   */
+  readonly adminAllowed?: boolean;
 }
 
 export interface PipelineResult {
@@ -352,7 +363,13 @@ export interface PipelineResult {
 export async function runPipeline(options: PipelineOptions = {}): Promise<PipelineResult> {
   const issues = options.issues ?? [CANONICAL_ISSUE];
   const store = new MemoryStore();
-  const jira = new FixtureJira(issues, 2, options.browseAllowed ?? true, options.statuses);
+  const jira = new FixtureJira(
+    issues,
+    2,
+    options.browseAllowed ?? true,
+    options.adminAllowed ?? true,
+    options.statuses,
+  );
   // `SettingsSqlExecutor`, not `RecordingSqlExecutor`: settings are written
   // and then read back — extending the history window and saving an SLA goal
   // are both a `put` followed by a `get` — and an executor that answers every

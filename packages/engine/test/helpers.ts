@@ -84,6 +84,7 @@ export interface FakeJiraOptions {
   readonly changelogPageSize?: number;
   /** What `canBrowseProject` answers. Defaults to true. */
   readonly canBrowse?: boolean;
+  readonly isAdmin?: boolean;
   readonly projects?: readonly JiraProjectRef[];
 }
 
@@ -101,6 +102,11 @@ export class FakeJiraApi implements JiraApi {
   canBrowseProject(projectId: string): Promise<boolean> {
     this.permissionCalls.push(projectId);
     return Promise.resolve(this.options.canBrowse ?? true);
+  }
+
+  /** Only the instance-wide admin surface asks; the engine never does. */
+  isAdmin(): Promise<boolean> {
+    return Promise.resolve(this.options.isAdmin ?? true);
   }
 
   searchIssues(params: SearchParams): Promise<JiraSearchPage> {

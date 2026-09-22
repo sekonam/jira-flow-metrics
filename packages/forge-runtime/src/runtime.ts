@@ -138,6 +138,11 @@ export class ListingRuntime {
     return this.deps.api.canBrowseProject(projectId);
   }
 
+  /** Does the calling user administer this Jira instance? */
+  isAdmin(): Promise<boolean> {
+    return this.deps.api.isAdmin();
+  }
+
   /** Build the ingest config for one project, using its stored calendar. */
   async ingestConfig(projectId: string): Promise<IngestConfig> {
     const settings = await this.deps.settings.get(projectId);
@@ -498,8 +503,34 @@ export class ListingRuntime {
     await this.deps.store.migrate();
     const all = await this.deps.store.getStatusMeta();
     const projectIds = new Set(await this.deps.store.listProjectStatusIds(projectId));
-    if (projectIds.size === 0) return all;
-    return all.filter((status) => projectIds.has(status.statusId));
+    if (projectIds.size > 0) return all.filter((status) => projectIds.has(status.statusId));
+    // ★ Before this project has been indexed it has no aggregates, so there
+    // is nothing to narrow by — and this used to fall back to the whole
+    // instance-wide `status_meta` table. `handleListStatuses` authorises the
+    // caller precisely because status names "are information about projects
+    // the caller may not be allowed to see", and a custom name like "Pending
+    // Legal — Acquisition" is exactly that. The fallback reversed the
+    // guarantee one file over, for every project in the minutes after
+    // install and permanently for any project nobody indexes.
+    //
+    // Jira's own catalogue is the honest substitute: it is what the calling
+    // user's own instance reports, it keeps the picker usable, and it says
+    // nothing about which project uses what.
+    try {
+      const statuses = await this.deps.api.getStatuses();
+      const now = this.clock.now();
+      return statuses.map((status) => ({
+        statusId: status.id,
+        name: status.name,
+        category: status.category,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      }));
+    } catch {
+      // A picker with no chips still renders a usable report against the
+      // default goal; leaking is the worse failure.
+      return [];
+    }
   }
 
   /** The runtime's clock, for handlers that need to stamp something. */

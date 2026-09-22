@@ -65,6 +65,9 @@ class StubJira implements JiraApi {
   canBrowseProject(): Promise<boolean> {
     return Promise.resolve(true);
   }
+  isAdmin(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
   searchIssues(): Promise<JiraSearchPage> {
     return Promise.resolve({ issues: [], isLast: true, nextPageToken: null, total: 0 });
   }

@@ -245,6 +245,9 @@ class StubJira implements JiraApi {
   canBrowseProject(): Promise<boolean> {
     return Promise.resolve(this.canBrowse);
   }
+  isAdmin(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
   searchIssues(): Promise<JiraSearchPage> {
     return Promise.resolve({ issues: [ISSUE], isLast: true, nextPageToken: null, total: 1 });
   }
@@ -417,12 +420,35 @@ describe('handleListStatuses', () => {
     if (result.ok) expect(result.data.map((s) => s.statusId)).toEqual(['3']);
   });
 
-  it('falls back to every status while the project is not yet indexed', async () => {
+  it('★ does not fall back to the instance-wide table before a project is indexed', async () => {
+    // Regression. An unindexed project has no aggregates to narrow by, and
+    // the fallback handed back the whole stored `status_meta` table —
+    // including statuses that exist only in projects this caller cannot
+    // browse. `handleListStatuses` authorises the caller precisely because
+    // status names "are information about projects the caller may not be
+    // allowed to see", and a name like "Pending Legal — Acquisition" is
+    // exactly that. Every project is in this state for the minutes after
+    // install, and permanently if nobody presses the button.
+    //
+    // Jira's own catalogue, read as the calling user, is the honest
+    // substitute: it keeps the picker usable and says nothing about which
+    // project uses what. The stub reports only status `3`, so `77` — which
+    // exists solely in the stored table — must not appear.
     const { runtime, store } = build();
     await store.upsertStatusMeta(TWO_STATUSES);
     const result = await handleListStatuses(runtime, { context: CONTEXT });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.map((s) => s.statusId)).toEqual(['3', '77']);
+    if (result.ok) expect(result.data.map((s) => s.statusId)).toEqual(['3']);
+  });
+
+  it('leaves the picker empty rather than leaking when Jira cannot be reached', async () => {
+    const { runtime, store, jira } = build();
+    await store.upsertStatusMeta(TWO_STATUSES);
+    jira.getStatuses = () => Promise.reject(new Error('jira unreachable'));
+    const result = await handleListStatuses(runtime, { context: CONTEXT });
+    // A picker with no chips still renders a usable report against the
+    // default goal; leaking is the worse failure.
+    expect(result).toEqual({ ok: true, data: [] });
   });
 
   it('refuses a caller who cannot browse the project', async () => {

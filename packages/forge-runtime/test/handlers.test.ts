@@ -33,6 +33,7 @@ import {
   GOALS_FULL,
   GOAL_NAME_REQUIRED,
   NARROWER_HISTORY,
+  NOT_AN_ADMIN,
   NOT_IN_PROJECT,
   NOT_ON_AN_ISSUE,
   NO_PERMISSION,
@@ -63,10 +64,14 @@ const CONTEXT = { extension: { project: { id: '10000', key: 'FLOW' } } };
 class StubJira implements JiraApi {
   failWith: Error | null = null;
   canBrowse = true;
+  admin = true;
   readonly permissionCalls: string[] = [];
   canBrowseProject(projectId: string): Promise<boolean> {
     this.permissionCalls.push(projectId);
     return Promise.resolve(this.canBrowse);
+  }
+  isAdmin(): Promise<boolean> {
+    return Promise.resolve(this.admin);
   }
   searchIssues(): Promise<JiraSearchPage> {
     if (this.failWith !== null) return Promise.reject(this.failWith);
@@ -1071,5 +1076,31 @@ describe('the issue panel resolver', () => {
       context: { extension: { project: { id: '99999' }, issue: { id: '20001' } } },
     });
     expect(jira.permissionCalls).toEqual(['10000']);
+  });
+});
+
+describe('★ the admin storage resolver is gated on being an admin', () => {
+  it('refuses a caller who does not administer the instance', async () => {
+    // The gate used to be the argument that `jira:adminPage` "is reachable
+    // only by Jira administrators, which the platform enforces". Forge gates
+    // the **module**; every module in these manifests binds the same
+    // `resolver` function key, so anyone who could open a project page could
+    // invoke this from the browser console and read instance-wide figures.
+    const { runtime, jira } = build();
+    jira.admin = false;
+    expect(await handleStorageEstimate(runtime)).toEqual({ ok: false, error: NOT_AN_ADMIN });
+  });
+
+  it('answers an administrator', async () => {
+    const { runtime } = build();
+    const result = await handleStorageEstimate(runtime);
+    expect(result.ok).toBe(true);
+  });
+
+  it('fails closed when the permission cannot be determined', async () => {
+    const { runtime, jira } = build();
+    jira.isAdmin = () => Promise.reject(new Error('jira unreachable'));
+    const result = await handleStorageEstimate(runtime);
+    expect(result.ok).toBe(false);
   });
 });

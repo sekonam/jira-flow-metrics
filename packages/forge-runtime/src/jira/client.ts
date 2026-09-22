@@ -127,6 +127,21 @@ export class JiraRestClient implements JiraApi {
     return result.permissions?.['BROWSE_PROJECTS']?.havePermission === true;
   }
 
+  /**
+   * Ask Jira, as the calling user, whether they administer this instance.
+   *
+   * `ADMINISTER` is the global permission, so no project is named — which is
+   * exactly the scope the admin storage page reports on.
+   */
+  async isAdmin(): Promise<boolean> {
+    const query = new URLSearchParams({ permissions: 'ADMINISTER' });
+    const result = await this.request<JiraMyPermissions>(
+      `/rest/api/3/mypermissions?${query.toString()}`,
+      this.fetchAsUser,
+    );
+    return result.permissions?.['ADMINISTER']?.havePermission === true;
+  }
+
   async searchIssues(params: SearchParams): Promise<JiraSearchPage> {
     const query = new URLSearchParams();
     query.set('jql', params.jql);

@@ -104,6 +104,20 @@ export interface AgingReport {
   readonly capped: boolean;
 }
 
+/**
+ * Aggregate rows one report will read in a pass.
+ *
+ * The SQL adapter clamps an unspecified limit to 10,000 silently, and these
+ * two reports asked for none — so on a wide workflow (500 issues each
+ * visiting 20+ statuses) the tail issues lost their aggregates entirely,
+ * `ORDER BY issue_id` deciding which. An issue with no aggregate row reads
+ * as `consumedMs = 0`: **fully compliant**. An SLA table saying "100%
+ * attainment, 0 breached" over a project that is breaching is the exact
+ * failure this codebase exists to avoid, so the cap is now explicit and
+ * hitting it is reported rather than absorbed.
+ */
+const AGGREGATE_ROW_CAP = 10_000;
+
 const AGING_BUCKETS: readonly { label: string; fromDays: number; toDays: number | null }[] = [
   { label: '0-1d', fromDays: 0, toDays: 1 },
   { label: '1-3d', fromDays: 1, toDays: 3 },
@@ -134,7 +148,9 @@ export async function buildAgingReport(
   const aggregates = await store.queryStatusDurations({
     projectId,
     issueIds: metas.map((m) => m.issueId),
+    limit: AGGREGATE_ROW_CAP,
   });
+  const aggregatesCapped = aggregates.length >= AGGREGATE_ROW_CAP;
   const aggregateFor = new Map<string, StatusAggregateRow>();
   for (const row of aggregates) aggregateFor.set(`${row.issueId}:${row.statusId}`, row);
 
@@ -181,7 +197,9 @@ export async function buildAgingReport(
     evaluatedAt: now,
     excludedDone,
     projectIssueCount,
-    capped: projectIssueCount > metas.length,
+    // Either ceiling makes every figure a lower bound, and the page says so
+    // the same way for both.
+    capped: projectIssueCount > metas.length || aggregatesCapped,
   };
 }
 
@@ -244,7 +262,9 @@ export async function buildSlaReport(
   const aggregates = await store.queryStatusDurations({
     projectId,
     issueIds: metas.map((m) => m.issueId),
+    limit: AGGREGATE_ROW_CAP,
   });
+  const aggregatesCapped = aggregates.length >= AGGREGATE_ROW_CAP;
 
   const consumedByIssue = new Map<string, number>();
   for (const row of aggregates) {
@@ -289,7 +309,10 @@ export async function buildSlaReport(
     attainment: rows.length === 0 ? null : (rows.length - breachedCount) / rows.length,
     dueDateBreaches: rows.filter((r) => r.dueDate.breached).length,
     projectIssueCount,
-    capped: projectIssueCount > metas.length,
+    // An issue whose aggregate rows were cut reads as zero consumed time —
+    // i.e. compliant — so a truncated aggregate read has to surface as a cap
+    // just as a truncated issue page does.
+    capped: projectIssueCount > metas.length || aggregatesCapped,
   };
 }
 

@@ -843,6 +843,9 @@ describe('ListingRuntime', () => {
     listProjects(): Promise<readonly JiraProjectRef[]> {
       return Promise.resolve([{ id: '10000', key: 'FLOW', name: 'Flow' }]);
     }
+    isAdmin(): Promise<boolean> {
+      return Promise.resolve(true);
+    }
   }
 
   const issue: JiraIssue = {

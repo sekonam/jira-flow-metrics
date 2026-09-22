@@ -108,7 +108,16 @@ export function parseReportRequest(projectId: string, payload: unknown): StatusR
   const limit = record['limit'];
   if (typeof limit === 'number' && Number.isFinite(limit)) request.limit = limit;
   const offset = record['offset'];
-  if (typeof offset === 'number' && Number.isFinite(offset)) request.offset = offset;
+  // Truncated and bounded here, not merely checked for finiteness.
+  // `sql-store.ts` *inlines* LIMIT/OFFSET into the statement text on the
+  // stated grounds that they are "a `Math.trunc`ed, range-bound plain
+  // integer" — and nothing enforced that: `1e21` survived to become the
+  // literal `OFFSET 1e+21`, which TiDB rejects, so any client could break
+  // the main report on four listings. No injection was possible, but the
+  // invariant the inlining rests on has to actually hold.
+  if (typeof offset === 'number' && Number.isFinite(offset)) {
+    request.offset = Math.max(0, Math.min(MAX_REPORT_OFFSET, Math.trunc(offset)));
+  }
   const assignees = stringArray(record['assigneeAccountIds']);
   if (assignees !== null) request.assigneeAccountIds = assignees;
   const issueTypes = stringArray(record['issueTypeIds']);
@@ -128,6 +137,14 @@ export function parseReportRequest(projectId: string, payload: unknown): StatusR
  */
 const MAX_FILTER_VALUES = 100;
 
+/**
+ * Furthest a client may page into a report.
+ *
+ * A million rows past the start is far beyond any real project and keeps the
+ * value a small plain integer, which is what `sql-store.ts` inlines.
+ */
+const MAX_REPORT_OFFSET = 1_000_000;
+
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const strings = value.filter((v): v is string => typeof v === 'string' && v !== '');
@@ -138,6 +155,10 @@ export type HandlerResult<T> =
   { readonly ok: true; readonly data: T } | { readonly ok: false; readonly error: string };
 
 export const NOT_IN_PROJECT = 'This report can only be opened from inside a Jira project.';
+
+export const NOT_AN_ADMIN =
+  'Only a Jira administrator can see what this app is storing, because the figures cover the ' +
+  'whole instance rather than one project.';
 
 export const NO_PERMISSION =
   'You do not have permission to browse this project in Jira, so this report is not available.';
@@ -249,7 +270,10 @@ async function buildCsvFor(
 ): Promise<string> {
   switch (kind) {
     case 'worklog':
-      return worklogReportToCsv(await runtime.worklogReport({ projectId }), 'Person');
+      return worklogReportToCsv(
+        await runtime.worklogReport(parseWorklogRequest(projectId, payload)),
+        'Person',
+      );
     case 'aging':
       return agingReportToCsv(await runtime.agingReport(projectId));
     case 'sla': {
@@ -262,7 +286,14 @@ async function buildCsvFor(
       return slaReportToCsv(await runtime.slaReport(projectId, goal));
     }
     case 'history':
-      return historyReportToCsv(await runtime.historyReport({ projectId, limit: 10_000 }));
+      return historyReportToCsv(
+        // The export may read further than a page, but it still honours the
+        // filters the table was showing.
+        await runtime.historyReport({
+          limit: 10_000,
+          ...parseHistoryRequest(projectId, payload),
+        }),
+      );
     case 'status':
       return runtime.statusReportCsv(parseReportRequest(projectId, payload));
     default: {
@@ -312,15 +343,24 @@ export async function handleIndexProgress(
 /**
  * The admin usage page.
  *
- * No project authorisation, and that is the point rather than an omission:
- * the figures are instance-wide because Forge SQL is provisioned per
- * installation, so there is no project to scope them to. The gate is the
- * surface itself — `jira:adminPage` is reachable only by Jira
- * administrators, which the platform enforces — and the payload is row
- * counts and byte estimates, never anything issue-shaped. This was
- * `TECHNICAL-SPEC.md` § 11 item 10: the method existed, no app exposed it,
- * and the reason given was that there was no surface that could authorise
- * it properly. This is that surface.
+ * No *project* authorisation, because the figures are instance-wide — Forge
+ * SQL is provisioned per installation, so there is no project to scope them
+ * to. The payload is row counts and byte estimates, never anything
+ * issue-shaped, and a test asserts no issue key can reach it.
+ *
+ * ★ **The gate is an explicit admin check, not the module.** This used to
+ * argue that `jira:adminPage` "is reachable only by Jira administrators,
+ * which the platform enforces", and that argument was false: Forge gates the
+ * **module**, while every module in these manifests binds the *same*
+ * `resolver` function key. Anyone who could open a project page could run
+ * `invoke('getStorageEstimate')` from the browser console and read
+ * instance-wide figures. Only nine integers leak that way, but a security
+ * argument that does not hold is worse than none — and the same structural
+ * fact would apply to every admin-only resolver added beside it.
+ *
+ * `TECHNICAL-SPEC.md` § 11 item 10 recorded this method as unexposed until
+ * "a surface that can authorise it properly" existed. The surface was not
+ * enough; the check is.
  */
 export async function handleStorageEstimate(runtime: ListingRuntime): Promise<
   HandlerResult<{
@@ -331,6 +371,7 @@ export async function handleStorageEstimate(runtime: ListingRuntime): Promise<
 > {
   runtime.beginInvocation();
   try {
+    if (!(await runtime.isAdmin())) return { ok: false, error: NOT_AN_ADMIN };
     return { ok: true, data: await runtime.storageEstimate() };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
@@ -516,6 +557,16 @@ export async function handleIssueTimeline(
       issueKey,
       projectIdFromContext(invocation.context) ?? '',
     );
+    // ★ Fail closed on an unusable project id.
+    //
+    // `buildIssueTimeline` falls back to `''` when Jira's issue carries no
+    // `fields.project`, and `''` does not make `canBrowseProject` fail — it
+    // makes it ask Jira `?projectId=&permissions=BROWSE_PROJECTS`, which Jira
+    // evaluates at **global** scope, where a project permission answers true
+    // if the user holds it in any project at all. The check would degrade to
+    // "is a Jira user", and this handler's entire design rests on that id
+    // being trustworthy.
+    if (projectId === '') return { ok: false, error: NO_PERMISSION };
     let allowed: boolean;
     try {
       allowed = await runtime.canBrowseProject(projectId);
@@ -618,19 +669,7 @@ export async function handleWorklogReport(
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
   const projectId = auth.projectId;
-  const record =
-    typeof invocation.payload === 'object' && invocation.payload !== null
-      ? (invocation.payload as Record<string, unknown>)
-      : {};
-  const groupBy = record['groupBy'];
-  const request: WorklogReportRequest = {
-    ...(isWorklogGrouping(groupBy) ? { groupBy } : {}),
-    ...(finiteNumber(record['from']) === null ? {} : { from: finiteNumber(record['from'])! }),
-    ...(finiteNumber(record['to']) === null ? {} : { to: finiteNumber(record['to'])! }),
-    // Written last on purpose: a payload-derived spread can never overwrite
-    // the context-derived project.
-    projectId,
-  };
+  const request = parseWorklogRequest(projectId, invocation.payload);
   try {
     return { ok: true, data: await runtime.worklogReport(request) };
   } catch (error: unknown) {
@@ -725,7 +764,15 @@ export function parseSlaGoal(payload: unknown): SlaCountedGoal {
   return {
     id: 'default',
     name: typeof record['name'] === 'string' ? record['name'] : 'Time to resolution',
-    countedStatusIds: stringArray(record['countedStatusIds']) ?? [],
+    // Bounded in *length* as well as in count. `stringArray` caps the list
+    // at 100 entries and said nothing about each entry, so 100 ids of 600
+    // characters each, twenty goals over, grew the single `app_settings`
+    // JSON document past a megabyte — read and re-parsed on every report
+    // render, and past TEXT's 64 KB the write simply fails with the generic
+    // error. A Jira status id is a short number; 64 characters is generous.
+    countedStatusIds: (stringArray(record['countedStatusIds']) ?? []).map((id) =>
+      id.slice(0, MAX_STATUS_ID_LENGTH),
+    ),
     targetMs:
       rawTarget === null ? 8 * 3_600_000 : Math.max(60_000, Math.min(365 * 86_400_000, rawTarget)),
   };
@@ -766,8 +813,50 @@ export async function resolveSlaGoal(
   };
 }
 
+/**
+ * The worklog view options a client may choose.
+ *
+ * ★ Shared by the report resolver and the CSV export, for exactly the reason
+ * `resolveSlaGoal` is. The export used to call `worklogReport({ projectId })`
+ * and drop `groupBy`, `from` and `to` — so a reader who filtered the table
+ * and pressed Export got a *different document* from the one on screen,
+ * against the standard `report-csv.ts` sets in its own first paragraph ("the
+ * export must be the report on screen"). The SLA branch already had a
+ * comment warning about this; its siblings did it anyway.
+ */
+export function parseWorklogRequest(projectId: string, payload: unknown): WorklogReportRequest {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  const groupBy = record['groupBy'];
+  return {
+    ...(isWorklogGrouping(groupBy) ? { groupBy } : {}),
+    ...(finiteNumber(record['from']) === null ? {} : { from: finiteNumber(record['from'])! }),
+    ...(finiteNumber(record['to']) === null ? {} : { to: finiteNumber(record['to'])! }),
+    // Written last on purpose: a payload-derived spread can never overwrite
+    // the context-derived project.
+    projectId,
+  };
+}
+
+/** The history view options a client may choose. Shared, for the same reason. */
+export function parseHistoryRequest(projectId: string, payload: unknown): HistoryReportRequest {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  return {
+    ...(finiteNumber(record['from']) === null ? {} : { from: finiteNumber(record['from'])! }),
+    ...(finiteNumber(record['to']) === null ? {} : { to: finiteNumber(record['to'])! }),
+    ...(stringArray(record['fields']) === null ? {} : { fields: stringArray(record['fields'])! }),
+    ...(finiteNumber(record['limit']) === null
+      ? {}
+      : { limit: Math.min(1000, Math.max(1, finiteNumber(record['limit'])!)) }),
+    projectId,
+  };
+}
+
 export const UNKNOWN_SLA_GOAL =
   'That saved goal no longer exists. Someone may have deleted it; pick another one.';
+
+const MAX_STATUS_ID_LENGTH = 64;
 
 export const GOAL_NAME_REQUIRED = 'Give the goal a name so the report can say what it measures.';
 
@@ -888,21 +977,7 @@ export async function handleHistoryReport(
   const auth = await authoriseProject(runtime, invocation);
   if (!auth.ok) return { ok: false, error: auth.error };
   const projectId = auth.projectId;
-  const record =
-    typeof invocation.payload === 'object' && invocation.payload !== null
-      ? (invocation.payload as Record<string, unknown>)
-      : {};
-  const request: HistoryReportRequest = {
-    ...(finiteNumber(record['from']) === null ? {} : { from: finiteNumber(record['from'])! }),
-    ...(finiteNumber(record['to']) === null ? {} : { to: finiteNumber(record['to'])! }),
-    ...(stringArray(record['fields']) === null ? {} : { fields: stringArray(record['fields'])! }),
-    ...(finiteNumber(record['limit']) === null
-      ? {}
-      : { limit: Math.min(1000, Math.max(1, finiteNumber(record['limit'])!)) }),
-    // Written last on purpose: a payload-derived spread can never overwrite
-    // the context-derived project.
-    projectId,
-  };
+  const request = parseHistoryRequest(projectId, invocation.payload);
   try {
     return { ok: true, data: await runtime.historyReport(request) };
   } catch (error: unknown) {

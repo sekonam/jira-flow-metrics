@@ -44,6 +44,18 @@ export interface JiraApi {
    */
   canBrowseProject(projectId: string): Promise<boolean>;
 
+  /**
+   * Is the **current user** a Jira administrator?
+   *
+   * Only the instance-wide admin surface asks. It exists because binding a
+   * resolver to a `jira:adminPage` module does *not* restrict the resolver:
+   * Forge gates the module, and every module in these manifests shares one
+   * function key, so anyone who can open the project page can invoke an
+   * "admin" resolver straight from the browser console. Fails closed, like
+   * {@link JiraApi.canBrowseProject}.
+   */
+  isAdmin(): Promise<boolean>;
+
   searchIssues(params: SearchParams): Promise<JiraSearchPage>;
   getIssue(issueIdOrKey: string, fields: readonly string[]): Promise<JiraIssue>;
   getChangelog(issueIdOrKey: string, page: PageParams): Promise<JiraChangelogPage>;
