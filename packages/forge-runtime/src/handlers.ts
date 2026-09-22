@@ -289,9 +289,14 @@ async function buildCsvFor(
       return historyReportToCsv(
         // The export may read further than a page, but it still honours the
         // filters the table was showing.
+        //
+        // The export's own ceiling is applied *after* the request, not
+        // before: spreading the parsed payload over it let a caller's
+        // `limit` win, and `parseHistoryRequest` clamps that to a page — so
+        // the sentence above was the opposite of what the code did.
         await runtime.historyReport({
-          limit: 10_000,
           ...parseHistoryRequest(projectId, payload),
+          limit: 10_000,
         }),
       );
     case 'status':

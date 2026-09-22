@@ -26,13 +26,15 @@ import {
   Text,
   Textfield,
 } from '@forge/react';
-import type {
-  ChartPoint,
-  ProgressBanner,
-  SeriesPoint,
-  ProjectOption,
-  ReportTableModel,
-  SummaryTile,
+import {
+  WORKING_TIME,
+  formatDurationForHumans,
+  type ChartPoint,
+  type ProgressBanner,
+  type SeriesPoint,
+  type ProjectOption,
+  type ReportTableModel,
+  type SummaryTile,
 } from './view-model.js';
 import {
   SLA_TARGET_OPTIONS,
@@ -292,9 +294,16 @@ export function SlaGoalForm({
         // something else — a saved 6-hour goal rendered under "8 working
         // hours". That is verbatim the defect the comment on the saved-goal
         // `Select` above says was fixed, still live on the next control.
+        // The label for an unlisted target is formatted, not rounded to
+        // hours: `Math.round` rendered a 90-minute goal as "2 working hours"
+        // and a 1-minute goal as "0 working hours" while the page divided
+        // every number on it by the real value — the control disagreeing
+        // with the computation, which is the same defect one control up,
+        // narrowed rather than fixed. `parseSlaGoal` accepts any target from
+        // a minute to a year; only the presets are whole hours.
         value={
           defaultTarget ?? {
-            label: `${String(Math.round(goal.targetMs / 3_600_000))} working hours`,
+            label: `${formatDurationForHumans(goal.targetMs, WORKING_TIME)} of working time`,
             value: String(goal.targetMs),
           }
         }

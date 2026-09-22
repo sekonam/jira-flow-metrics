@@ -39,9 +39,11 @@ resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), r
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
-// The admin usage page. Instance-wide and unauthorised by project on
-// purpose — see `handleStorageEstimate`; the gate is `jira:adminPage`,
-// which Jira restricts to administrators.
+// The admin usage page. Instance-wide and unscoped by project on purpose —
+// see `handleStorageEstimate`, which checks the caller is an administrator
+// itself. It cannot rely on the `jira:adminPage` module for that: Forge
+// gates the *module*, but every module in this manifest binds this same
+// resolver function, so any project page could invoke this key.
 resolver.define('getStorageEstimate', () => handleStorageEstimate(getRuntime()));
 // The "extend history" control. Both are read only when the control is
 // opened, so a page that nobody extends pays nothing for it.

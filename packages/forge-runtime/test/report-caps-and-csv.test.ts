@@ -485,10 +485,14 @@ describe('handleListStatuses', () => {
     // exactly that. Every project is in this state for the minutes after
     // install, and permanently if nobody presses the button.
     //
-    // Jira's own catalogue, read as the calling user, is the honest
-    // substitute: it keeps the picker usable and says nothing about which
-    // project uses what. The stub reports only status `3`, so `77` — which
-    // exists solely in the stored table — must not appear.
+    // Jira's own catalogue is the honest substitute — read as the *app*,
+    // which makes it the whole instance catalogue rather than a narrower
+    // list. What makes that acceptable is that any authenticated user can
+    // fetch `/rest/api/3/status` themselves; the sensitive fact is which
+    // statuses a *project* uses, and that is narrowed the moment the project
+    // is indexed. See `ListingRuntime.listStatuses`. The stub reports only
+    // status `3`, so `77` — which exists solely in the stored table, having
+    // been seen in some other project — must not appear.
     const { runtime, store } = build();
     await store.upsertStatusMeta(TWO_STATUSES);
     const result = await handleListStatuses(runtime, { context: CONTEXT });

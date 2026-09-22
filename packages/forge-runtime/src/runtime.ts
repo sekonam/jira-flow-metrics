@@ -513,9 +513,20 @@ export class ListingRuntime {
     // guarantee one file over, for every project in the minutes after
     // install and permanently for any project nobody indexes.
     //
-    // Jira's own catalogue is the honest substitute: it is what the calling
-    // user's own instance reports, it keeps the picker usable, and it says
-    // nothing about which project uses what.
+    // Jira's own catalogue is the honest substitute — but be precise about
+    // why, because the first version of this comment was not. It is read
+    // **as the app**, not as the caller (`getStatuses` uses the app
+    // transport, which ingestion needs: the backfill runs in a queue where
+    // there is no user), so it is the whole instance catalogue and therefore
+    // a *superset* of the `status_meta` table it replaced.
+    //
+    // What makes it acceptable is not that it is narrower. It is that
+    // `GET /rest/api/3/status` is readable by any authenticated Jira user, so
+    // this list tells the caller nothing they could not fetch themselves in
+    // one request. The sensitive fact is *which statuses a given project
+    // uses* — that is what `listProjectStatusIds` narrows to the moment the
+    // project has been indexed, and what the authorisation in
+    // `handleListStatuses` protects.
     try {
       const statuses = await this.deps.api.getStatuses();
       const now = this.clock.now();

@@ -221,9 +221,21 @@ export function computeRunChart(
 /** ~3 years; beyond that a daily chart is unreadable anyway. */
 export const MAX_ENUMERATED_DAYS = 1100;
 
-/** Would {@link enumerateDays} truncate this range? */
+/**
+ * Would {@link enumerateDays} truncate this range?
+ *
+ * `length >= MAX_ENUMERATED_DAYS` is the wrong question: a range of exactly
+ * 1,100 days fills the array without dropping anything, and reporting that
+ * as capped is the same false positive in the reassuring direction's mirror
+ * — a warning about a truncation that did not happen. What actually
+ * distinguishes the two is whether the last day enumerated is the last day
+ * asked for.
+ */
 export function enumerateDaysCapped(from: Millis, to: Millis, timeZone: string): boolean {
-  return enumerateDays(from, to, timeZone).length >= MAX_ENUMERATED_DAYS;
+  if (to < from) return false;
+  const days = enumerateDays(from, to, timeZone);
+  if (days.length < MAX_ENUMERATED_DAYS) return false;
+  return days[days.length - 1] !== localDateKey(to, timeZone);
 }
 
 /**

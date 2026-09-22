@@ -19,6 +19,8 @@ import {
   computeRunChart,
   enumerateDays,
   enumerateDaysCapped,
+  enumerateDays,
+  MAX_ENUMERATED_DAYS,
 } from '../src/metrics/wip-aging.js';
 import { evaluateDueDate, evaluateSla, attainmentRate, type SlaGoal } from '../src/metrics/sla.js';
 import { describeIndexError } from '../src/ingest/backfill.js';
@@ -821,6 +823,16 @@ describe('★ engine defects found by audit', () => {
     expect(enumerateDaysCapped(T('2026-01-01T00:00:00Z'), T('2026-03-01T00:00:00Z'), 'UTC')).toBe(
       false,
     );
+
+    // ★ A range that exactly fills the array dropped nothing, and must not
+    // warn that it did. `length >= MAX` cannot tell those apart.
+    const exact = MAX_ENUMERATED_DAYS;
+    const from = T('2020-01-01T00:00:00Z');
+    const to = from + (exact - 1) * 86_400_000;
+    expect(enumerateDays(from, to, 'UTC')).toHaveLength(exact);
+    expect(enumerateDaysCapped(from, to, 'UTC')).toBe(false);
+    // One day more is a real truncation.
+    expect(enumerateDaysCapped(from, to + 86_400_000, 'UTC')).toBe(true);
   });
 
   it('orders same-instant history entries numerically, as the timeline does', () => {

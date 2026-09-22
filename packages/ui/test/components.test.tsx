@@ -385,6 +385,18 @@ describe('SlaGoalForm', () => {
     expect(onChange).toHaveBeenCalledWith({ ...goal, countedStatusIds: [] });
   });
 
+  it('★ shows an unlisted target exactly, not rounded to the nearest hour', () => {
+    // `parseSlaGoal` accepts any target from a minute to a year; only the six
+    // presets are whole hours. Rounding the label rendered a 90-minute goal
+    // as "2 working hours" while every number on the page was divided by 90
+    // minutes — the control disagreeing with the computation, which is the
+    // defect the comment on the control above it says was fixed.
+    const goal = { ...DEFAULT_SLA_GOAL, targetMs: 90 * 60_000 };
+    render(<SlaGoalForm statuses={STATUSES} goal={goal} onChange={vi.fn()} />);
+    expect(screen.getByText('1h 30m of working time')).toBeDefined();
+    expect(screen.queryByText('2 working hours')).toBeNull();
+  });
+
   it('reports a changed target through onChange', () => {
     const onChange = vi.fn();
     render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={onChange} />);
