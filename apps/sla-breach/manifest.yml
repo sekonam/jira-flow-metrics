@@ -16,6 +16,18 @@ modules:
         function: resolver
       title: SLA & Due Dates
 
+  # The admin usage page — TECHNICAL-SPEC § 11 item 10. Each listing carries
+  # its own, because Forge provisions a SQL database per *app*: an admin with
+  # three of these installed has three separate footprints, and one shared
+  # page could only ever report one of them.
+  jira:adminPage:
+    - key: sla-breach-admin
+      resource: admin
+      render: native
+      resolver:
+        function: resolver
+      title: SLA and Due Dates storage
+
   jira:dashboardGadget:
     - key: sla-breach-gadget
       resource: gadget
@@ -96,6 +108,8 @@ resources:
     path: src/frontend/index.tsx
   - key: gadget
     path: src/frontend/gadget.tsx
+  - key: admin
+    path: src/frontend/admin.tsx
 
 app:
   runtime:

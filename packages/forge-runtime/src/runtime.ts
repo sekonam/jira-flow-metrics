@@ -1,5 +1,6 @@
 import {
   DEFAULT_BACKFILL_OPTIONS,
+  ESTIMATED_ROW_BYTES,
   buildStatusReport,
   handleIssueDeleted,
   handleIssueUpdated,
@@ -324,14 +325,35 @@ export class ListingRuntime {
     return buildHistoryReport(this.deps.store, request);
   }
 
-  /** Storage footprint, for the admin usage panel. Estimated, not measured. */
-  async storageEstimate(): Promise<{ bytes: number; note: string }> {
-    const bytes = await this.deps.store.estimateBytes();
+  /**
+   * Storage footprint, for the admin usage page. Estimated, not measured.
+   *
+   * Instance-wide by design — Forge SQL is provisioned per installation, so
+   * "how much is this app holding" has no project-scoped answer. That is
+   * exactly why it is on an admin page and nowhere else: the numbers are
+   * facts about the app's own footprint, never about issues, and an admin
+   * page is the only surface Jira itself restricts to people entitled to
+   * ask instance-wide questions.
+   */
+  async storageEstimate(): Promise<{
+    bytes: number;
+    note: string;
+    tables: readonly { table: string; rows: number; bytes: number }[];
+  }> {
+    const counts = await this.deps.store.countRows();
+    const tables = Object.entries(ESTIMATED_ROW_BYTES)
+      .map(([table, perRow]) => ({
+        table,
+        rows: counts[table] ?? 0,
+        bytes: (counts[table] ?? 0) * perRow,
+      }))
+      .sort((a, b) => b.bytes - a.bytes || a.table.localeCompare(b.table));
     return {
-      bytes,
+      bytes: tables.reduce((total, row) => total + row.bytes, 0),
       note:
         'Estimated from row counts and per-row size constants, not measured on disk. ' +
         'Check the real figure against your Forge usage dashboard.',
+      tables,
     };
   }
 

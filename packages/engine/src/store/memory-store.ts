@@ -295,6 +295,22 @@ export class MemoryStore implements MetricsStore {
     );
   }
 
+  countRows(): Promise<Readonly<Record<string, number>>> {
+    const sum = (map: ReadonlyMap<string, readonly unknown[]>): number =>
+      [...map.values()].reduce((n, rows) => n + rows.length, 0);
+    return Promise.resolve({
+      issue_meta: this.issueMeta.size,
+      issue_status_agg: sum(this.aggregates),
+      issue_status_visit: sum(this.visits),
+      worklog: sum(this.worklogs),
+      issue_history: sum(this.history),
+      status_meta: this.statusMeta.size,
+      status_name_history: this.statusNames.size,
+      index_state: this.indexStates.size,
+      app_settings: 0,
+    });
+  }
+
   /** Test helper: total aggregate rows held. Not part of the port. */
   get aggregateRowCount(): number {
     return [...this.aggregates.values()].reduce((n, rows) => n + rows.length, 0);

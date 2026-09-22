@@ -244,4 +244,14 @@ export interface MetricsStore {
 
   /** Approximate stored bytes, for the in-app cost/usage panel. */
   estimateBytes(): Promise<number>;
+
+  /**
+   * Rows held per table, for the admin usage page.
+   *
+   * Counts, never content: an admin page is instance-wide, so anything
+   * issue-shaped here would be readable by someone with no permission on the
+   * projects it came from. A row count is a fact about the app's own
+   * footprint and about nothing else.
+   */
+  countRows(): Promise<Readonly<Record<string, number>>>;
 }

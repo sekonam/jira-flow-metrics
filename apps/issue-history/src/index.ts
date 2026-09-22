@@ -9,6 +9,7 @@ import {
   handleIssueEvent,
   handleListProjects,
   handleStartIndexing,
+  handleStorageEstimate,
   projectIdFromEvent,
   handleHistoryReport,
 } from '@jfm/forge-runtime';
@@ -36,6 +37,10 @@ resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), r
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
+// The admin usage page. Instance-wide and unauthorised by project on
+// purpose — see `handleStorageEstimate`; the gate is `jira:adminPage`,
+// which Jira restricts to administrators.
+resolver.define('getStorageEstimate', () => handleStorageEstimate(getRuntime()));
 // The "extend history" control. Both are read only when the control is
 // opened, so a page that nobody extends pays nothing for it.
 resolver.define('getHistoryWindow', (req) => handleHistoryWindow(getRuntime(), req));

@@ -309,9 +309,26 @@ export async function handleIndexProgress(
   }
 }
 
-export async function handleStorageEstimate(
-  runtime: ListingRuntime,
-): Promise<HandlerResult<{ bytes: number; note: string }>> {
+/**
+ * The admin usage page.
+ *
+ * No project authorisation, and that is the point rather than an omission:
+ * the figures are instance-wide because Forge SQL is provisioned per
+ * installation, so there is no project to scope them to. The gate is the
+ * surface itself — `jira:adminPage` is reachable only by Jira
+ * administrators, which the platform enforces — and the payload is row
+ * counts and byte estimates, never anything issue-shaped. This was
+ * `TECHNICAL-SPEC.md` § 11 item 10: the method existed, no app exposed it,
+ * and the reason given was that there was no surface that could authorise
+ * it properly. This is that surface.
+ */
+export async function handleStorageEstimate(runtime: ListingRuntime): Promise<
+  HandlerResult<{
+    bytes: number;
+    note: string;
+    tables: readonly { table: string; rows: number; bytes: number }[];
+  }>
+> {
   runtime.beginInvocation();
   try {
     return { ok: true, data: await runtime.storageEstimate() };

@@ -20,18 +20,47 @@ modules:
         function: resolver
       title: Time in Status
 
-  # The issue panel — ROADMAP stage 5. It sits under Jira's own History tab
-  # on the issue view, which is the strongest place this product's argument
-  # can be made: the cumulative figure is checkable against the transitions
-  # listed immediately above it.
-  jira:issuePanel:
-    - key: time-in-status-panel
+  # The admin usage page — TECHNICAL-SPEC § 11 item 10. `storageEstimate()`
+  # has existed since the first commit with nothing exposing it, because its
+  # figures are instance-wide and no project-scoped surface can authorise an
+  # instance-wide question. `jira:adminPage` is the surface that can: Jira
+  # restricts it to administrators itself.
+  jira:adminPage:
+    - key: time-in-status-admin
+      resource: admin
+      render: native
+      resolver:
+        function: resolver
+      title: Time in Status storage
+
+  # One issue's timeline — ROADMAP stage 5. It renders as a tab *inside* the
+  # Activity panel, next to Comments and History, which is the strongest
+  # place this product's argument can be made: the cumulative figure sits one
+  # click from the transitions it is derived from.
+  #
+  # ⚠️ `jira:issuePanel` was tried first and deployed and linted cleanly and
+  # never appeared. Two documented reasons, both disqualifying, and neither
+  # visible from the manifest:
+  #
+  #   1. An issue panel is **opt-in per issue**. The module contributes a
+  #      button under "Apps" below the summary; the panel exists on an issue
+  #      only after somebody clicks it, and Atlassian confirms there is no
+  #      way to open one automatically (FRGE-734, ECO-251 — still open).
+  #   2. "Only users with permission to edit the Jira issue can see the
+  #      configured button." The people who read reports are routinely the
+  #      people without edit permission, so the surface would have been
+  #      invisible to its own audience.
+  #
+  # `jira:issueActivity` has neither property: the tab is always present, for
+  # every viewer, with no per-issue opt-in. It also takes no `icon` — the
+  # property does not exist on this module.
+  jira:issueActivity:
+    - key: time-in-status-activity
       resource: panel
       render: native
       resolver:
         function: resolver
       title: Time in Status
-      icon: https://raw.githubusercontent.com/sekonam/jira-flow-metrics-assets/main/time-in-status.png
 
   jira:dashboardGadget:
     - key: time-in-status-gadget
@@ -125,6 +154,8 @@ resources:
     path: src/frontend/gadget.tsx
   - key: panel
     path: src/frontend/panel.tsx
+  - key: admin
+    path: src/frontend/admin.tsx
 
 app:
   runtime:

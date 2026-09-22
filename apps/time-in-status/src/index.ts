@@ -10,6 +10,7 @@ import {
   handleIssueEvent,
   handleListProjects,
   handleStartIndexing,
+  handleStorageEstimate,
   projectIdFromEvent,
 } from '@jfm/forge-runtime';
 import { getRuntime } from './runtime';
@@ -36,6 +37,10 @@ resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), r
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
+// The admin usage page. Instance-wide and unauthorised by project on
+// purpose — see `handleStorageEstimate`; the gate is `jira:adminPage`,
+// which Jira restricts to administrators.
+resolver.define('getStorageEstimate', () => handleStorageEstimate(getRuntime()));
 // The issue panel. The one resolver in the product that reads Jira rather
 // than the store, and the one authorised against the project Jira says the
 // issue belongs to rather than against the context's own.

@@ -412,10 +412,45 @@ describe('listing-specific resolvers', () => {
 
   it('reports a storage failure without leaking the cause', async () => {
     const { runtime, store } = build();
-    store.estimateBytes = () => Promise.reject(new Error('disk on fire'));
+    // `countRows`, not `estimateBytes`: the estimate is now derived from the
+    // per-table counts so the admin page can show the breakdown, and the
+    // byte total and the table under it cannot disagree.
+    store.countRows = () => Promise.reject(new Error('disk on fire'));
     const result = await handleStorageEstimate(runtime);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).not.toContain('fire');
+  });
+
+  it('breaks the storage estimate down per table, largest first', async () => {
+    const { runtime, store } = build();
+    await store.putIssueAggregate(
+      {
+        issueId: '1',
+        issueKey: 'FLOW-1',
+        projectId: '10000',
+        issueTypeId: null,
+        priorityId: null,
+        assigneeAccountId: null,
+        currentStatusId: '3',
+        createdAt: 0,
+        resolvedAt: null,
+        dueAt: null,
+        historyThroughAt: 0,
+        truncated: false,
+        updatedAt: 0,
+      },
+      [],
+    );
+    const result = await handleStorageEstimate(runtime);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const meta = result.data.tables.find((row) => row.table === 'issue_meta');
+    expect(meta?.rows).toBe(1);
+    // The total is the sum of the breakdown, not a separately-computed
+    // number that could drift from the table beneath it.
+    expect(result.data.bytes).toBe(result.data.tables.reduce((total, row) => total + row.bytes, 0));
+    // Nothing issue-shaped reaches an instance-wide surface.
+    expect(JSON.stringify(result.data)).not.toContain('FLOW-1');
   });
 
   it('lists the projects the gadget picker offers, from the calling user', async () => {

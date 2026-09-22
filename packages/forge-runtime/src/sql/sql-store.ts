@@ -425,6 +425,22 @@ export class SqlMetricsStore implements MetricsStore {
    * on-disk size, and the UI labels it as one.
    */
   async estimateBytes(): Promise<number> {
+    const counts = await this.countRows();
+    let total = 0;
+    for (const [table, bytes] of Object.entries(ESTIMATED_ROW_BYTES)) {
+      total += (counts[table] ?? 0) * bytes;
+    }
+    return total;
+  }
+
+  /**
+   * Rows per table, in one statement.
+   *
+   * One query with nine scalar sub-selects rather than nine queries: Forge
+   * SQL meters DML requests per installation, and the admin page that reads
+   * this is the sort of screen somebody refreshes.
+   */
+  async countRows(): Promise<Readonly<Record<string, number>>> {
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT
          (SELECT COUNT(*) FROM issue_meta)          AS issue_meta,
@@ -438,12 +454,11 @@ export class SqlMetricsStore implements MetricsStore {
          (SELECT COUNT(*) FROM app_settings)        AS app_settings`,
     );
     const counts = rows[0];
-    if (counts === undefined) return 0;
-    let total = 0;
-    for (const [table, bytes] of Object.entries(ESTIMATED_ROW_BYTES)) {
-      total += toNumber(counts[table] ?? 0) * bytes;
+    const result: Record<string, number> = {};
+    for (const table of Object.keys(ESTIMATED_ROW_BYTES)) {
+      result[table] = toNumber(counts?.[table] ?? 0);
     }
-    return total;
+    return result;
   }
 }
 

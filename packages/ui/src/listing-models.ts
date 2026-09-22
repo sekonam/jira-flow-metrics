@@ -11,6 +11,7 @@ import {
   formatDateTime,
   formatDurationForHumans,
   toHours,
+  formatBytes,
   formatDate,
   type ChartPoint,
   type SeriesPoint,
@@ -547,4 +548,47 @@ export function toTimelineTiles(report: IssueTimelineReport): SummaryTile[] {
     hint: 'Against a derived goal: starts at the first in-progress status, stops at the first done status.',
   });
   return tiles;
+}
+
+// -------------------------------------------------- the admin usage page ---
+
+export interface StorageEstimate {
+  readonly bytes: number;
+  readonly note: string;
+  readonly tables: readonly { table: string; rows: number; bytes: number }[];
+}
+
+/**
+ * What this installation is holding, per table.
+ *
+ * Row counts and estimated bytes only — never anything issue-shaped. An
+ * admin page is instance-wide, so a single issue key here would be readable
+ * by somebody with no permission on the project it came from.
+ */
+export function toStorageTable(estimate: StorageEstimate): SimpleTable {
+  return {
+    headers: ['Table', 'Rows', 'Estimated size'],
+    rows: estimate.tables.map((row) => [
+      row.table,
+      row.rows.toLocaleString('en-GB'),
+      formatBytes(row.bytes),
+    ]),
+    footnotes: [estimate.note],
+  };
+}
+
+export function toStorageTiles(estimate: StorageEstimate): SummaryTile[] {
+  const issues = estimate.tables.find((row) => row.table === 'issue_meta')?.rows ?? 0;
+  return [
+    {
+      label: 'Estimated storage',
+      value: formatBytes(estimate.bytes),
+      hint: 'Across every project this app has indexed.',
+    },
+    {
+      label: 'Issues indexed',
+      value: issues.toLocaleString('en-GB'),
+      hint: 'Rows in issue_meta, instance-wide.',
+    },
+  ];
 }
