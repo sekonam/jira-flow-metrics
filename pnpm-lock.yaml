@@ -17,6 +17,9 @@ importers:
       '@jfm/engine':
         specifier: workspace:^
         version: link:packages/engine
+      '@jfm/forge-runtime':
+        specifier: workspace:^
+        version: link:packages/forge-runtime
       '@jfm/ui-harness':
         specifier: workspace:^
         version: link:packages/ui-harness

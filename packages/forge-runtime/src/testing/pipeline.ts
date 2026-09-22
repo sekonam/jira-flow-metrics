@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   DATASETS_ALL,
+  type IngestDatasets,
   MemoryStore,
   type JiraApi,
   type JiraChangelogEntry,
@@ -329,6 +330,21 @@ export interface PipelineOptions {
   readonly maxSlices?: number;
   readonly listingId?: string;
   /**
+   * What the pipeline ingests. Defaults to `DATASETS_ALL`.
+   *
+   * ⚠️ The default is **not** what any listing runs in production. Each of
+   * the five ingests a restricted set, and a snapshot scenario answers all
+   * thirteen resolvers from one runtime, so a restricted store would leave
+   * four of the five listings' reports empty in every screenshot. `live`
+   * mode is the opposite case — one runtime per listing, each its own app —
+   * and passes the listing's real datasets, which is where a report built
+   * from a dataset its own listing does not ingest actually shows up.
+   *
+   * `LISTING_DATASETS` is the table; `test/listing-registry.test.ts` holds it
+   * to what each app passes.
+   */
+  readonly datasets?: IngestDatasets;
+  /**
    * Skip `startIndexing` entirely, leaving the project with no index state.
    * This is what a freshly-installed app looks like before anyone presses the
    * button, and it is a different screen from "indexed, but no issues".
@@ -397,7 +413,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     },
     {
       listingId: options.listingId ?? 'time-in-status',
-      datasets: DATASETS_ALL,
+      datasets: options.datasets ?? DATASETS_ALL,
       ...(options.pageSize === undefined ? {} : { pageSize: options.pageSize }),
       ...(options.issuesPerSlice === undefined ? {} : { issuesPerSlice: options.issuesPerSlice }),
     },

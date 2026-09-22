@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   verify:
-    name: format · typecheck · lint · test · build
+    name: format · typecheck · lint · preflight · test · build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -48,6 +48,17 @@ jobs:
 
       - name: ESLint
         run: pnpm run lint
+
+      # ★ Preflight runs here too, not only in `pnpm run verify`.
+      #
+      # It is the only check in the repo that reads the five manifests
+      # against the code beside them — in particular the @forge/events
+      # consumer shape, which deploys and lints clean in its legacy form and
+      # then never fires. `test/manifests.test.ts` covers the rest of the
+      # manifest claims, so leaving this out of CI left exactly one gap, and
+      # it was the expensive one.
+      - name: Preflight
+        run: pnpm run preflight
 
       # Coverage thresholds are configured in vitest.config.ts (80% on
       # packages/engine). Vitest exits non-zero when a threshold is missed, so

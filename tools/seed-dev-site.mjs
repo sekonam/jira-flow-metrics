@@ -216,13 +216,16 @@ function saveState(state) {
  * deleting somebody's real backlog, and the state file is an exact record of
  * what this script is responsible for.
  */
-async function reset(jira, state) {
+export async function reset(jira, state, save = saveState) {
   const keys = Object.keys(state.issues ?? {});
   if (keys.length === 0) {
     say('  · nothing recorded in the state file; nothing to delete');
     return;
   }
   say(`  ${jira.dryRun ? 'Would delete' : 'Deleting'} ${keys.length} previously seeded issue(s):`);
+  // Keys whose deletion did not actually happen, kept so the record of them
+  // survives. See below.
+  const remaining = {};
   for (const key of keys) {
     try {
       await jira.del(`/rest/api/3/issue/${key}?deleteSubtasks=true`);
@@ -230,8 +233,12 @@ async function reset(jira, state) {
       // destructive command with --dry-run is to be told the truth about it.
       say(`      ${jira.dryRun ? '⤳ would delete' : '✓ deleted'} ${key}`);
     } catch (error) {
-      // A 404 means somebody already removed it by hand, which is fine.
-      say(`      ⤳ ${key}: ${String(error.message).split('\n')[0]}`);
+      const message = String(error.message).split('\n')[0];
+      // A 404 means somebody already removed it by hand, which is fine — the
+      // issue is gone either way, so its record may go too. Anything else
+      // means it is still there.
+      if (!/\b404\b/.test(message)) remaining[key] = state.issues[key];
+      say(`      ⤳ ${key}: ${message}`);
     }
   }
   if (jira.dryRun) {
@@ -242,8 +249,21 @@ async function reset(jira, state) {
     say('  · [dry-run] state file left untouched');
     return;
   }
-  saveState({ ...state, issues: {} });
-  say('  · state file cleared');
+  // ★ Keep the keys that were *not* deleted.
+  //
+  // The loop above catches every error, not only 404, and this used to clear
+  // the file regardless. An expired API token turns every DELETE into a 401:
+  // the issues survive in Jira, the only record of what this tool created is
+  // erased, and every later --reset answers "nothing recorded in the state
+  // file; nothing to delete". Orphaning exactly what it was asked to remove
+  // is the worst outcome available to a destructive command.
+  save({ ...state, issues: remaining });
+  const left = Object.keys(remaining).length;
+  say(
+    left === 0
+      ? '  · state file cleared'
+      : `  · ${left} issue(s) could not be deleted and are still recorded — fix the error above and re-run`,
+  );
 }
 
 /**

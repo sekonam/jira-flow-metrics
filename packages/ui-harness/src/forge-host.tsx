@@ -596,24 +596,65 @@ export interface ModalProps {
   children?: React.ReactNode;
   onClose?: () => void;
   width?: string;
+  /** UI Kit 2's `ModalProps` takes this from `@atlaskit/modal-dialog`. */
+  label?: string;
 }
 
-export const Modal = ({ children }: ModalProps): React.JSX.Element => (
-  <div
-    role="dialog"
-    aria-modal="true"
-    aria-label="Export"
-    style={{
-      border: `1px solid ${token('color.border')}`,
-      borderRadius: 4,
-      background: token('elevation.surface.overlay'),
-      padding: 16,
-      marginTop: 12,
-    }}
-  >
-    {children}
-  </div>
-);
+/** UI Kit 2's named widths, as the ADS modal renders them. */
+const MODAL_WIDTH: Readonly<Record<string, string>> = {
+  small: '400px',
+  medium: '600px',
+  large: '800px',
+  'x-large': '968px',
+};
+
+/**
+ * ★ The accessible name comes from the caller, and `onClose`/`width` are
+ * honoured rather than merely accepted.
+ *
+ * This used to hardcode `aria-label="Export"` for every modal. The product
+ * has two — the CSV export and "Extend indexed history" — so the second was
+ * announced to a screen reader under the first one's name, and axe's
+ * `aria-dialog-name` rule could never fire, because the stand-in always
+ * supplied a name the product had not. A stand-in that invents an accessible
+ * name is the same class of defect as one that drops a `Select value`.
+ *
+ * `onClose` and `width` were declared on the props and read by nothing, so
+ * the CSV modal — which asks for `x-large` precisely because a CSV preview is
+ * unreadable in a narrow column — rendered at the default width in every
+ * screenshot, and Escape did nothing. `forge-host.contract` now fails on any
+ * prop a stand-in declares and does not read.
+ */
+export const Modal = ({ children, label, onClose, width }: ModalProps): React.JSX.Element => {
+  React.useEffect(() => {
+    if (onClose === undefined) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      {...(label === undefined ? {} : { 'aria-label': label })}
+      style={{
+        border: `1px solid ${token('color.border')}`,
+        borderRadius: 4,
+        background: token('elevation.surface.overlay'),
+        padding: 16,
+        marginTop: 12,
+        maxWidth: width === undefined ? undefined : (MODAL_WIDTH[width] ?? width),
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 export const ModalHeader = ({ children }: { children?: React.ReactNode }): React.JSX.Element => (
   <div style={{ marginBottom: 8 }}>{children}</div>
@@ -690,12 +731,40 @@ export interface LoadingButtonProps extends ButtonProps {
   isLoading?: boolean;
 }
 
+/**
+ * ★ The label stays; the spinner is an overlay.
+ *
+ * UI Kit 2 describes `LoadingButton` as "a button that shows a spinner **as
+ * an overlay on** the button when you set an isLoading prop to true" — the
+ * children are not replaced. This stand-in used to swap them for "Working…",
+ * which meant three things at once: a string that exists nowhere in the
+ * product appeared in the harness and in any screenshot caught mid-action,
+ * no test could observe that the real label survives a save, and a flow that
+ * re-finds the button by name after clicking it was asserting on harness
+ * behaviour rather than on the product's.
+ */
 export const LoadingButton = ({
   isLoading,
   children,
   ...rest
 }: LoadingButtonProps): React.JSX.Element => (
   <Button {...rest} isDisabled={rest.isDisabled === true || isLoading === true}>
-    {isLoading === true ? 'Working…' : children}
+    <span style={{ position: 'relative' }}>
+      {children}
+      {isLoading === true ? (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'grid',
+            placeItems: 'center',
+            background: token('elevation.surface'),
+          }}
+        >
+          <Spinner size="small" />
+        </span>
+      ) : null}
+    </span>
   </Button>
 );

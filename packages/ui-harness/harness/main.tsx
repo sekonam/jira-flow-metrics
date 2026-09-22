@@ -164,10 +164,21 @@ async function main(): Promise<void> {
     );
   }
 
-  // The screenshot driver waits for this. Every resolver in the harness
-  // answers from memory, so a short settle is enough; the `loading` scenario
-  // deliberately never settles and is captured mid-spinner.
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  // The screenshot driver waits for this.
+  //
+  // ⚠️ It is a settle, not a readiness signal, and the distinction matters in
+  // `?live=` mode. In snapshot mode the justification holds — every resolver
+  // answers from memory — but live mode runs a real `runPipeline` in the dev
+  // server's Node process on the first call, which takes longer than this. So
+  // every flow's `openSurface` can return while the page is still a spinner.
+  // The flows are disciplined about explicit waits and none currently relies
+  // on this, but an assertion written without one would be evaluated against
+  // a loading page, so live mode gets a longer settle and the comment no
+  // longer claims something that is only true of half the harness.
+  //
+  // The `loading` scenario deliberately never settles and is captured
+  // mid-spinner; that is what it is for.
+  await new Promise((resolve) => setTimeout(resolve, liveApp === null ? 400 : 1500));
   document.body.dataset['harnessReady'] = 'true';
 }
 

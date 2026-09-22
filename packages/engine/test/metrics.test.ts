@@ -19,7 +19,6 @@ import {
   computeRunChart,
   enumerateDays,
   enumerateDaysCapped,
-  enumerateDays,
   MAX_ENUMERATED_DAYS,
 } from '../src/metrics/wip-aging.js';
 import { evaluateDueDate, evaluateSla, attainmentRate, type SlaGoal } from '../src/metrics/sla.js';

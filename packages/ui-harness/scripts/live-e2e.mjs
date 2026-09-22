@@ -17,12 +17,27 @@
  *      margin `tools/seed-report.md` predicts — the product's one factual
  *      claim, checked against real history rather than assumed.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runPipeline, PIPELINE_CONTEXT, PIPELINE_PROJECT_ID } from '@jfm/forge-runtime/testing';
 import { handleGetReport } from '@jfm/forge-runtime';
 
-const ROOT = '/Users/s.prykhozhai/dev/jira-flow-metrics';
+/**
+ * The workspace root, found rather than written down.
+ *
+ * This was an absolute path to one developer's home directory, so the script
+ * ran on exactly one machine. `pipeline.ts` walks up for the same reason.
+ */
+const ROOT = (() => {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(join(dir, 'pnpm-workspace.yaml'))) {
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error('could not find the workspace root from this script');
+    dir = parent;
+  }
+  return dir;
+})();
 const say = (line = '') => process.stdout.write(`${line}\n`);
 
 for (const line of readFileSync(join(ROOT, '.env'), 'utf8').split('\n')) {
@@ -44,6 +59,20 @@ const get = async (path) => {
 
 const state = JSON.parse(readFileSync(join(ROOT, 'tools/.seed-state.json'), 'utf8'));
 const keys = Object.keys(state.issues);
+
+// ★ Nothing to check is a failure, not a clean run.
+//
+// With an empty state file — after `pnpm run seed:dev-site --reset`, say —
+// the fixture loop ran zero times, `checked` and `failed` both stayed 0, the
+// column check ran over an empty array and printed its `ok` line, and the
+// script exited 0 having verified nothing at all. Both sibling runners guard
+// this (`e2e-ui.mjs` throws on no flow files, `screens.mjs` on no screen
+// ids); this one is the only comparison in the repo against *real* Jira, so
+// a silent pass here is the most expensive one available.
+if (keys.length === 0) {
+  say('\nNo seeded issues in tools/.seed-state.json — run `pnpm run seed:dev-site` first.');
+  process.exit(1);
+}
 
 say(`\nPulling ${keys.length} issues from ${BASE}\n`);
 
@@ -190,4 +219,11 @@ if (unnamed.length > 0) {
 
 say(`\n  ${checked} status figures checked against live Jira, ${failed} disagreement(s)`);
 say(`${'─'.repeat(78)}\n`);
+// Zero comparisons is not agreement. Seeded issues that produce no status
+// figures at all mean the fixtures or the pipeline stopped doing their job,
+// and the run must not report success for it.
+if (checked === 0) {
+  say('  FAIL nothing was actually compared — no status figures were produced.\n');
+  process.exit(1);
+}
 process.exit(failed === 0 ? 0 : 1);

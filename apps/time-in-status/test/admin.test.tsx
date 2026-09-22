@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { setBridgeResolvers } from '@jfm/ui-harness';
+import { loadScenarios, setBridgeResolvers } from '@jfm/ui-harness';
 
 /**
  * The admin usage page, rendered.
@@ -64,6 +64,28 @@ describe('time-in-status admin page', () => {
     });
     render(<Admin />);
     expect(await screen.findByText('Something went wrong loading this report.')).toBeDefined();
+    cleanup();
+  });
+
+  it('★ renders the real non-admin refusal, produced by the real check', async () => {
+    // Every payload above is hand-written, which proves only that the
+    // invention renders. This one comes from the pipeline: a caller who is
+    // not an administrator, through `handleStorageEstimate`'s own gate.
+    //
+    // It had no coverage at all — `PipelineOptions.adminAllowed` existed and
+    // no scenario set it, so the fail-closed path this page exists to render
+    // honestly had neither a test nor a screenshot, and the five
+    // `*-admin--error.png` images showed a populated page under the caption
+    // "Refused".
+    const scenarios = await loadScenarios();
+    const refusal = scenarios.error.responses.getStorageEstimate as {
+      ok: boolean;
+      error?: string;
+    };
+    expect(refusal.ok).toBe(false);
+    setBridgeResolvers({ getStorageEstimate: () => refusal });
+    render(<Admin />);
+    expect(await screen.findByText(refusal.error!)).toBeDefined();
     cleanup();
   });
 });

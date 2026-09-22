@@ -42,6 +42,14 @@ const AXE_SOURCE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
 const SCENARIOS = [
   { id: 'populated', label: 'Populated', note: 'Four issues, indexing complete.' },
   {
+    id: 'canonical',
+    label: 'Canonical issue',
+    // Found by the new scenario-list guard, which is the first thing it
+    // caught: this scenario has existed in SCENARIO_IDS since the harness
+    // was written and had no screenshot on any surface.
+    note: 'The single issue end-to-end.test.ts asserts: 12h in progress across two visits, 27 working hours, 76h elapsed.',
+  },
+  {
     id: 'partial',
     label: 'Backfill running',
     note: 'Half the issues indexed. Numbers must be labelled partial.',
@@ -61,7 +69,20 @@ const SCENARIOS = [
  * exactly the failure this script exists to prevent.
  */
 const SCREENS = [
-  { id: 'time-in-status-panel', listing: 'Time in Status', surface: 'panel' },
+  // ★ `skip` — a screen that has no such state, rather than a mislabelled
+  // screenshot of a different one.
+  //
+  // The issue panel always opens on an issue. In the `empty` scenario the
+  // project has none, so the fixture Jira cannot find the one the panel asks
+  // for and the real handler returns its internal-error payload — and that
+  // image was published in the index under "Empty — Indexed, nothing to
+  // report", which is a caption for a screen the product cannot produce.
+  {
+    id: 'time-in-status-panel',
+    listing: 'Time in Status',
+    surface: 'panel',
+    skip: ['empty'],
+  },
   { id: 'time-in-status-admin', listing: 'Time in Status', surface: 'admin' },
   { id: 'worklog-reports-admin', listing: 'Worklog Reports', surface: 'admin' },
   { id: 'wip-aging-admin', listing: 'WIP Aging', surface: 'admin' },
@@ -94,6 +115,39 @@ function log(line) {
   process.stdout.write(`${line}\n`);
 }
 
+/**
+ * The same guard for the scenario list.
+ *
+ * `assertScreenListIsCurrent` protects the *screens* against drift and
+ * `scenarios.ts` was unprotected, so `canonical` has existed in
+ * `SCENARIO_IDS` all along without a single screenshot, and a seventh
+ * scenario would be skipped in silence — the very failure the comment above
+ * says this script exists to prevent, one axis over.
+ *
+ * `loading` is the exception in the other direction: it is a harness state
+ * (resolvers that never settle), not a pipeline scenario, so it is expected
+ * here and absent there.
+ */
+const HARNESS_ONLY_SCENARIOS = new Set(['loading']);
+
+function assertScenarioListIsCurrent() {
+  const source = readFileSync(join(HERE, '..', 'src', 'scenarios.ts'), 'utf8');
+  const block = /export const SCENARIO_IDS = \[([^\]]*)\]/.exec(source);
+  if (block === null) throw new Error('could not read SCENARIO_IDS from scenarios.ts');
+  const declared = [...block[1].matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
+  if (declared.length === 0) throw new Error('SCENARIO_IDS is empty');
+  const known = new Set(SCENARIOS.map((scenario) => scenario.id));
+  const missing = declared.filter((id) => !known.has(id));
+  const extra = SCENARIOS.map((s) => s.id).filter(
+    (id) => !declared.includes(id) && !HARNESS_ONLY_SCENARIOS.has(id),
+  );
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `screens.mjs is out of step with src/scenarios.ts — missing: ${missing.join(', ') || 'none'}; unknown: ${extra.join(', ') || 'none'}`,
+    );
+  }
+}
+
 function assertScreenListIsCurrent() {
   const registry = readFileSync(join(HERE, '..', 'harness', 'screens.tsx'), 'utf8');
   const declared = [...registry.matchAll(/^\s*id: '([a-z0-9-]+)',$/gm)].map((m) => m[1]);
@@ -110,6 +164,7 @@ function assertScreenListIsCurrent() {
 
 async function main() {
   assertScreenListIsCurrent();
+  assertScenarioListIsCurrent();
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
 
@@ -127,6 +182,10 @@ async function main() {
 
   for (const screen of SCREENS) {
     for (const scenario of SCENARIOS) {
+      if (screen.skip?.includes(scenario.id)) {
+        log(`· ${screen.id}--${scenario.id} skipped: ${screen.id} has no such state`);
+        continue;
+      }
       const name = `${screen.id}--${scenario.id}`;
       const context = await browser.newContext({
         viewport: VIEWPORT[screen.surface],
@@ -144,6 +203,19 @@ async function main() {
         waitUntil: 'load',
       });
       await page.waitForSelector('body[data-harness-ready="true"]', { timeout: 15_000 });
+
+      // ★ "It rendered nothing" has to be a failure here.
+      //
+      // A blank page has zero axe violations and zero console errors, so it
+      // printed `✓` and wrote an empty PNG — and nothing else in the visual
+      // pipeline asserts that a screen has content. Deliberately crude: any
+      // real text at all, because *what* each screen should say is the
+      // snapshot suites' job, and this one only has to notice the floor
+      // falling out.
+      const visibleText = (await page.locator('body').innerText()).trim();
+      if (visibleText.length < 2) {
+        problems.push('the page rendered no visible text');
+      }
 
       const file = `${name}.png`;
       await page.screenshot({ path: join(OUT, file), fullPage: true });

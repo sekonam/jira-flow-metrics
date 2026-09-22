@@ -12,10 +12,16 @@
  * that are answerable from the repository. It does not replace `forge lint` —
  * it cannot see Atlassian's module schema, scope names, or runtime list — but
  * it does catch the mistakes that are actually likely: a handler renamed in
- * TypeScript and not in YAML, a resource pointing at a moved file, a resolver
- * key a frontend invokes that no manifest wires up.
+ * TypeScript and not in YAML, a resource pointing at a moved file, a module
+ * naming a function key nothing declares, and the `@forge/events` consumer
+ * shape — the one check here that nothing else in the repo makes.
  *
- * Run: `pnpm run preflight`
+ * Not here, despite an earlier version of this comment saying so: "a resolver
+ * key a frontend invokes that no manifest wires up". That is a real check and
+ * it lives in `test/resolver-wiring.test.ts`; claiming it twice meant nobody
+ * would notice if it existed in neither place.
+ *
+ * Run: `pnpm run preflight` — also a CI step, not only part of `verify`.
  */
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -50,6 +56,9 @@ function parseManifest(text) {
   // for one — sit deeper and are not entries; counting them made every app
   // report four triggers where it has one.
   let entryIndent = null;
+  // The indent of an open `resolver:` block, so a `function:` beneath it can
+  // be told from one at entry level. `null` when no block is open.
+  let resolverBlockIndent = null;
 
   for (const raw of lines) {
     if (raw.trim() === '' || raw.trim().startsWith('#')) continue;
@@ -75,17 +84,42 @@ function parseManifest(text) {
         entryIndent ??= indent;
         if (indent > entryIndent) continue; // a nested list, not a new entry
         current = {};
+        resolverBlockIndent = null;
         out.modules[moduleType]?.push(current);
         const [key, ...rest] = line.slice(2).split(':');
         if (rest.length) current[key.trim()] = rest.join(':').trim();
         continue;
       }
       if (current && line.includes(':')) {
-        const [key, ...rest] = line.split(':');
+        const [rawKey, ...rest] = line.split(':');
+        const key = rawKey.trim();
         const value = rest.join(':').trim();
-        // `resolver:` nests a `function:` beneath it; flatten to `resolver`.
-        if (key.trim() === 'function' && value !== '') current.resolver = value;
-        else if (value !== '') current[key.trim()] = value;
+        // ★ A nested `resolver: { function }` and a flat `function:` are
+        // **not** the same thing, and this used to flatten both into
+        // `resolver` — so the one check preflight has that nothing else
+        // does, the @forge/events v1-vs-v3 consumer shape, could not tell
+        // them apart and passed either. That is the failure documented in
+        // every `src/index.ts`: the legacy form deploys, lints clean, and
+        // the consumer simply never fires.
+        if (resolverBlockIndent !== null && indent <= resolverBlockIndent) {
+          resolverBlockIndent = null;
+        }
+        if (key === 'resolver' && value === '') {
+          resolverBlockIndent = indent;
+          continue;
+        }
+        if (key === 'function' && value !== '') {
+          // Inside a `resolver:` block this is the legacy nested form;
+          // at entry level it is the current flat one.
+          if (resolverBlockIndent !== null) current.resolverFunction = value;
+          else current.function = value;
+          continue;
+        }
+        if (key === 'method' && value !== '' && resolverBlockIndent !== null) {
+          current.resolverMethod = value;
+          continue;
+        }
+        if (value !== '') current[key] = value;
       }
       continue;
     }
@@ -153,17 +187,40 @@ for (const app of apps) {
   for (const [type, entries] of Object.entries(manifest.modules)) {
     if (type === 'function') continue;
     for (const entry of entries) {
-      if (entry.resolver && !functionKeys.has(entry.resolver)) {
-        fail(
-          app,
-          `${type} "${entry.key}" uses resolver "${entry.resolver}", which no function declares`,
-        );
+      for (const [field, named] of [
+        ['resolver', entry.resolver],
+        ['resolver.function', entry.resolverFunction],
+        ['function', entry.function],
+      ]) {
+        if (named && !functionKeys.has(named)) {
+          fail(app, `${type} "${entry.key}" uses ${field} "${named}", which no function declares`);
+        }
       }
-      if (entry.function && !functionKeys.has(entry.function)) {
-        fail(
-          app,
-          `${type} "${entry.key}" uses function "${entry.function}", which no function declares`,
-        );
+
+      // ★ The consumer's shape, which is the whole reason this check exists.
+      //
+      // @forge/events v1.x wanted `resolver: {function, method}`; v3 — the
+      // version installed here — wants a plain `function:` taking the raw
+      // queue payload. Both parse as valid YAML, both pass Atlassian's
+      // schema, and `forge lint` reports no issues for either: the legacy
+      // form deploys cleanly and the consumer simply never fires, so a real
+      // backfill sits at "0 issues indexed" forever with nothing in
+      // `forge logs`. Nothing else in the repo can catch this.
+      //
+      // It could not be caught here either until the parser learned to tell
+      // a nested `function:` from a flat one — it flattened both into
+      // `resolver`, so the two shapes were literally the same object.
+      if (type === 'consumer') {
+        if (entry.resolverFunction || entry.resolverMethod) {
+          fail(
+            app,
+            `consumer "${entry.key}" uses the legacy resolver: {function, method} form; ` +
+              '@forge/events v3 needs a flat function: — it deploys and lints clean, and never fires',
+          );
+        }
+        if (!entry.function) {
+          fail(app, `consumer "${entry.key}" names no function:`);
+        }
       }
     }
   }

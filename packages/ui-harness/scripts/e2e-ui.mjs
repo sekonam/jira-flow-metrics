@@ -141,7 +141,15 @@ async function main() {
   const flows = [];
   for (const file of files) {
     const module = await import(pathToFileURL(join(E2E, file)).href);
-    for (const flow of module.flows ?? []) flows.push(flow);
+    // A flows file that exports nothing contributes nothing and the run
+    // still printed "N/N flows passed". `files.length === 0` above does not
+    // cover it: the file is there, it just stopped being wired up — a
+    // renamed export, a bad merge. Named individually so the message says
+    // which one went quiet.
+    if (!Array.isArray(module.flows) || module.flows.length === 0) {
+      throw new Error(`${file} exports no flows`);
+    }
+    for (const flow of module.flows) flows.push(flow);
   }
 
   const server = await createServer({

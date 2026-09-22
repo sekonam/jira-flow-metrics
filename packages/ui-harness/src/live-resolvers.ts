@@ -17,7 +17,11 @@ import {
   handleStartIndexing,
   handleStorageEstimate,
   handleWorklogReport,
-  type CsvExportKind,
+  isListingId,
+  LISTING_CSV_KIND,
+  LISTING_DATASETS,
+  LISTING_IDS,
+  type ListingId,
   type ListingRuntime,
 } from '@jfm/forge-runtime';
 import {
@@ -48,19 +52,8 @@ import {
  * rather than by a test calling it directly.
  */
 
-/**
- * Which report each listing's export button exports. Mirrors the `handleExportCsv`
- * kind each app passes in its own `src/index.ts`.
- */
-const CSV_KIND: Readonly<Record<string, CsvExportKind>> = {
-  'time-in-status': 'status',
-  'worklog-reports': 'worklog',
-  'wip-aging': 'aging',
-  'sla-breach': 'sla',
-  'issue-history': 'history',
-};
-
-export const LIVE_APPS = Object.keys(CSV_KIND);
+/** The listings this harness can run live. */
+export const LIVE_APPS: readonly ListingId[] = LISTING_IDS;
 
 const runtimes = new Map<string, Promise<ListingRuntime>>();
 
@@ -72,11 +65,33 @@ const runtimes = new Map<string, Promise<ListingRuntime>>();
  * WIP-aging one. Getting that wrong here would hide a real bug.
  */
 function runtimeFor(app: string): Promise<ListingRuntime> {
+  // ★ An unknown listing id throws rather than getting a default runtime.
+  //
+  // `?live=<app>` comes off the URL unvalidated and a flow's `app` field is
+  // forwarded verbatim, so a typo used to produce its own fresh runtime that
+  // ingested everything and exported the time-in-status CSV under another
+  // listing's name — the exact "wrong CSV kind" defect the five export flows
+  // were written to catch, hidden by the fallback meant to be convenient.
+  if (!isListingId(app)) {
+    throw new Error(
+      `the harness has no listing "${app}" — expected one of ${LISTING_IDS.join(', ')}`,
+    );
+  }
   const existing = runtimes.get(app);
   if (existing !== undefined) return existing;
+  // ★ The listing's **real** datasets, not everything.
+  //
+  // `runPipeline` defaults to `DATASETS_ALL` because one snapshot scenario
+  // has to answer all five listings' resolvers. Live mode does not: each
+  // listing gets its own runtime, exactly as each app has its own database
+  // on Forge. Ingesting everything here meant a listing configured to skip
+  // the dataset its own report is built from rendered perfectly in all forty
+  // browser flows — `wip-aging` is the only one that stores status visits,
+  // and its cumulative flow chart is the report that needs them.
   const created = runPipeline({
     issues: [CANONICAL_ISSUE, ...IN_FLIGHT_ISSUES],
     listingId: app,
+    datasets: LISTING_DATASETS[app],
   }).then((result) => result.runtime);
   runtimes.set(app, created);
   return created;
@@ -146,7 +161,7 @@ export async function callLiveResolver(
     case 'startIndexing':
       return handleStartIndexing(runtime, invocation);
     case 'exportCsv':
-      return handleExportCsv(runtime, invocation, CSV_KIND[app] ?? 'status');
+      return handleExportCsv(runtime, invocation, LISTING_CSV_KIND[app as ListingId]);
     default:
       throw new Error(`the harness has no live handler for resolver "${key}"`);
   }

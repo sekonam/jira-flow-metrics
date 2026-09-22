@@ -739,7 +739,13 @@ export function ExtendHistoryControl({
       <Button onClick={load}>Extend history</Button>
       <ModalTransition>
         {open && (
-          <Modal onClose={close}>
+          // ★ `label`, not just `ModalTitle`. UI Kit 2's `ModalProps` takes
+          // one, and whether Forge's host derives an accessible name from
+          // the title is not something this repo can verify — so the name is
+          // given rather than assumed. The harness's stand-in used to supply
+          // `aria-label="Export"` for every modal, which both mislabelled
+          // this one and made axe's `aria-dialog-name` rule unable to fire.
+          <Modal onClose={close} label="Extend indexed history">
             <ModalHeader>
               <ModalTitle>Extend indexed history</ModalTitle>
             </ModalHeader>
@@ -872,6 +878,7 @@ export function CsvExport({
               setResult(null);
             }}
             width="x-large"
+            label="Export CSV"
           >
             <ModalHeader>
               <ModalTitle>{result.filename}</ModalTitle>

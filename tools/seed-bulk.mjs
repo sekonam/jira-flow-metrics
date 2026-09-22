@@ -186,11 +186,17 @@ async function reset(jira, state) {
   }
   say(`  ${jira.dryRun ? 'Would delete' : 'Deleting'} ${keys.length} previously seeded issue(s)`);
   let done = 0;
+  // Keys whose deletion did not actually happen — see the save below. This
+  // script's default target is thousands of issues, so getting it wrong here
+  // orphans a whole seeded project at once.
+  const remaining = {};
   for (const key of keys) {
     try {
       await jira.del(`/rest/api/3/issue/${key}?deleteSubtasks=true`);
     } catch (error) {
-      say(`      ⤳ ${key}: ${String(error.message).split('\n')[0]}`);
+      const message = String(error.message).split('\n')[0];
+      if (!/\b404\b/.test(message)) remaining[key] = state.issues[key];
+      say(`      ⤳ ${key}: ${message}`);
     }
     done += 1;
     if (done % 25 === 0 || done === keys.length) say(`      ${done}/${keys.length}`);
@@ -199,8 +205,15 @@ async function reset(jira, state) {
     say('  · [dry-run] state file left untouched');
     return;
   }
-  saveState({ ...state, issues: {} });
-  say('  · state file cleared');
+  // ★ Keep the keys that were not deleted — see `seed-dev-site.mjs`'s reset
+  // for the failure this prevents.
+  saveState({ ...state, issues: remaining });
+  const left = Object.keys(remaining).length;
+  say(
+    left === 0
+      ? '  · state file cleared'
+      : `  · ${left} issue(s) could not be deleted and are still recorded — fix the error above and re-run`,
+  );
 }
 
 // ---------------------------------------------------------------------------

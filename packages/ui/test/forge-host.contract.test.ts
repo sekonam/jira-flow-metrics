@@ -50,16 +50,67 @@ const realForgeReact = await import('@forge/react');
  */
 const REPO_ROOT = process.cwd();
 
-/** Files that import from `@forge/react` and are shipped in an app bundle. */
+/**
+ * Files that import from `@forge/react` and are shipped in an app bundle.
+ *
+ * Every frontend file an app ships, read from the directory rather than from
+ * a hard-coded pair. `['index.tsx', 'gadget.tsx']` missed all five
+ * `admin.tsx` and `time-in-status`'s `panel.tsx` — six surfaces that do
+ * import from `@forge/react` — so a UI Kit component used only there was
+ * checked neither for existing in `@forge/react` nor for having a stand-in.
+ * `test/resolver-wiring.test.ts` globs for exactly this reason and says so;
+ * this file did not get the same treatment.
+ */
 function productionSources(): string[] {
   const files = [join(REPO_ROOT, 'packages/ui/src/components.tsx')];
   const appsDir = join(REPO_ROOT, 'apps');
   for (const app of readdirSync(appsDir)) {
-    for (const file of ['index.tsx', 'gadget.tsx']) {
-      files.push(join(appsDir, app, 'src/frontend', file));
+    const frontendDir = join(appsDir, app, 'src/frontend');
+    for (const file of readdirSync(frontendDir)
+      .filter((f) => f.endsWith('.tsx'))
+      .sort()) {
+      files.push(join(frontendDir, file));
     }
   }
   return files;
+}
+
+/**
+ * ★ A stand-in that accepts a prop and ignores it.
+ *
+ * This file checked *names* only — that every component the product imports
+ * exists in `@forge/react` and has a stand-in — and three defects walked
+ * straight through that: a `Select` whose `value` was declared and dropped
+ * (so no test could see a control disagreeing with its own state), a `Modal`
+ * asking for `x-large` and rendering at the default width, and an `onClose`
+ * wired to nothing.
+ *
+ * The shape they share is exact and checkable without a type-checker: a prop
+ * declared on the stand-in's own `*Props` interface and never read by the
+ * component. If the stand-in takes a rest parameter it is spreading whatever
+ * it did not name, which is fine.
+ */
+function standInPropsNeverRead(source: string): string[] {
+  const problems: string[] = [];
+  const interfaces = source.matchAll(
+    /export interface (\w+Props)\s*(?:extends [\w, ]+)?\{([\s\S]*?)\n\}/g,
+  );
+  for (const [, name, body] of interfaces) {
+    const declared = [...body!.matchAll(/^\s*(?:readonly\s+)?([a-zA-Z]\w*)\??\s*:/gm)].map(
+      (m) => m[1]!,
+    );
+    const component = name!.replace(/Props$/, '');
+    const signature = new RegExp(
+      `export const ${component}\\s*=\\s*\\(([\\s\\S]*?)\\)\\s*:\\s*React\\.JSX\\.Element`,
+    ).exec(source);
+    if (signature === null) continue; // not a component; checked elsewhere
+    const params = signature[1]!;
+    if (/\.\.\.\w+/.test(params)) continue; // spreads the remainder
+    const ignored = declared.filter((prop) => !new RegExp(`\\b${prop}\\b`).test(params));
+    if (ignored.length > 0)
+      problems.push(`${component}: declares ${ignored.join(', ')} and reads neither`);
+  }
+  return problems;
 }
 
 /** Names imported from `@forge/react`, default import included as `default`. */
@@ -109,6 +160,16 @@ describe('the product only imports things `@forge/react` actually exports', () =
 describe('the stand-in host renderer covers everything the product uses', () => {
   it.each(USED)('`%s` has a stand-in', (name) => {
     expect(Object.keys(host)).toContain(name);
+  });
+
+  it('★ never accepts a prop it then ignores', () => {
+    // The whole value of a stand-in is that a test which passes through it
+    // says something about the product. A prop that is declared and dropped
+    // breaks exactly that, in silence and with a green suite — which is how
+    // a `Select` rendered without its `value` and a modal asked for
+    // `x-large` and got the default width.
+    const source = readFileSync(join(REPO_ROOT, 'packages/ui-harness/src/forge-host.tsx'), 'utf8');
+    expect(standInPropsNeverRead(source)).toEqual([]);
   });
 
   it('exposes a ForgeReconciler whose render call is a no-op', () => {

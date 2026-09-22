@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from '../tools/seed-dev-site.mjs';
+import { parseArgs, reset } from '../tools/seed-dev-site.mjs';
 import { isoDaysFromNow } from '../tools/jira-seed-lib.mjs';
 import {
   SCENARIOS,
@@ -416,6 +416,75 @@ describe('parseArgs — rejecting a malformed command line', () => {
       reset: false,
       help: false,
     });
+  });
+});
+
+describe('★ --reset only forgets what it actually deleted', () => {
+  /**
+   * The state file is the only record of what the seeder created — `reset`
+   * deliberately never runs a JQL or label query, because one typo there
+   * would delete somebody's real backlog. That makes erasing the file while
+   * the issues survive the worst outcome this command has: the issues are
+   * orphaned in Jira and no later `--reset` can ever find them again.
+   */
+  const state = {
+    baseUrl: 'https://example.atlassian.net',
+    projectKey: 'FLOW',
+    issues: { 'FLOW-1': { id: '1' }, 'FLOW-2': { id: '2' }, 'FLOW-3': { id: '3' } },
+  };
+
+  function fakeJira(del: (key: string) => Promise<void>) {
+    return { dryRun: false, del: (path: string) => del(/\/issue\/([^?]+)/.exec(path)![1]!) };
+  }
+
+  it('keeps every key whose deletion failed', async () => {
+    // An expired API token: every DELETE is a 401, nothing is deleted.
+    const saved: unknown[] = [];
+    await reset(
+      fakeJira(() => Promise.reject(new Error('DELETE /rest/api/3/issue/X → 401'))),
+      state,
+      (next: unknown) => saved.push(next),
+    );
+    expect(saved).toHaveLength(1);
+    expect(Object.keys((saved[0] as { issues: object }).issues).sort()).toEqual([
+      'FLOW-1',
+      'FLOW-2',
+      'FLOW-3',
+    ]);
+  });
+
+  it('forgets a key that is already gone, and keeps the rest', async () => {
+    // A 404 means somebody deleted it by hand: the issue is gone either way,
+    // so the record may go too. A 403 on another issue must not.
+    const saved: { issues: Record<string, unknown> }[] = [];
+    await reset(
+      fakeJira((key) => {
+        if (key === 'FLOW-1') return Promise.reject(new Error('DELETE … → 404 Not Found'));
+        if (key === 'FLOW-2') return Promise.reject(new Error('DELETE … → 403 Forbidden'));
+        return Promise.resolve();
+      }),
+      state,
+      (next) => saved.push(next as { issues: Record<string, unknown> }),
+    );
+    expect(Object.keys(saved[0]!.issues)).toEqual(['FLOW-2']);
+  });
+
+  it('clears the file when every deletion succeeded', async () => {
+    const saved: { issues: Record<string, unknown> }[] = [];
+    await reset(
+      fakeJira(() => Promise.resolve()),
+      state,
+      (next) => saved.push(next as { issues: Record<string, unknown> }),
+    );
+    expect(saved[0]!.issues).toEqual({});
+  });
+
+  it('writes nothing at all on a dry run', async () => {
+    const saved: unknown[] = [];
+    await reset({ dryRun: true, del: () => Promise.resolve() }, state, (next: unknown) =>
+      saved.push(next),
+    );
+    expect(saved).toEqual([]);
   });
 });
 

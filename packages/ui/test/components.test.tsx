@@ -820,6 +820,20 @@ describe('ExtendHistoryControl', () => {
     expect(onLoad).not.toHaveBeenCalled();
   });
 
+  it("★ is announced under its own name, not the export modal's", async () => {
+    // The stand-in host used to hardcode `aria-label="Export"` on every
+    // modal, so this one — the only other modal in the product — was
+    // announced to a screen reader as "Export", and axe's `aria-dialog-name`
+    // rule could never fire because a name was always present. A stand-in
+    // that supplies what the product does not is the same defect as one that
+    // drops a prop the product does supply.
+    const onLoad = vi.fn().mockResolvedValue({ months: 36 });
+    render(<ExtendHistoryControl onLoad={onLoad} onExtend={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Extend history' }));
+    expect(await screen.findByRole('dialog', { name: 'Extend indexed history' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Export' })).toBeNull();
+  });
+
   it('names the range in force and offers only wider ones', async () => {
     const onLoad = vi.fn().mockResolvedValue({ months: 36 });
     render(<ExtendHistoryControl onLoad={onLoad} onExtend={vi.fn()} />);

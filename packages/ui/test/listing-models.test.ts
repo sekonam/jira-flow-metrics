@@ -73,6 +73,7 @@ const aging: AgingReport = {
   excludedDone: 5,
   projectIssueCount: 6,
   capped: false,
+  aggregatesCapped: false,
 };
 
 const sla: SlaReport = {
@@ -119,6 +120,7 @@ const sla: SlaReport = {
   dueDateBreaches: 1,
   projectIssueCount: 2,
   capped: false,
+  aggregatesCapped: false,
 };
 
 const history: HistoryReport = {

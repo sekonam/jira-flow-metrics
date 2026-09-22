@@ -111,8 +111,22 @@ const SCENARIO_SETUP: Readonly<
   },
   error: {
     label: 'Refused',
-    note: 'The caller cannot browse the project. The refusal comes from the real permission check in authoriseProject, not from a string typed here.',
-    options: { issues: [...IN_FLIGHT_ISSUES, CANONICAL_ISSUE], browseAllowed: false },
+    note: 'The caller may neither browse the project nor administer the instance. Both refusals come from the real permission checks in authoriseProject and handleStorageEstimate, not from strings typed here.',
+    // ★ `adminAllowed` too, not only `browseAllowed`.
+    //
+    // `browseAllowed` gates project authorisation, and the admin surface is
+    // instance-wide and unscoped by project — so `getStorageEstimate` went
+    // on answering `ok` in the one scenario named "Refused", and the five
+    // `*-admin--error.png` screenshots showed an ordinary populated admin
+    // page under the caption "Caller cannot browse the project". The
+    // `adminAllowed` option existed for this and no scenario used it, so
+    // `handleStorageEstimate`'s fail-closed path had no screenshot and no
+    // snapshot test at all.
+    options: {
+      issues: [...IN_FLIGHT_ISSUES, CANONICAL_ISSUE],
+      browseAllowed: false,
+      adminAllowed: false,
+    },
   },
 };
 
@@ -124,9 +138,15 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
     getIndexProgress: await handleIndexProgress(runtime, INVOCATION),
     getWorklogReport: await handleWorklogReport(runtime, INVOCATION),
     getAgingReport: await handleAgingReport(runtime, INVOCATION),
-    // The cumulative flow diagram. `unavailable` on every scenario whose
-    // pipeline runs the time-in-status datasets, which store no visits —
-    // which is exactly the state the UI has to render something honest for.
+    // The cumulative flow diagram.
+    //
+    // ⚠️ These scenarios run `DATASETS_ALL`, so visits are always stored and
+    // this is `unavailable` only when the project has no issues at all (the
+    // `empty` scenario). The comment here used to claim it was unavailable
+    // "on every scenario whose pipeline runs the time-in-status datasets" —
+    // no scenario runs those, because one snapshot has to answer all five
+    // listings' resolvers from one runtime. The live harness is where each
+    // listing gets its own restricted store; see `live-resolvers.ts`.
     getFlowReport: await handleFlowReport(runtime, INVOCATION),
     getSlaReport: await handleSlaReport(runtime, {
       ...INVOCATION,
@@ -158,6 +178,11 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
     // The admin usage page. Instance-wide and unscoped by project, which is
     // why it takes no invocation context at all.
     getStorageEstimate: await handleStorageEstimate(runtime),
+    // ⚠️ The one hand-written answer in a file whose docstring says nothing
+    // is. `handleStartIndexing` mutates, and a frozen snapshot has nothing
+    // meaningful to say about a resolver whose purpose is to change state —
+    // but the empty and not-indexed screens need the button not to throw.
+    // What it does for real is exercised by `pnpm run e2e:ui`.
     startIndexing: { ok: true, data: { started: true } },
   };
 }

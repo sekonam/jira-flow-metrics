@@ -32,6 +32,7 @@
   "devDependencies": {
     "@eslint/js": "^9.14.0",
     "@jfm/engine": "workspace:^",
+    "@jfm/forge-runtime": "workspace:^",
     "@jfm/ui-harness": "workspace:^",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.1.0",
