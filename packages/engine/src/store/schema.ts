@@ -130,11 +130,19 @@ export const CREATE_STATEMENTS: readonly string[] = [
      to_id               VARCHAR(128) NULL,
      -- ★ (issue_id, change_id), not change_id alone. A change id is
      -- entryId:itemIndex, which is globally unique only while Jira supplies
-     -- an entry id; toHistoryRecords falls back to idx-<n> when it does
-     -- not, so two different issues each with an id-less first changelog
-     -- entry both produce idx-0:0 and the second insert silently overwrote
+     -- an entry id; toHistoryRecords used to fall back to idx-<n> when it
+     -- did not, so two different issues each with an id-less first changelog
+     -- entry both produced idx-0:0 and the second insert silently overwrote
      -- the first. MemoryStore partitions by issue and kept both, so the
      -- reference store and the shipping one disagreed on the row count.
+     --
+     -- This widening alone does not repair anything already installed:
+     -- migrationRunner records a migration by name, the name is derived from
+     -- the table, and IF NOT EXISTS is a second belt — so a database created
+     -- before this line keeps the old key forever. The actual repair is in
+     -- toHistoryRecords, which now puts the issue id inside the fallback and
+     -- so cannot collide under either key. This stays as the correct
+     -- declaration for a fresh install, not as the fix.
      PRIMARY KEY (issue_id, change_id),
      KEY idx_history_project_time (project_id, changed_at),
      KEY idx_history_issue (issue_id, changed_at),

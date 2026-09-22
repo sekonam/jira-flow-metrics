@@ -210,6 +210,7 @@ export async function processIssue(
       : [];
 
   let worklogs: WorklogRecord[] = [];
+  let worklogsTruncated = false;
   if (config.datasets.worklogs) {
     const fetched = await fetchAllWorklogs(issueId, issueKey, projectId, api, config);
     worklogs = fetched.records;
@@ -218,7 +219,13 @@ export async function processIssue(
     // than we read" for the changelog; a truncated worklog fetch is the same
     // statement about the same issue, and the report's "partial history"
     // lozenge is the right place for both.
-    if (fetched.truncated) truncated = true;
+    //
+    // Written to `worklogsTruncated` rather than back into `truncated`:
+    // `reconstructTimeline` consumed that local forty lines above, and `meta`
+    // reads `timeline.truncated`, so assigning to it here is a dead store —
+    // which is exactly what the first version of this fix did. A boolean is
+    // copied by value; the flag has to be OR-ed in where `meta` is built.
+    if (fetched.truncated) worklogsTruncated = true;
   }
 
   const history = config.datasets.history
@@ -242,7 +249,7 @@ export async function processIssue(
     resolvedAt: parseJiraTimestamp(issue.fields?.resolutiondate),
     dueAt: parseJiraTimestamp(issue.fields?.duedate),
     historyThroughAt: lastEntryAt,
-    truncated: timeline.truncated,
+    truncated: timeline.truncated || worklogsTruncated,
     updatedAt: now,
   };
 

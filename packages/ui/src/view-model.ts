@@ -420,6 +420,80 @@ export function toReadCapBanner(input: {
   };
 }
 
+/**
+ * The cap banner for a report whose *aggregate* read was truncated.
+ *
+ * Distinct from both of the above. `toCapBanner` names a denominator
+ * ("400 of 5,000 issues"); this truncation has none, because every issue was
+ * read and only some of their status rows were cut — `included === total`,
+ * and routing it through `toCapBanner` printed "Report capped at 400 of 400
+ * issues". `toReadCapBanner` says "showing N, and there are more", which is
+ * also wrong here: there are not more issues, there is less known about
+ * these ones.
+ */
+export function toAggregateCapBanner(input: { included: number; noun: string }): ProgressBanner {
+  return {
+    appearance: 'warning',
+    title: `Some of these ${input.included.toLocaleString('en-GB')} ${input.noun} are missing measurements`,
+    body:
+      'This report reached the maximum number of status rows it will read in one pass, so ' +
+      'some issues are measured over only part of their history and read as lower than they ' +
+      'are. Narrow the filters to cover the remainder.',
+    showSpinner: false,
+    showRetry: false,
+  };
+}
+
+/**
+ * The same choice as `toReportCapBanner`, as one sentence for a gadget.
+ *
+ * A gadget has room for a footnote, not a banner, but it must not make the
+ * contradictory claim either: "Covering 400 of 400 issues, so every figure
+ * here is a lower bound" is what the aggregate cap printed there.
+ */
+export function toCapNotice(input: {
+  capped: boolean;
+  aggregatesCapped: boolean;
+  included: number;
+  total: number;
+  noun: string;
+}): string | null {
+  if (!input.capped) return null;
+  const included = input.included.toLocaleString('en-GB');
+  if (input.included < input.total) {
+    return `Covering ${included} of ${input.total.toLocaleString('en-GB')} ${input.noun}, so every figure here is a lower bound.`;
+  }
+  return `Some of these ${included} ${input.noun} are missing measurements, so every figure here is a lower bound.`;
+}
+
+/**
+ * Pick the right cap banner for a report that can be truncated two ways.
+ *
+ * The aging and SLA reports each carry two independent ceilings — the issue
+ * page and the aggregate row cap — and a single `capped` boolean collapsed
+ * them into one sentence that was false for the second. Which one fired is
+ * the difference between "we only looked at 400 of your 5,000 issues" and
+ * "we looked at all 400 and know less than everything about some of them".
+ */
+export function toReportCapBanner(input: {
+  capped: boolean;
+  aggregatesCapped: boolean;
+  included: number;
+  total: number;
+  noun: string;
+}): ProgressBanner | null {
+  if (!input.capped) return null;
+  if (input.included < input.total) {
+    return toCapBanner({
+      capped: true,
+      included: input.included,
+      total: input.total,
+      noun: input.noun,
+    });
+  }
+  return toAggregateCapBanner({ included: input.included, noun: input.noun });
+}
+
 function describeProgress(progress: BackfillProgress): string {
   if (progress.fraction === null) {
     return `${progress.issuesProcessed.toLocaleString('en-GB')} issues indexed.`;

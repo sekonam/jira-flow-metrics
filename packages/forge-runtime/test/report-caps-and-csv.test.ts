@@ -122,6 +122,61 @@ describe('capped reports carry the real total', () => {
     expect(complete.capped).toBe(false);
   });
 
+  it('★ distinguishes a truncated aggregate read from a truncated issue page', async () => {
+    // Two independent ceilings. When only the *aggregate* read is cut, every
+    // issue was fetched, so `rows.length === projectIssueCount` — and the one
+    // `capped` boolean sent that through the issue-page banner, which printed
+    // "Report capped at 400 of 400 issues": a title saying nothing was left
+    // out above a body saying the rest are missing. That is precisely the
+    // self-contradiction `toReadCapBanner` was added to remove from the flow
+    // report, reintroduced here.
+    //
+    // 400 issues on a 30-status workflow is 12,000 aggregate rows against a
+    // 10,000-row cap, and 400 is well under any issue page limit.
+    const store = new MemoryStore();
+    const statusIds = Array.from({ length: 30 }, (_u, i) => String(100 + i));
+    await store.upsertStatusMeta(
+      statusIds.map((statusId) => ({
+        statusId,
+        name: `Status ${statusId}`,
+        category: 'inprogress' as const,
+        firstSeenAt: 0,
+        lastSeenAt: NOW,
+      })),
+    );
+    await store.putIssueAggregates(
+      Array.from({ length: 400 }, (_u, i) => ({
+        meta: meta({ issueId: String(i + 1), currentStatusId: '100' }),
+        rows: statusIds.map((statusId) => agg(String(i + 1), statusId, 20)),
+      })),
+    );
+
+    const aging = await buildAgingReport(store, '10000', NOW);
+    expect(aging.rows.length + aging.excludedDone).toBe(aging.projectIssueCount);
+    expect(aging.capped).toBe(true);
+    expect(aging.aggregatesCapped).toBe(true);
+
+    const goal = { id: 'g', name: 'Goal', countedStatusIds: ['100'], targetMs: 8 * HOUR };
+    const sla = await buildSlaReport(store, '10000', goal, NOW);
+    expect(sla.rows.length).toBe(sla.projectIssueCount);
+    expect(sla.aggregatesCapped).toBe(true);
+
+    // ★ And attainment is withheld rather than overstated.
+    //
+    // Every one of these 400 issues is 600 working hours against an 8-hour
+    // target, so the true attainment is 0%. The issues whose aggregate rows
+    // were cut read as zero consumed time — compliant — which produced "16%
+    // attainment" under a banner calling every figure a lower bound.
+    // Attainment is the one figure that moves the *reassuring* way when a
+    // report is truncated, so it is not shown at all.
+    expect(sla.breachedCount).toBeLessThan(sla.rows.length);
+    expect(sla.attainment).toBeNull();
+
+    // A report inside both ceilings still reports a real attainment.
+    const small = await threeIssueStore();
+    expect((await buildSlaReport(small, '10000', goal, NOW)).aggregatesCapped).toBe(false);
+  });
+
   it('worklog report: capped when more entries match than were fetched', async () => {
     const store = new MemoryStore();
     await store.putWorklogs('1', [worklog('a', 'Anna'), worklog('b', 'Ben'), worklog('c', 'Cara')]);

@@ -654,13 +654,20 @@ describe('issue history', () => {
     expect(toHistoryRecords([{ id: '1', created: 'nonsense', items: [] }], context)).toEqual([]);
   });
 
-  it('falls back to a synthetic id when Jira omits one', () => {
-    const out = toHistoryRecords(
-      [{ created: '2026-03-01T00:00:00.000+0000', items: [{ field: 'summary' }] }],
-      context,
-    );
-    expect(out[0]?.changeId).toBe('idx-0:0');
-    expect(out[0]?.authorDisplayName).toBe('Unknown user');
+  it('★ falls back to a synthetic id that is unique across issues, not just within one', () => {
+    // The fallback is per-entry-index, so every issue whose first changelog
+    // entry lacks an id produces the same one — and the shipping store keys
+    // history rows by change id, so issue B's row replaced issue A's and the
+    // history report quietly lost a row per affected issue. Widening the
+    // primary key fixes a *fresh* database only: `migrationRunner` skips a
+    // migration it has already run by name. The id has to carry the issue.
+    const noId = [{ created: '2026-03-01T00:00:00.000+0000', items: [{ field: 'summary' }] }];
+    const a = toHistoryRecords(noId, context);
+    const b = toHistoryRecords(noId, { ...context, issueId: '20002', issueKey: 'FLOW-2' });
+
+    expect(a[0]?.changeId).toBe(`idx-${context.issueId}-0:0`);
+    expect(a[0]?.changeId).not.toBe(b[0]?.changeId);
+    expect(a[0]?.authorDisplayName).toBe('Unknown user');
   });
 });
 

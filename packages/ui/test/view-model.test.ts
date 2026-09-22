@@ -10,6 +10,8 @@ import {
   surfaceStateOf,
   toProgressBanner,
   toReadCapBanner,
+  toReportCapBanner,
+  toCapNotice,
   toProjectOptions,
   toHours,
   toReportTable,
@@ -447,6 +449,76 @@ describe('★ a cap banner must not contradict itself', () => {
 
   it('is silent when nothing was truncated', () => {
     expect(toReadCapBanner({ capped: false, included: 12, noun: 'issues' })).toBeNull();
+  });
+
+  it("★ picks by which of a report's two ceilings actually fired", () => {
+    // The aging and SLA reports can be truncated two ways, and only one of
+    // them has a denominator to name. Collapsing both into one `capped`
+    // boolean put the identical contradiction back on those two pages:
+    // "Report capped at 400 of 400 issues".
+    const issuePage = toReportCapBanner({
+      capped: true,
+      aggregatesCapped: false,
+      included: 400,
+      total: 5000,
+      noun: 'issues',
+    });
+    expect(issuePage?.title).toBe('Report capped at 400 of 5,000 issues');
+
+    const aggregates = toReportCapBanner({
+      capped: true,
+      aggregatesCapped: true,
+      included: 400,
+      total: 400,
+      noun: 'issues',
+    });
+    expect(aggregates?.title).toBe('Some of these 400 issues are missing measurements');
+    expect(aggregates?.title).not.toContain('of 400');
+    expect(aggregates?.body).toContain('part of their history');
+
+    expect(
+      toReportCapBanner({
+        capped: false,
+        aggregatesCapped: false,
+        included: 400,
+        total: 400,
+        noun: 'issues',
+      }),
+    ).toBeNull();
+  });
+
+  it('★ makes the same distinction in a gadget footnote', () => {
+    // A gadget has room for a sentence rather than a banner, and printed
+    // "Covering 400 of 400 issues, so every figure here is a lower bound".
+    expect(
+      toCapNotice({
+        capped: true,
+        aggregatesCapped: false,
+        included: 400,
+        total: 5000,
+        noun: 'issues',
+      }),
+    ).toBe('Covering 400 of 5,000 issues, so every figure here is a lower bound.');
+    expect(
+      toCapNotice({
+        capped: true,
+        aggregatesCapped: true,
+        included: 400,
+        total: 400,
+        noun: 'issues',
+      }),
+    ).toBe(
+      'Some of these 400 issues are missing measurements, so every figure here is a lower bound.',
+    );
+    expect(
+      toCapNotice({
+        capped: false,
+        aggregatesCapped: false,
+        included: 4,
+        total: 4,
+        noun: 'issues',
+      }),
+    ).toBeNull();
   });
 });
 

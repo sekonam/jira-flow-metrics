@@ -17,7 +17,7 @@ import {
   SlaGoalForm,
   SummaryTiles,
   surfaceStateOf,
-  toCapBanner,
+  toReportCapBanner,
   toProgressBanner,
   toSlaChartData,
   toGoalChoice,
@@ -283,8 +283,9 @@ export const App = (): React.JSX.Element => {
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
           <IndexingBanner
-            banner={toCapBanner({
+            banner={toReportCapBanner({
               capped: report.capped,
+              aggregatesCapped: report.aggregatesCapped,
               included: report.rows.length,
               total: report.projectIssueCount,
               noun: 'issues',

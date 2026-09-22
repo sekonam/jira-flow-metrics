@@ -19,7 +19,7 @@ import {
   toAgingChartData,
   toAgingTable,
   toAgingTiles,
-  toCapBanner,
+  toReportCapBanner,
   toReadCapBanner,
   toFlowChartData,
   toProgressBanner,
@@ -204,8 +204,9 @@ export const App = (): React.JSX.Element => {
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
           <IndexingBanner
-            banner={toCapBanner({
+            banner={toReportCapBanner({
               capped: report.capped,
+              aggregatesCapped: report.aggregatesCapped,
               included: report.rows.length + report.excludedDone,
               total: report.projectIssueCount,
               noun: 'issues',

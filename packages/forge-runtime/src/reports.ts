@@ -102,6 +102,19 @@ export interface AgingReport {
   readonly projectIssueCount: number;
   /** True when the project holds more issues than the report could fetch. */
   readonly capped: boolean;
+  /**
+   * True when the *aggregate* read hit its row cap, which is a different
+   * truncation from `capped` and cannot be described with the same sentence.
+   *
+   * `capped` has an honest denominator — this many of that many issues — and
+   * the page says so. This one does not: every issue was read, so
+   * `rows.length === projectIssueCount`, and reporting it through the same
+   * banner produced "Report capped at 400 of 400 issues", a title saying
+   * nothing was left out above a body saying the rest are missing. Exactly
+   * the self-contradiction `toReadCapBanner` was written to remove from the
+   * flow report, reintroduced on this one.
+   */
+  readonly aggregatesCapped: boolean;
 }
 
 /**
@@ -197,9 +210,11 @@ export async function buildAgingReport(
     evaluatedAt: now,
     excludedDone,
     projectIssueCount,
-    // Either ceiling makes every figure a lower bound, and the page says so
-    // the same way for both.
+    // Either ceiling makes every figure a lower bound — but they are not the
+    // same statement, and `aggregatesCapped` carries the one the issue-page
+    // banner cannot express. See its docstring.
     capped: projectIssueCount > metas.length || aggregatesCapped,
+    aggregatesCapped,
   };
 }
 
@@ -237,12 +252,25 @@ export interface SlaReport {
   readonly rows: readonly SlaReportRow[];
   readonly breachedCount: number;
   /** Share of measured issues that met the goal, 0-1. `null` when empty. */
+  /**
+   * Met issues as a fraction, or `null` when the figure cannot be trusted.
+   *
+   * ★ `null` when the aggregate read was truncated, not merely when there
+   * are no rows. An issue whose aggregate rows were cut reads as zero
+   * consumed working time — i.e. *compliant* — so on a 400-issue project
+   * where all 400 breach, cutting 66 of them produced "16% attainment"
+   * rather than 0%. Unlike every other figure on a capped report, attainment
+   * is wrong in the reassuring direction, so it is withheld rather than
+   * shown under a banner calling it a lower bound.
+   */
   readonly attainment: number | null;
   readonly dueDateBreaches: number;
   /** Total issues stored for the project, from a real count, not a page length. */
   readonly projectIssueCount: number;
   /** True when the project holds more issues than the report could fetch. */
   readonly capped: boolean;
+  /** True when the aggregate read hit its row cap. See `AgingReport`. */
+  readonly aggregatesCapped: boolean;
 }
 
 export async function buildSlaReport(
@@ -306,13 +334,16 @@ export async function buildSlaReport(
     goalName: goal.name,
     rows,
     breachedCount,
-    attainment: rows.length === 0 ? null : (rows.length - breachedCount) / rows.length,
+    attainment:
+      rows.length === 0 || aggregatesCapped ? null : (rows.length - breachedCount) / rows.length,
     dueDateBreaches: rows.filter((r) => r.dueDate.breached).length,
     projectIssueCount,
     // An issue whose aggregate rows were cut reads as zero consumed time —
     // i.e. compliant — so a truncated aggregate read has to surface as a cap
-    // just as a truncated issue page does.
+    // just as a truncated issue page does. Separately, though: only the
+    // first of the two has a denominator the banner can name.
     capped: projectIssueCount > metas.length || aggregatesCapped,
+    aggregatesCapped,
   };
 }
 

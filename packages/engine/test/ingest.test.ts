@@ -23,6 +23,7 @@ import {
   systemClock,
   realSleeper,
   type JiraApi,
+  type PageParams,
   type SearchParams,
 } from '../src/ingest/ports.js';
 import { backoffDelayMs, DEFAULT_RETRY, parseRetryAfter, withRetry } from '../src/ingest/retry.js';
@@ -177,6 +178,31 @@ describe('retry and backoff', () => {
 });
 
 describe('processing a single issue', () => {
+  /**
+   * A Jira with more worklog entries than the ingest will ever read.
+   *
+   * Every page comes back full against a total nothing could reach, which is
+   * what an issue with years of logged time looks like from the client side.
+   */
+  class EndlessWorklogApi extends FakeJiraApi {
+    override getWorklogs(issueIdOrKey: string, page: PageParams): Promise<JiraWorklogPage> {
+      this.worklogCalls.push(issueIdOrKey);
+      const maxResults = page.maxResults;
+      return Promise.resolve({
+        startAt: page.startAt,
+        maxResults,
+        total: 1_000_000,
+        worklogs: Array.from({ length: maxResults }, (_unused, i) => ({
+          id: String(page.startAt + i),
+          issueId: '20001',
+          started: '2026-03-02T09:00:00.000+0000',
+          timeSpentSeconds: 3600,
+          author: { accountId: 'anna', displayName: 'Anna' },
+        })),
+      });
+    }
+  }
+
   const searchPage = loadFixture<JiraSearchPage>('search-page.json');
   const changelog = loadFixture<JiraChangelogPage>('changelog-reentry.json');
   const worklogs = loadFixture<JiraWorklogPage>('worklogs.json');
@@ -235,6 +261,27 @@ describe('processing a single issue', () => {
     expect(withWorklogs!.worklogs).toHaveLength(3);
     // A worklog-only listing does not pay for status aggregates.
     expect(withWorklogs!.aggregates).toHaveLength(0);
+  });
+
+  it('★ marks the issue truncated when its worklogs ran past the request cap', async () => {
+    // The cap exists because an issue with thousands of worklog entries would
+    // otherwise eat a whole slice's request budget; the flag exists because
+    // the total we then report ("5,100 hours" where the truth is 10,000) is
+    // wrong in a direction nobody can see. It has to reach `meta`.
+    //
+    // Regression: the first version of this set `truncated`, a local that
+    // `reconstructTimeline` had already consumed forty lines earlier, while
+    // `meta.truncated` reads `timeline.truncated`. The fix read as landed and
+    // was inert, and nothing tested it either way.
+    const api = new EndlessWorklogApi();
+    const processed = await processIssue(
+      searchPage.issues![0]!,
+      api,
+      config({ datasets: DATASETS_WORKLOG }),
+      NOW,
+    );
+    expect(processed!.worklogs.length).toBeGreaterThan(0);
+    expect(processed!.meta.truncated).toBe(true);
   });
 
   it('produces history records only for the history listing', async () => {
@@ -926,6 +973,60 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     }
   }
 
+  /**
+   * How many requests these stubs answer before declaring the slice stuck.
+   *
+   * A guard against non-termination can only be tested by a Jira that will
+   * genuinely never stop answering — but a test that reproduces the bug by
+   * *hanging* is a poor one: with the round-one guard in place this suite ran
+   * past two minutes without vitest's own timeout cutting in, because the
+   * loop is `await`-free in practice and starves the timer. So the stubs are
+   * unbounded from the product's point of view and bounded from the test's:
+   * far more requests than any correct walk makes, then a loud throw.
+   */
+  const LOOP_STUB_LIMIT = 200;
+
+  /** A Jira that answers the same page forever. */
+  class LoopingSearchApi extends ScriptedSearchApi {
+    /** Answered once, so the slice has something to keep before it gets stuck. */
+    firstPage: JiraSearchPage | null = null;
+
+    constructor(private readonly page: JiraSearchPage) {
+      super([]);
+    }
+
+    override searchIssues(params: SearchParams): Promise<JiraSearchPage> {
+      this.searchCalls.push(params);
+      if (this.searchCalls.length > LOOP_STUB_LIMIT) {
+        throw new Error(`the slice did not stop: ${LOOP_STUB_LIMIT} identical pages served`);
+      }
+      if (this.searchCalls.length === 1 && this.firstPage !== null) {
+        return Promise.resolve(this.firstPage);
+      }
+      return Promise.resolve(this.page);
+    }
+  }
+
+  /** A Jira whose pages are always empty and whose token alternates forever. */
+  class RotatingEmptySearchApi extends ScriptedSearchApi {
+    constructor() {
+      super([]);
+    }
+
+    override searchIssues(params: SearchParams): Promise<JiraSearchPage> {
+      this.searchCalls.push(params);
+      if (this.searchCalls.length > LOOP_STUB_LIMIT) {
+        throw new Error(`the slice did not stop: ${LOOP_STUB_LIMIT} empty pages served`);
+      }
+      return Promise.resolve({
+        issues: [],
+        isLast: false,
+        nextPageToken: this.searchCalls.length % 2 === 0 ? 'A' : 'B',
+        total: 9,
+      });
+    }
+  }
+
   /** created ASC, one minute apart, so each carries a distinct seek bound. */
   function issue(n: number): JiraIssue {
     return {
@@ -945,7 +1046,7 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     return btoa(`...${label}...TENANT_NOT_FOUND_IN_TENANT_STORE...`);
   }
 
-  function deps(api: ScriptedSearchApi) {
+  function deps(api: JiraApi) {
     return {
       api,
       store: new MemoryStore(),
@@ -990,13 +1091,69 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     // deadline and the issue budget are only checked inside the per-issue
     // loop, which an empty page skips entirely. Once empty pages stopped
     // ending the walk, a Jira answering `{issues: [], nextPageToken: <same>}`
-    // forever would have spun here until Forge killed the invocation.
+    // forever would spin here until Forge killed the invocation.
     //
-    // `ScriptedSearchApi` replays its last page once the script runs out, so
-    // this is exactly that shape: a token that never advances.
+    // This drives a Jira that *really does* answer forever, rather than a
+    // script that runs out. The first version of this test used
+    // `ScriptedSearchApi` and a comment claiming it replays its last page; it
+    // throws instead, so the slice terminated via the error path and both
+    // assertions held with the guard deleted. A test for a non-termination
+    // bug has to be able to hang, or it is asserting nothing.
+    const api = new LoopingSearchApi({
+      issues: [],
+      isLast: false,
+      nextPageToken: 'STUCK',
+      total: 2,
+    });
+    api.firstPage = { issues: [issue(1)], isLast: false, nextPageToken: 'STUCK', total: 2 };
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    // Terminates, in a bounded number of requests, having kept what it read.
+    expect(api.searchCalls.length).toBe(2);
+    expect(result.issuesProcessed).toBe(1);
+    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(1);
+
+    // And it does **not** claim the project is indexed. `complete` here would
+    // publish every report over one issue out of two, permanently, because
+    // `runBackfillSlice` returns immediately on a complete project.
+    expect(result.stoppedBecause).toBe('error');
+    expect(result.done).toBe(false);
+    const state = await d.store.getIndexState('10000');
+    expect(state?.state).toBe('failed');
+    expect(state?.lastError).toMatch(/without advancing/);
+  });
+
+  it('★ stops when the token advances but every page is empty', async () => {
+    // A Jira rotating `A→B→A→B` never repeats the *same* token twice in a
+    // row, so the guard above never fires — and because each slice starts a
+    // fresh walk, yielding as a budget would spin across slices instead of
+    // within one. Bounded by a count of consecutive empty pages.
+    const api = new RotatingEmptySearchApi();
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(api.searchCalls.length).toBe(20);
+    expect(result.stoppedBecause).toBe('error');
+    expect((await d.store.getIndexState('10000'))?.lastError).toMatch(/consecutive empty/);
+  });
+
+  it('does not stop on a single empty page in a walk that is otherwise advancing', async () => {
+    // The guards must not fire on the ordinary case they were written around:
+    // a page that comes back empty because its issues were deleted or moved
+    // between slices, in a walk that then carries on and finishes.
     const api = new ScriptedSearchApi([
-      { issues: [issue(1)], isLast: false, nextPageToken: 'STUCK', total: 2 },
-      { issues: [], isLast: false, nextPageToken: 'STUCK', total: 2 },
+      { issues: [issue(1)], isLast: false, nextPageToken: 'P2', total: 3 },
+      { issues: [], isLast: false, nextPageToken: 'P3', total: 3 },
+      { issues: [issue(2)], isLast: true, nextPageToken: null, total: 3 },
     ]);
     const d = deps(api);
     const result = await runBackfillSlice(d, {
@@ -1005,9 +1162,9 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
       pageSize: 2,
     });
 
-    // It terminates, and it terminates having kept what it did read.
-    expect(result.issuesProcessed).toBe(1);
-    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(1);
+    expect(result.stoppedBecause).toBe('complete');
+    expect(result.done).toBe(true);
+    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(2);
   });
 
   it('reseeks by created date instead of trusting a corrupted token, and finishes', async () => {

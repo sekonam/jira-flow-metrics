@@ -10,6 +10,7 @@ import {
   SummaryTiles,
   isIndexIncomplete,
   surfaceStateOf,
+  toCapNotice,
   toProjectOptions,
   toSlaTiles,
   type ProjectOption,
@@ -133,6 +134,15 @@ const GadgetView = (): React.JSX.Element => {
   if (report === null || state === 'empty')
     return <Text>Nothing to show for this project yet.</Text>;
 
+  // Two independent ceilings, two different sentences — see `toCapNotice`.
+  const capNotice = toCapNotice({
+    capped: report.capped,
+    aggregatesCapped: report.aggregatesCapped,
+    included: report.rows.length,
+    total: report.projectIssueCount,
+    noun: 'issues',
+  });
+
   return (
     <Stack space="space.150">
       <Heading as="h3">SLA & Due Dates</Heading>
@@ -144,12 +154,7 @@ const GadgetView = (): React.JSX.Element => {
         dashboard could publish an attainment percentage over a 500-issue
         slice of a 5,000-issue project with no qualifier at all.
       */}
-      {report.capped ? (
-        <Text size="small">
-          Covering {report.rows.length} of {report.projectIssueCount} issues, so every figure here
-          is a lower bound.
-        </Text>
-      ) : null}
+      {capNotice !== null ? <Text size="small">{capNotice}</Text> : null}
       {partial ? <Text size="small">Indexing is still in progress.</Text> : null}
     </Stack>
   );

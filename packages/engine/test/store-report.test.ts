@@ -884,6 +884,16 @@ describe('status visits — the rows the aggregate cannot reconstruct', () => {
     ]);
     expect(await store.queryStatusVisits({ projectId: '20000' })).toHaveLength(1);
     expect(await store.queryStatusVisits({ projectId: '10000', issueIds: ['2'] })).toHaveLength(0);
+
+    // ★ An empty list matches nothing, in both stores.
+    //
+    // `StatusVisitQuery` documents it and `sql-store` implements it as
+    // `IN (NULL)`; this reference store read it as "no filter" and returned
+    // the whole project instead, under a comment claiming it did the
+    // opposite. A caller paging issue ids would have got every visit in the
+    // project on the page after its last one.
+    expect(await store.queryStatusVisits({ projectId: '10000', issueIds: [] })).toHaveLength(0);
+    expect(await store.queryStatusDurations({ projectId: '10000', issueIds: [] })).toHaveLength(0);
   });
 
   it('drops an issue’s visits when the issue is deleted', async () => {

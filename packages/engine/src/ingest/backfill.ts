@@ -301,6 +301,18 @@ export function decodeCursor(raw: string | null): {
  */
 const CORRUPTED_CURSOR_MARKER = 'TENANT_NOT_FOUND_IN_TENANT_STORE';
 
+/**
+ * Empty pages tolerated back-to-back, with the token advancing each time,
+ * before the walk is declared stuck.
+ *
+ * Generous on purpose: an ordinary walk hits at most one or two (issues
+ * deleted or moved between slices), and a real project would have to lose
+ * `20 * pageSize` consecutive issues to reach this legitimately — whereas a
+ * Jira rotating its page tokens hits it in twenty requests rather than in
+ * fifteen minutes of spinning.
+ */
+const MAX_CONSECUTIVE_EMPTY_PAGES = 20;
+
 export function isCorruptedCursor(token: string | null): boolean {
   if (!token) return false;
   try {
@@ -361,6 +373,9 @@ export async function runBackfillSlice(
   let skipped = 0;
   let requests = 0;
   let stoppedBecause: BackfillSliceResult['stoppedBecause'] = 'complete';
+  // Empty pages seen back-to-back, reset by any page that yields an issue.
+  // See the guard in step 3 for what it is counting against.
+  let consecutiveEmptyPages = 0;
   let done = false;
   let issuesTotal = state.issuesTotal;
   // `created` of the last issue this backfill has actually written, carried
@@ -503,30 +518,60 @@ export async function runBackfillSlice(
       }
 
       // ★ A page that yielded nothing still costs a request and still has to
-      // respect the clock.
+      // respect the clock — and must not be allowed to repeat forever.
       //
       // The per-issue loop above is the only place the deadline and the issue
       // budget are checked, and it does not run at all for an empty page — so
-      // once empty pages stopped ending the walk (see `pageWasLast` below),
-      // a Jira that keeps answering `{issues: [], nextPageToken: …}` would
-      // spin here until Forge killed the invocation. Two guards, in order of
-      // how much they tell us:
+      // once empty pages stopped ending the walk (see `pageWasLast` below), a
+      // Jira answering `{issues: [], isLast: false, nextPageToken: …}` spins
+      // here until Forge kills the invocation: no state is written at all, the
+      // project stays `running` with nothing enqueued, and the tenant is
+      // rate-limited and billed for 900 seconds of it. That is strictly worse
+      // than the partial index the `pageWasLast` fix removed, so the guard
+      // that catches it has to actually fire.
       //
-      //   1. an unchanged token alongside an empty page is Jira looping, and
-      //      no number of retries will move it;
-      //   2. otherwise the walk is merely slow, so it yields the way any
-      //      budget exhaustion does — the next slice resumes from this token.
+      // Three shapes, and only the third may continue:
+      //
+      //   1. the token did not advance — Jira is looping on one page, and no
+      //      number of retries will move it;
+      //   2. the token advances but every page is empty — a rotating
+      //      `A→B→A→B` never trips (1) and is unbounded *across* slices, so
+      //      it is bounded by a count instead;
+      //   3. a single empty page in an otherwise advancing walk, which is
+      //      ordinary (issues deleted or moved between slices) and continues.
+      //
+      // (1) and (2) throw rather than returning: the catch below persists the
+      // cursor and marks the index `failed` with the reason, which stops the
+      // walk loudly and leaves an operator something to read. Marking it
+      // `complete` would publish reports over a partial corpus — the very
+      // defect the `pageWasLast` change exists to prevent — and yielding as a
+      // budget would re-enqueue the same stuck token forever, one request per
+      // slice, which is the same spin at a slower rate.
+      //
+      // Nothing is lost by throwing here: `batch` is empty on this path, so
+      // there is no pending write to discard, and every earlier page was
+      // written before its cursor advanced.
       if (issues.length === 0) {
+        consecutiveEmptyPages += 1;
         const tokenNow = page.nextPageToken ?? null;
-        if (tokenNow !== null && tokenNow === cursor) {
-          deps.logger?.log('warn', 'jira returned an empty page without advancing its cursor', {
-            projectId: options.projectId,
-            slice,
-          });
-          stoppedBecause = 'complete';
-        } else if (deps.clock.now() >= deadline) {
+        const walkEnded = page.isLast === true || tokenNow === null;
+        if (!walkEnded) {
+          if (tokenNow === cursor) {
+            throw new Error(
+              `jira returned an empty search page without advancing its cursor (slice ${slice})`,
+            );
+          }
+          if (consecutiveEmptyPages >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+            throw new Error(
+              `jira returned ${consecutiveEmptyPages} consecutive empty search pages (slice ${slice})`,
+            );
+          }
+        }
+        if (deps.clock.now() >= deadline) {
           stoppedBecause = 'time_budget';
         }
+      } else {
+        consecutiveEmptyPages = 0;
       }
 
       // Step 4: write results *before* advancing the cursor.
