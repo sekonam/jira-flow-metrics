@@ -19,6 +19,7 @@ import {
   surfaceStateOf,
   toReportCapBanner,
   toProgressBanner,
+  type MaybeProgress,
   toSlaChartData,
   toGoalChoice,
   toGoalPayload,
@@ -50,7 +51,7 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export const App = (): React.JSX.Element => {
   const [report, setReport] = useState<SlaReport | null>(null);
-  const [progress, setProgress] = useState<BackfillProgress | null>(null);
+  const [progress, setProgress] = useState<MaybeProgress>('unknown');
   const [statuses, setStatuses] = useState<readonly StatusMetaRow[]>([]);
   const [savedGoals, setSavedGoals] = useState<readonly SavedSlaGoal[]>([]);
   const [goal, setGoal] = useState<SlaGoalChoice>(DEFAULT_SLA_GOAL);
@@ -93,7 +94,13 @@ export const App = (): React.JSX.Element => {
       // consumption-priced.
       const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
       if (mine !== requestId.current) return;
+      // ★ `'unknown'` on a failed read, not `null`.
+      //
+      // `null` is "never indexed", and rendering that because the call
+      // failed put "Not indexed yet — start indexing" directly above a
+      // populated report. See `MaybeProgress`.
       if (state.ok) setProgress(state.data);
+      else setProgress('unknown');
     } catch {
       // Guarded too: a superseded request that fails must not paint an error
       // over the screen a newer, successful one has already drawn.

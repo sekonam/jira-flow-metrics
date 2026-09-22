@@ -309,7 +309,10 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
  * and a dashboard viewer may not even be able to reach it — so it says which
  * state it is in and where the action lives.
  */
-export function gadgetEmptyMessage(progress: BackfillProgress | null): string {
+export function gadgetEmptyMessage(progress: MaybeProgress): string {
+  // Not knowing is not a claim, so this falls back to the one sentence that
+  // is true either way. See `MaybeProgress`.
+  if (progress === 'unknown') return 'Nothing to show for this project yet.';
   if (progress === null || progress.state === 'not_started') {
     return 'This project has not been indexed yet. Open the report from the project menu to start.';
   }
@@ -322,7 +325,33 @@ export function gadgetEmptyMessage(progress: BackfillProgress | null): string {
   return 'Nothing to show for this project yet.';
 }
 
-export function isIndexIncomplete(progress: BackfillProgress | null): boolean {
+/**
+ * The index state as a surface actually knows it.
+ *
+ * ★ Three cases, not two. `null` used to carry both "this project has never
+ * been indexed" and "the call that would have told us failed", and every
+ * reader chose the first — so a page whose report loaded fine but whose
+ * `getIndexProgress` rejected rendered **"Not indexed yet — start indexing
+ * to build the report"** directly above a populated report of that
+ * project's issues. Two statements about the same project, on the same
+ * screen, one of them false.
+ *
+ * The frontends already treat a failed progress read as non-fatal, under a
+ * comment saying "saying nothing is better than saying something wrong
+ * about the index" — and then said something wrong about the index, because
+ * the type gave them no way to express not knowing.
+ *
+ * `'unknown'` is that way. Readers of this type must handle it explicitly;
+ * both of the functions below render *nothing* for it, which is what the
+ * comment intended all along.
+ */
+export type MaybeProgress = BackfillProgress | null | 'unknown';
+
+export function isIndexIncomplete(progress: MaybeProgress): boolean {
+  // `'unknown'` is not "incomplete": it is the absence of an answer, and a
+  // banner asserting a partial index is as much a claim as one asserting a
+  // complete one.
+  if (progress === 'unknown') return false;
   return progress === null || progress.state !== 'complete';
 }
 
@@ -350,7 +379,9 @@ export interface ProgressBanner {
  * built from half their history must be told, and the honest message is worth
  * more than the tidier screen.
  */
-export function toProgressBanner(progress: BackfillProgress | null): ProgressBanner | null {
+export function toProgressBanner(progress: MaybeProgress): ProgressBanner | null {
+  // Not knowing is not a claim. See `MaybeProgress`.
+  if (progress === 'unknown') return null;
   if (progress === null) {
     return {
       appearance: 'information',

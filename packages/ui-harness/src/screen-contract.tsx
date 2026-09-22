@@ -177,6 +177,23 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
       await expectNoA11yViolations();
     });
 
+    if (spec.surface === 'gadget') {
+      it('★ says a never-indexed project has not been indexed, not that it is empty', async () => {
+        // A gadget cannot offer the button — indexing is the project page's
+        // action, and a dashboard viewer may not be able to reach it — but
+        // "Nothing to show for this project yet" claims the project is
+        // empty when what is true is that the app has never looked at it.
+        // Every gadget said that for both states, and this contract had no
+        // gadget case for `not-indexed` at all: the fix that separated them
+        // could be reverted on all five surfaces with the suite still green.
+        mount('not-indexed');
+        expect(await screen.findByText(/has not been indexed yet/)).toBeDefined();
+        expect(screen.queryByText(/Nothing to show for this project yet/)).toBeNull();
+        expectNoUnregisteredResolvers();
+        await expectNoA11yViolations();
+      });
+    }
+
     if (spec.surface === 'page') {
       it('★ offers indexing exactly once on a project that has never been indexed', async () => {
         mount('not-indexed');

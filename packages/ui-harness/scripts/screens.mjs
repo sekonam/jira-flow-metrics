@@ -184,7 +184,7 @@ function reportIdenticalScreens(results) {
       if (scenarios.length < 2) continue;
       failures += 1;
       log(
-        `✗ ${screenId}: ${scenarios.join(', ')} render identically — ` +
+        `✗ ${screenId}: ${scenarios.join(', ')} render the same text — ` +
           'either the screen cannot express one of them (add it to `skip`) ' +
           'or the scenario is not reaching this surface',
       );
@@ -193,8 +193,8 @@ function reportIdenticalScreens(results) {
   return failures;
 }
 
-function hashOf(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+function hashOf(text) {
+  return createHash('sha256').update(text).digest('hex');
 }
 
 function log(line) {
@@ -359,7 +359,23 @@ async function main() {
       }
       if (violations.length === 0 && problems.length === 0) log(`✓ ${name}`);
 
-      results.push({ screen, scenario, file, violations, problems, hash: hashOf(join(OUT, file)) });
+      results.push({
+        screen,
+        scenario,
+        file,
+        violations,
+        problems,
+        // ★ The rendered text, not the pixels.
+        //
+        // Byte-identity was the whole comparison, and a spinner defeats it:
+        // every `*--loading` screenshot and every `*-page--partial` one
+        // differs between runs because `Spinner` and the banner's
+        // `showSpinner` animate. So on 21 of 108 screens the guard could
+        // never fire — silently, which is the same fail-quietly it was
+        // written to stop. Text is stable across runs and is what the
+        // caption is actually claiming about.
+        hash: hashOf(visibleText),
+      });
     }
   }
 

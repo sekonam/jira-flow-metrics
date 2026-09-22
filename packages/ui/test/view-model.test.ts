@@ -436,6 +436,33 @@ describe('toStatusChartData', () => {
   });
 });
 
+describe('★ not knowing the index state is not a claim about it', () => {
+  // `null` carried both "never indexed" and "the call that would have told
+  // us failed", and every reader chose the first — so a page whose report
+  // loaded fine and whose `getIndexProgress` rejected rendered "Not indexed
+  // yet — start indexing to build the report" directly above a populated
+  // report of that project's issues. Two statements about one project on
+  // one screen, one of them false.
+
+  it('renders no indexing banner at all when the state is unknown', () => {
+    expect(toProgressBanner('unknown')).toBeNull();
+    // Whereas a genuine never-indexed project still gets the invitation.
+    expect(toProgressBanner(null)?.title).toBe('Not indexed yet');
+  });
+
+  it('falls back to the sentence that is true either way in a gadget', () => {
+    expect(gadgetEmptyMessage('unknown')).toBe('Nothing to show for this project yet.');
+    expect(gadgetEmptyMessage(null)).toMatch(/has not been indexed yet/);
+  });
+
+  it('does not report a partial index it cannot see', () => {
+    // A "these figures cover part of your history" warning is as much a
+    // claim as a clean bill of health.
+    expect(isIndexIncomplete('unknown')).toBe(false);
+    expect(isIndexIncomplete(null)).toBe(true);
+  });
+});
+
 describe("★ a gadget's empty state has to say which empty it is", () => {
   // The pages have distinguished these since the four-state design was
   // written; the gadgets said "Nothing to show for this project yet" for

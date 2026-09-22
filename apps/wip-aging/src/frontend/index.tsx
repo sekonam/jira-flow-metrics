@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ForgeReconciler, { Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
-import type { AgingReport, FlowReport } from '@jfm/forge-runtime';
 import type { BackfillProgress } from '@jfm/engine';
+import type { AgingReport, FlowReport } from '@jfm/forge-runtime';
 import {
   AgingHistogram,
   CsvExport,
@@ -23,6 +23,7 @@ import {
   toReadCapBanner,
   toFlowChartData,
   toProgressBanner,
+  type MaybeProgress,
 } from '@jfm/ui';
 
 /**
@@ -48,7 +49,7 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 export const App = (): React.JSX.Element => {
   const [report, setReport] = useState<AgingReport | null>(null);
   const [flow, setFlow] = useState<FlowReport | null>(null);
-  const [progress, setProgress] = useState<BackfillProgress | null>(null);
+  const [progress, setProgress] = useState<MaybeProgress>('unknown');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
@@ -84,7 +85,13 @@ export const App = (): React.JSX.Element => {
       // consumption-priced.
       const state = (await invoke('getIndexProgress', {})) as Result<BackfillProgress | null>;
       if (mine !== requestId.current) return;
+      // ★ `'unknown'` on a failed read, not `null`.
+      //
+      // `null` is "never indexed", and rendering that because the call
+      // failed put "Not indexed yet — start indexing" directly above a
+      // populated report. See `MaybeProgress`.
       if (state.ok) setProgress(state.data);
+      else setProgress('unknown');
       // The flow diagram is a second resolver rather than a field on the
       // aging report: it scans a different table over a different window,
       // and folding it in would make every gadget render pay for a chart it

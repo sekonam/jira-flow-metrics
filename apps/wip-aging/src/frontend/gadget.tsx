@@ -10,6 +10,7 @@ import {
   SummaryTiles,
   gadgetEmptyMessage,
   isIndexIncomplete,
+  type MaybeProgress,
   surfaceStateOf,
   toCapNotice,
   toAgingTiles,
@@ -80,7 +81,7 @@ const GadgetView = (): React.JSX.Element => {
   const [report, setReport] = useState<AgingReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [progress, setProgress] = useState<BackfillProgress | null>(null);
+  const [progress, setProgress] = useState<MaybeProgress>('unknown');
   const [partial, setPartial] = useState(false);
 
   useEffect(() => {
@@ -104,6 +105,12 @@ const GadgetView = (): React.JSX.Element => {
           if (!cancelled && state.ok) {
             setProgress(state.data);
             setPartial(isIndexIncomplete(state.data));
+          } else if (!cancelled) {
+            // ★ `'unknown'`, not `null` — see `MaybeProgress`. The comment
+            // below has always said saying nothing beats saying something
+            // wrong about the index; until the type had a third case, this
+            // path said "never indexed" instead.
+            setProgress('unknown');
           }
         } catch {
           // Leave `partial` false: saying nothing is better than saying

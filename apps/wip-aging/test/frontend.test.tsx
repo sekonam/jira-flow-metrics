@@ -67,6 +67,31 @@ describeScreen(
   scenarios,
 );
 
+describe('★ wip-aging: a failed index read must not contradict the report', () => {
+  it('shows no indexing banner when the progress call refuses', async () => {
+    // The report loaded; only the index-state call failed. The page used to
+    // render "Not indexed yet — start indexing to build the report for this
+    // project" directly above that project's issues, because `null` meant
+    // both "never indexed" and "we could not find out".
+    setBridgeResolvers({
+      ...resolversFor(scenarios.populated.responses),
+      getIndexProgress: () => ({ ok: false, error: 'Could not read the index state.' }),
+    });
+    render(<App />);
+    // The report renders...
+    expect(await screen.findByText('FLOW-1')).toBeDefined();
+    // ...and the page makes no claim about indexing either way.
+    expect(screen.queryByText('Not indexed yet')).toBeNull();
+    expect(screen.queryByText(/Start indexing/)).toBeNull();
+  });
+
+  it('still invites indexing when the project genuinely has none', async () => {
+    setBridgeResolvers(resolversFor(scenarios['not-indexed'].responses));
+    render(<App />);
+    expect(await screen.findByText('Not indexed yet')).toBeDefined();
+  });
+});
+
 describe('★ wip-aging: a capped report says so on both surfaces', () => {
   /**
    * The cap banner, on the page and in the gadget.

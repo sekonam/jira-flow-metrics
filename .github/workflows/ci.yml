@@ -69,6 +69,42 @@ jobs:
       - name: Build
         run: pnpm run build
 
+  browser:
+    name: browser flows · screenshots · accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` input on purpose — see the verify job.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Chromium only: both scripts launch `chromium` explicitly, and the
+      # other two engines are a two-minute download for nothing.
+      - name: Install Chromium
+        run: pnpm --filter @jfm/ui-harness exec playwright install --with-deps chromium
+
+      # ★ These two carry checks that exist nowhere else, and until now ran
+      # only when somebody remembered to type them.
+      #
+      # `e2e:ui` drives all five listings through a real browser against
+      # real resolvers — the only place a click reaches a handler. And
+      # `ui:screens` runs axe over every surface in real Chromium, which is
+      # where `color-contrast` is actually meaningful, and fails when two
+      # scenarios render the same text on one screen: three separate rounds
+      # of review found screenshots published under captions their own image
+      # contradicted, and that check is what makes the next one impossible
+      # rather than merely unlikely.
+      - name: Browser flows
+        run: pnpm run e2e:ui
+
+      - name: Screenshots and accessibility
+        run: pnpm run ui:screens
+
   audit:
     name: dependency audit
     runs-on: ubuntu-latest
