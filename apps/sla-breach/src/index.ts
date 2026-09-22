@@ -11,6 +11,9 @@ import {
   handleStartIndexing,
   projectIdFromEvent,
   handleListStatuses,
+  handleDeleteSlaGoal,
+  handleListSlaGoals,
+  handleSaveSlaGoal,
   handleSlaReport,
 } from '@jfm/forge-runtime';
 import { getRuntime } from './runtime';
@@ -43,6 +46,12 @@ resolver.define('getHistoryWindow', (req) => handleHistoryWindow(getRuntime(), r
 resolver.define('extendHistory', (req) => handleExtendHistory(getRuntime(), req));
 
 resolver.define('getSlaReport', (req) => handleSlaReport(getRuntime(), req));
+// The goal editor. Saved goals are the one piece of stored configuration in
+// the product — see `StoredSlaGoal` — so these three are the only resolvers
+// in any listing that write something one user's colleagues will see.
+resolver.define('listSlaGoals', (req) => handleListSlaGoals(getRuntime(), req));
+resolver.define('saveSlaGoal', (req) => handleSaveSlaGoal(getRuntime(), req));
+resolver.define('deleteSlaGoal', (req) => handleDeleteSlaGoal(getRuntime(), req));
 // The goal picker's options: statuses the store has seen for this instance.
 resolver.define('listStatuses', (req) => handleListStatuses(getRuntime(), req));
 

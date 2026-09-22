@@ -21,6 +21,40 @@ import type { SqlExecutor } from './sql/executor.js';
  * KVS reads are metered, SQL storage is priced on bytes held.
  */
 
+/**
+ * A named SLA goal the project has saved.
+ *
+ * ★ This is the one piece of *stored configuration* in the product. Every
+ * other choice a page offers — basis, grouping, window, the ad-hoc goal — is
+ * a view option that lives in the page's own state and changes nothing for
+ * anyone else. A saved goal is different in kind: two people opening the SLA
+ * report are meant to see the same numbers measured the same way, which is
+ * the whole reason PRODUCT-SPEC § 7 lists a goal editor rather than another
+ * dropdown.
+ *
+ * `countedStatusIds` empty means every status counts, exactly as the ad-hoc
+ * goal's empty selection does. The two must agree: a goal that means one
+ * thing before it is saved and another after is worse than no goal editor.
+ */
+export interface StoredSlaGoal {
+  /** Stable across renames — the report payload names a goal by this. */
+  readonly id: string;
+  readonly name: string;
+  readonly countedStatusIds: readonly string[];
+  readonly targetMs: number;
+}
+
+/**
+ * Saved goals per project, capped.
+ *
+ * All settings live in one `app_settings` JSON row, so an uncapped list is an
+ * unbounded row in a database priced on bytes held. Twenty named goals is
+ * past anything a project has been observed to need and keeps the row small
+ * enough to read on every report render.
+ */
+export const MAX_SLA_GOALS = 20;
+export const MAX_GOAL_NAME_LENGTH = 80;
+
 export interface ProjectSettings {
   readonly calendar: WorkingCalendar;
   /**
@@ -30,6 +64,8 @@ export interface ProjectSettings {
   readonly defaultBasis: 'elapsed' | 'business';
   /** Months of history the initial backfill will cover; `null` means all. */
   readonly backfillMonths: number | null;
+  /** Named SLA goals saved for this project. Empty until someone saves one. */
+  readonly slaGoals: readonly StoredSlaGoal[];
 }
 
 export const GLOBAL_SCOPE = '__global__';
@@ -42,6 +78,7 @@ export function defaultSettings(timeZone = 'UTC'): ProjectSettings {
     // UI offers "extend history" once the initial pass is complete, which is
     // the mitigation the dossier calls for on backfill risk.
     backfillMonths: 12,
+    slaGoals: [],
   };
 }
 
@@ -70,7 +107,44 @@ export function parseSettings(raw: unknown, fallbackTimeZone = 'UTC'): ProjectSe
         : typeof backfillMonths === 'number' && Number.isFinite(backfillMonths)
           ? Math.max(1, Math.min(120, Math.trunc(backfillMonths)))
           : base.backfillMonths,
+    slaGoals: parseSlaGoals(record['slaGoals']),
   };
+}
+
+/**
+ * Parse the saved goals out of untrusted settings JSON.
+ *
+ * Every goal is validated independently and a bad one is dropped rather than
+ * failing the whole read: one corrupt row must not take the other nineteen
+ * goals — or the report page — down with it. Ids are de-duplicated because a
+ * duplicate id would make "measure against goal X" ambiguous.
+ */
+function parseSlaGoals(raw: unknown): StoredSlaGoal[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const goals: StoredSlaGoal[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const id = record['id'];
+    const name = record['name'];
+    const targetMs = record['targetMs'];
+    if (typeof id !== 'string' || id === '' || seen.has(id)) continue;
+    if (typeof name !== 'string' || name.trim() === '') continue;
+    if (typeof targetMs !== 'number' || !Number.isFinite(targetMs) || targetMs <= 0) continue;
+    const counted = Array.isArray(record['countedStatusIds'])
+      ? record['countedStatusIds'].filter((v): v is string => typeof v === 'string' && v !== '')
+      : [];
+    seen.add(id);
+    goals.push({
+      id,
+      name: name.trim().slice(0, MAX_GOAL_NAME_LENGTH),
+      countedStatusIds: counted,
+      targetMs,
+    });
+    if (goals.length >= MAX_SLA_GOALS) break;
+  }
+  return goals;
 }
 
 function parseCalendar(raw: unknown, fallback: WorkingCalendar): WorkingCalendar {

@@ -389,6 +389,136 @@ describe('SlaGoalForm', () => {
   });
 });
 
+describe('SlaGoalForm as a goal editor', () => {
+  const STATUSES = [
+    { id: '3', name: 'In Progress' },
+    { id: '10200', name: 'In Review' },
+  ];
+  const SAVED = [
+    { id: 'g-1', name: 'Time to resolution', countedStatusIds: ['3'], targetMs: 4 * 3_600_000 },
+  ];
+
+  it('shows no editor at all when the page does not pass one', async () => {
+    // Four of the five listings render this form with no save callback, and
+    // the v1 picker must look exactly as it did.
+    render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={vi.fn()} />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save goal' })).toBeNull();
+    await expectNoA11yViolations();
+  });
+
+  it('says plainly when the selection on screen is not saved', async () => {
+    render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={DEFAULT_SLA_GOAL}
+        savedGoals={SAVED}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/This selection is not saved/)).toBeDefined();
+    await expectNoA11yViolations();
+  });
+
+  it('names the saved goal the numbers are measured against', () => {
+    render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={{ countedStatusIds: ['3'], targetMs: 4 * 3_600_000, savedGoalId: 'g-1' }}
+        savedGoals={SAVED}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Measuring against the saved goal "Time to resolution"/)).toBeDefined();
+  });
+
+  it('loads a saved goal as the choice, id and all', () => {
+    const onChange = vi.fn();
+    render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={DEFAULT_SLA_GOAL}
+        savedGoals={SAVED}
+        onChange={onChange}
+        onSave={vi.fn()}
+      />,
+    );
+    const pickers = screen.getAllByRole('combobox');
+    fireEvent.keyDown(pickers[0]!, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByText('Time to resolution'));
+    expect(onChange).toHaveBeenCalledWith({
+      countedStatusIds: ['3'],
+      targetMs: 4 * 3_600_000,
+      savedGoalId: 'g-1',
+    });
+  });
+
+  it('saves the current selection under a typed name', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={DEFAULT_SLA_GOAL}
+        savedGoals={[]}
+        onChange={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    // Nothing to save until it has a name: a goal the report cannot name is
+    // one nobody can tell apart from the next.
+    expect(screen.getByRole('button', { name: 'Save goal' })).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'First response' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save goal' }));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith('First response');
+    });
+  });
+
+  it('offers deletion only for the goal currently in force', () => {
+    const { rerender } = render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={DEFAULT_SLA_GOAL}
+        savedGoals={SAVED}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Delete/ })).toBeNull();
+
+    rerender(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={{ countedStatusIds: ['3'], targetMs: 4 * 3_600_000, savedGoalId: 'g-1' }}
+        savedGoals={SAVED}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDefined();
+  });
+
+  it('shows the refusal when the save is rejected', async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error('maximum of 20 saved goals'));
+    render(
+      <SlaGoalForm
+        statuses={STATUSES}
+        goal={DEFAULT_SLA_GOAL}
+        savedGoals={[]}
+        onChange={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'One too many' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save goal' }));
+    expect(await screen.findByText(/maximum of 20 saved goals/)).toBeDefined();
+  });
+});
+
 describe('toCapBanner', () => {
   it('is silent when the report covers everything', () => {
     expect(toCapBanner({ capped: false, included: 500, total: 500, noun: 'issues' })).toBeNull();

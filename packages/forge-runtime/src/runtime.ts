@@ -24,7 +24,12 @@ import {
   type StatusMetaRow,
   type StatusReport,
 } from '@jfm/engine';
-import { type SettingsStore, type ProjectSettings } from './settings.js';
+import {
+  MAX_SLA_GOALS,
+  type ProjectSettings,
+  type SettingsStore,
+  type StoredSlaGoal,
+} from './settings.js';
 import {
   buildAgingReport,
   buildHistoryReport,
@@ -353,6 +358,49 @@ export class ListingRuntime {
     await this.startBackfill(projectId);
   }
 
+  /** The project's saved SLA goals. Empty until someone saves one. */
+  async slaGoals(projectId: string): Promise<readonly StoredSlaGoal[]> {
+    const settings = await this.deps.settings.get(projectId);
+    return settings.slaGoals;
+  }
+
+  /**
+   * Save a goal, creating it or replacing it by id.
+   *
+   * Returns the whole list rather than the one goal: the caller is a picker
+   * that has to re-render anyway, and one round trip beats two on a
+   * consumption-priced platform.
+   *
+   * Refuses past `MAX_SLA_GOALS` rather than evicting the oldest. Silently
+   * dropping a goal somebody saved — and measuring a report against a
+   * different one next time the page opens — is the failure mode this
+   * product exists to avoid; a refusal the user can see is not.
+   */
+  async saveSlaGoal(
+    projectId: string,
+    goal: StoredSlaGoal,
+  ): Promise<{ saved: true; goals: readonly StoredSlaGoal[] } | { saved: false; reason: 'full' }> {
+    const settings = await this.deps.settings.get(projectId);
+    const existing = settings.slaGoals.findIndex((g) => g.id === goal.id);
+    if (existing === -1 && settings.slaGoals.length >= MAX_SLA_GOALS) {
+      return { saved: false, reason: 'full' };
+    }
+    const goals =
+      existing === -1
+        ? [...settings.slaGoals, goal]
+        : settings.slaGoals.map((g) => (g.id === goal.id ? goal : g));
+    await this.deps.settings.put(projectId, { ...settings, slaGoals: goals }, this.clock.now());
+    return { saved: true, goals };
+  }
+
+  /** Delete a goal by id. Deleting one that is not there is not an error. */
+  async deleteSlaGoal(projectId: string, goalId: string): Promise<readonly StoredSlaGoal[]> {
+    const settings = await this.deps.settings.get(projectId);
+    const goals = settings.slaGoals.filter((g) => g.id !== goalId);
+    await this.deps.settings.put(projectId, { ...settings, slaGoals: goals }, this.clock.now());
+    return goals;
+  }
+
   /** Projects the calling user may browse — the dashboard gadget's picker. */
   async listProjects(): Promise<readonly JiraProjectRef[]> {
     return this.deps.api.listProjects();
@@ -373,6 +421,11 @@ export class ListingRuntime {
     const projectIds = new Set(await this.deps.store.listProjectStatusIds(projectId));
     if (projectIds.size === 0) return all;
     return all.filter((status) => projectIds.has(status.statusId));
+  }
+
+  /** The runtime's clock, for handlers that need to stamp something. */
+  now(): Millis {
+    return this.clock.now();
   }
 
   get listingId(): string {

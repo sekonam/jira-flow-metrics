@@ -15,8 +15,11 @@ import { ListingRuntime } from '../src/runtime.js';
 import {
   handleAgingReport,
   handleBackfillJob,
+  handleDeleteSlaGoal,
   handleExtendHistory,
   handleHistoryWindow,
+  handleListSlaGoals,
+  handleSaveSlaGoal,
   handleHistoryReport,
   handleSlaReport,
   handleWorklogReport,
@@ -26,10 +29,14 @@ import {
   handleListProjects,
   handleStartIndexing,
   handleStorageEstimate,
+  GOALS_FULL,
+  GOAL_NAME_REQUIRED,
   NARROWER_HISTORY,
   NOT_IN_PROJECT,
   NO_PERMISSION,
+  UNKNOWN_SLA_GOAL,
   UNUSABLE_HISTORY_WINDOW,
+  parseGoalToSave,
   parseHistoryWindow,
   parseReportRequest,
   projectIdFromContext,
@@ -747,6 +754,211 @@ describe('the history window — ROADMAP stage 5, "extend history beyond 12 mont
     expect(await handleExtendHistory(runtime, { context: {}, payload: { months: 24 } })).toEqual({
       ok: false,
       error: NOT_IN_PROJECT,
+    });
+  });
+});
+
+/** One indexed issue with 6 working hours in status `3`, so a target bites. */
+async function seedIssue(store: MemoryStore): Promise<void> {
+  const now = Date.parse('2026-03-06T00:00:00Z');
+  await store.putIssueAggregate(
+    {
+      issueId: '20001',
+      issueKey: 'FLOW-1',
+      projectId: '10000',
+      issueTypeId: null,
+      priorityId: null,
+      assigneeAccountId: null,
+      currentStatusId: '3',
+      createdAt: now - 86_400_000,
+      resolvedAt: null,
+      dueAt: null,
+      historyThroughAt: now,
+      truncated: false,
+      updatedAt: now,
+    },
+    [
+      {
+        issueId: '20001',
+        statusId: '3',
+        elapsedMs: 12 * 3_600_000,
+        businessMs: 6 * 3_600_000,
+        entries: 1,
+        lastEnteredAt: now - 86_400_000,
+        lastExitedAt: null,
+        updatedAt: now,
+      },
+    ],
+  );
+}
+
+describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor"', () => {
+  async function save(runtime: ReturnType<typeof buildWithSettings>['runtime'], name: string) {
+    return handleSaveSlaGoal(runtime, {
+      context: CONTEXT,
+      payload: { name, countedStatusIds: ['3'], targetMs: 4 * 3_600_000 },
+    });
+  }
+
+  it('starts with no saved goals', async () => {
+    const { runtime } = buildWithSettings();
+    expect(await handleListSlaGoals(runtime, { context: CONTEXT })).toEqual({ ok: true, data: [] });
+  });
+
+  it('saves a goal, persists it, and returns the whole list', async () => {
+    const { runtime } = buildWithSettings();
+    const saved = await save(runtime, 'Time to resolution');
+    expect(saved.ok).toBe(true);
+    const goals = saved.ok ? saved.data : [];
+    expect(goals).toHaveLength(1);
+    expect(goals[0]?.name).toBe('Time to resolution');
+    expect(goals[0]?.countedStatusIds).toEqual(['3']);
+    // The next read sees it, which is the difference between a saved goal
+    // and the view choice v1 shipped.
+    expect(await handleListSlaGoals(runtime, { context: CONTEXT })).toEqual({
+      ok: true,
+      data: goals,
+    });
+  });
+
+  it('generates the id rather than taking one from the client', () => {
+    // A client-chosen id can collide with an existing goal and overwrite it
+    // silently. A supplied id is an explicit edit and is honoured.
+    const generated = parseGoalToSave({ name: 'A', targetMs: 1_000 }, 1_700_000_000_000);
+    expect(generated).not.toBe('no-name');
+    expect((generated as { id: string }).id).toMatch(/^g-[0-9a-z]+-[0-9a-z]{6}$/);
+    const edited = parseGoalToSave({ id: 'existing', name: 'A', targetMs: 1_000 }, 0);
+    expect((edited as { id: string }).id).toBe('existing');
+  });
+
+  it('refuses a goal with no name', async () => {
+    const { runtime } = buildWithSettings();
+    expect(
+      await handleSaveSlaGoal(runtime, { context: CONTEXT, payload: { targetMs: 1_000 } }),
+    ).toEqual({ ok: false, error: GOAL_NAME_REQUIRED });
+    // Whitespace is not a name either.
+    expect(
+      await handleSaveSlaGoal(runtime, { context: CONTEXT, payload: { name: '   ' } }),
+    ).toEqual({ ok: false, error: GOAL_NAME_REQUIRED });
+  });
+
+  it('clamps a saved target exactly as the ad-hoc goal clamps it', () => {
+    // A goal that means one thing saved and another unsaved would make the
+    // editor a way to smuggle a target the picker refuses.
+    const tiny = parseGoalToSave({ name: 'A', targetMs: 1 }, 0) as { targetMs: number };
+    const huge = parseGoalToSave({ name: 'A', targetMs: 1e15 }, 0) as { targetMs: number };
+    expect(tiny.targetMs).toBe(60_000);
+    expect(huge.targetMs).toBe(365 * 86_400_000);
+  });
+
+  it('replaces a goal by id rather than adding a second with the same id', async () => {
+    const { runtime } = buildWithSettings();
+    const first = await save(runtime, 'Original');
+    const id = first.ok ? first.data[0]!.id : '';
+    const second = await handleSaveSlaGoal(runtime, {
+      context: CONTEXT,
+      payload: { id, name: 'Renamed', countedStatusIds: [], targetMs: 8 * 3_600_000 },
+    });
+    expect(second.ok && second.data).toHaveLength(1);
+    expect(second.ok && second.data[0]?.name).toBe('Renamed');
+  });
+
+  it('refuses the twenty-first goal rather than evicting the oldest', async () => {
+    const { runtime } = buildWithSettings();
+    for (let index = 0; index < 20; index += 1) await save(runtime, `Goal ${String(index)}`);
+    const overflow = await save(runtime, 'One too many');
+    // Silently dropping a goal somebody saved — and measuring against a
+    // different one next time the page opens — is the failure this product
+    // exists to avoid. A refusal the user can read is not.
+    expect(overflow).toEqual({ ok: false, error: GOALS_FULL });
+    const listed = await handleListSlaGoals(runtime, { context: CONTEXT });
+    expect(listed.ok && listed.data).toHaveLength(20);
+  });
+
+  it('measures the report against the stored definition, not the payload', async () => {
+    const { runtime, store } = buildWithSettings();
+    await seedIssue(store);
+    const saved = await save(runtime, 'Four hours in progress');
+    const id = saved.ok ? saved.data[0]!.id : '';
+    // The payload names the goal and also lies about it. The stored
+    // definition wins: a client must not be able to label a table with one
+    // goal's name and compute it from another's numbers.
+    const report = await handleSlaReport(runtime, {
+      context: CONTEXT,
+      payload: { goalId: id, targetMs: 999 * 3_600_000, countedStatusIds: ['nonsense'] },
+    });
+    expect(report.ok && report.data.goalName).toBe('Four hours in progress');
+    expect(report.ok && report.data.rows[0]?.targetMs).toBe(4 * 3_600_000);
+  });
+
+  it('refuses a goalId that no longer exists rather than falling back', async () => {
+    const { runtime } = buildWithSettings();
+    const report = await handleSlaReport(runtime, {
+      context: CONTEXT,
+      payload: { goalId: 'deleted-while-the-page-was-open' },
+    });
+    // A page that says it is measuring against a named goal and quietly is
+    // not is worse than an error the reader can act on.
+    expect(report).toEqual({ ok: false, error: UNKNOWN_SLA_GOAL });
+  });
+
+  it('exports against the same goal the report used', async () => {
+    const { runtime, store } = buildWithSettings();
+    await seedIssue(store);
+    const saved = await save(runtime, 'Four hours in progress');
+    const id = saved.ok ? saved.data[0]!.id : '';
+    const csv = await handleExportCsv(
+      runtime,
+      { context: CONTEXT, payload: { goalId: id } },
+      'sla',
+    );
+    expect(csv.ok).toBe(true);
+    // The target column carries 4 working hours, not the 8-hour default the
+    // ad-hoc path would have used — so the export and the report on screen
+    // are measured against the same goal, which was the point of routing
+    // both through `resolveSlaGoal`.
+    // The target column carries 4 working hours, not the 8-hour default the
+    // ad-hoc path uses — the export and the report on screen are measured
+    // against the same goal, which is why both go through `resolveSlaGoal`.
+    //
+    // ★ Written before the code was: the first version of `buildCsvFor`
+    // still called `parseSlaGoal`, so a saved goal's id reached the export
+    // and was ignored, and the file said "Target 8" under a page headed
+    // "Four hours in progress".
+    const row = (csv.ok ? csv.data.csv : '').split('\r\n')[1] ?? '';
+    expect(row.split(',')[1]).toBe('6');
+    expect(row.split(',')[2]).toBe('4');
+    expect(row.split(',')[4]).toBe('yes');
+  });
+
+  it('deletes a goal, and deleting one twice is not an error', async () => {
+    const { runtime } = buildWithSettings();
+    const saved = await save(runtime, 'Gone soon');
+    const id = saved.ok ? saved.data[0]!.id : '';
+    expect(await handleDeleteSlaGoal(runtime, { context: CONTEXT, payload: { id } })).toEqual({
+      ok: true,
+      data: [],
+    });
+    expect(await handleDeleteSlaGoal(runtime, { context: CONTEXT, payload: { id } })).toEqual({
+      ok: true,
+      data: [],
+    });
+  });
+
+  it('refuses every goal call to a caller who cannot browse the project', async () => {
+    const { runtime, jira } = buildWithSettings();
+    jira.canBrowse = false;
+    expect(await handleListSlaGoals(runtime, { context: CONTEXT })).toEqual({
+      ok: false,
+      error: NO_PERMISSION,
+    });
+    expect(await handleSaveSlaGoal(runtime, { context: CONTEXT, payload: { name: 'X' } })).toEqual({
+      ok: false,
+      error: NO_PERMISSION,
+    });
+    expect(await handleDeleteSlaGoal(runtime, { context: CONTEXT, payload: { id: 'x' } })).toEqual({
+      ok: false,
+      error: NO_PERMISSION,
     });
   });
 });

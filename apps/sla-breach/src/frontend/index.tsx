@@ -20,8 +20,11 @@ import {
   toCapBanner,
   toProgressBanner,
   toSlaChartData,
+  toGoalChoice,
+  toGoalPayload,
   toSlaTable,
   toSlaTiles,
+  type SavedSlaGoal,
   type SlaGoalChoice,
 } from '@jfm/ui';
 
@@ -49,6 +52,7 @@ export const App = (): React.JSX.Element => {
   const [report, setReport] = useState<SlaReport | null>(null);
   const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [statuses, setStatuses] = useState<readonly StatusMetaRow[]>([]);
+  const [savedGoals, setSavedGoals] = useState<readonly SavedSlaGoal[]>([]);
   const [goal, setGoal] = useState<SlaGoalChoice>(DEFAULT_SLA_GOAL);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,10 +61,11 @@ export const App = (): React.JSX.Element => {
     setLoading(true);
     setError(null);
     try {
-      const result = (await invoke('getSlaReport', {
-        countedStatusIds: [...nextGoal.countedStatusIds],
-        targetMs: nextGoal.targetMs,
-      })) as Result<SlaReport>;
+      // A saved goal travels as its id alone, so the resolver measures
+      // against the stored definition rather than against anything this
+      // client could have altered on the way. `toGoalPayload` owns that
+      // choice and the export below uses the same function.
+      const result = (await invoke('getSlaReport', toGoalPayload(nextGoal))) as Result<SlaReport>;
       if (result.ok) setReport(result.data);
       else setError(result.error);
       // The indexing banner is shared across all five listings. It reads the
@@ -84,6 +89,8 @@ export const App = (): React.JSX.Element => {
       try {
         const result = (await invoke('listStatuses', {})) as Result<readonly StatusMetaRow[]>;
         if (result.ok) setStatuses(result.data);
+        const goals = (await invoke('listSlaGoals', {})) as Result<readonly SavedSlaGoal[]>;
+        if (goals.ok) setSavedGoals(goals.data);
       } catch {
         // Leave the chip row empty; the default goal still renders a report.
       }
@@ -96,16 +103,44 @@ export const App = (): React.JSX.Element => {
   // goal travels with it so the exported rows are measured against exactly
   // the goal on screen.
   const requestCsv = useCallback(async () => {
-    const result = (await invoke('exportCsv', {
-      countedStatusIds: [...goal.countedStatusIds],
-      targetMs: goal.targetMs,
-    })) as Result<{
+    const result = (await invoke('exportCsv', toGoalPayload(goal))) as Result<{
       filename: string;
       csv: string;
     }>;
     if (!result.ok) throw new Error(result.error);
     return result.data;
   }, [goal]);
+
+  /**
+   * Saving a goal returns the whole list, so the picker re-renders from the
+   * server's answer rather than from an optimistic guess about what the
+   * server did with the name it was sent.
+   */
+  const saveGoal = useCallback(
+    async (name: string) => {
+      const result = (await invoke('saveSlaGoal', {
+        name,
+        countedStatusIds: [...goal.countedStatusIds],
+        targetMs: goal.targetMs,
+      })) as Result<readonly SavedSlaGoal[]>;
+      if (!result.ok) throw new Error(result.error);
+      setSavedGoals(result.data);
+      // Attach the page to the goal it just saved: the numbers on screen are
+      // now that goal's, and the caption should say so.
+      const saved = result.data.find((candidate) => candidate.name === name);
+      if (saved !== undefined) setGoal(toGoalChoice(saved));
+    },
+    [goal],
+  );
+
+  const deleteGoal = useCallback(async (id: string) => {
+    const result = (await invoke('deleteSlaGoal', { id })) as Result<readonly SavedSlaGoal[]>;
+    if (!result.ok) throw new Error(result.error);
+    setSavedGoals(result.data);
+    // The page was measuring against the goal that just went away. Fall back
+    // to the default rather than leaving a `goalId` the resolver will refuse.
+    setGoal(DEFAULT_SLA_GOAL);
+  }, []);
 
   /**
    * The "extend history" control's two calls. Both are made only when the
@@ -181,7 +216,10 @@ export const App = (): React.JSX.Element => {
         <SlaGoalForm
           statuses={statuses.map((s) => ({ id: s.statusId, name: s.name }))}
           goal={goal}
+          savedGoals={savedGoals}
           onChange={setGoal}
+          onSave={saveGoal}
+          onDelete={deleteGoal}
         />
       )}
 

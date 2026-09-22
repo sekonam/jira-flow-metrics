@@ -15,6 +15,7 @@ import {
   slaReportToCsv,
   worklogReportToCsv,
 } from './report-csv.js';
+import { MAX_GOAL_NAME_LENGTH, MAX_SLA_GOALS, type StoredSlaGoal } from './settings.js';
 import type { BackfillProgress, JiraProjectRef, StatusMetaRow } from '@jfm/engine';
 
 /**
@@ -249,10 +250,15 @@ async function buildCsvFor(
       return worklogReportToCsv(await runtime.worklogReport({ projectId }), 'Person');
     case 'aging':
       return agingReportToCsv(await runtime.agingReport(projectId));
-    case 'sla':
-      // The same goal parsing as `handleSlaReport`, so the exported rows are
-      // measured against exactly the goal shown on screen.
-      return slaReportToCsv(await runtime.slaReport(projectId, parseSlaGoal(payload)));
+    case 'sla': {
+      // The same goal *resolution* as `handleSlaReport`, saved goals
+      // included, so the exported rows are measured against exactly the goal
+      // on screen. Parsing the payload here while the report resolved a
+      // stored goal by id would put a different goal's numbers in the file.
+      const goal = await resolveSlaGoal(runtime, projectId, payload);
+      if (goal === 'unknown-goal') throw new Error(UNKNOWN_SLA_GOAL);
+      return slaReportToCsv(await runtime.slaReport(projectId, goal));
+    }
     case 'history':
       return historyReportToCsv(await runtime.historyReport({ projectId, limit: 10_000 }));
     case 'status':
@@ -583,10 +589,9 @@ export async function handleSlaReport(
   if (!auth.ok) return { ok: false, error: auth.error };
   const projectId = auth.projectId;
   try {
-    return {
-      ok: true,
-      data: await runtime.slaReport(projectId, parseSlaGoal(invocation.payload)),
-    };
+    const goal = await resolveSlaGoal(runtime, projectId, invocation.payload);
+    if (goal === 'unknown-goal') return { ok: false, error: UNKNOWN_SLA_GOAL };
+    return { ok: true, data: await runtime.slaReport(projectId, goal) };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }
@@ -609,6 +614,147 @@ export function parseSlaGoal(payload: unknown): SlaCountedGoal {
     targetMs:
       rawTarget === null ? 8 * 3_600_000 : Math.max(60_000, Math.min(365 * 86_400_000, rawTarget)),
   };
+}
+
+/**
+ * The goal a report or export is measured against.
+ *
+ * Two shapes, and which one arrives decides what the numbers mean:
+ *
+ * - `{ goalId }` — a goal **saved for this project**. Resolved from storage
+ *   here, on the server, never reconstructed from what the client sent: a
+ *   client that supplied a goal's definition alongside its id could show a
+ *   table labelled "Time to resolution" measured against something else.
+ * - anything else — the ad-hoc goal the picker builds, unchanged from v1.
+ *
+ * A `goalId` naming a goal that is not there is a refusal, not a silent
+ * fallback to the default: a page that says it is measuring against
+ * "Time to first response" and quietly is not is the failure this product is
+ * sold against.
+ */
+export async function resolveSlaGoal(
+  runtime: ListingRuntime,
+  projectId: string,
+  payload: unknown,
+): Promise<SlaCountedGoal | 'unknown-goal'> {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  const goalId = record['goalId'];
+  if (typeof goalId !== 'string' || goalId === '') return parseSlaGoal(payload);
+  const saved = (await runtime.slaGoals(projectId)).find((goal) => goal.id === goalId);
+  if (saved === undefined) return 'unknown-goal';
+  return {
+    id: saved.id,
+    name: saved.name,
+    countedStatusIds: saved.countedStatusIds,
+    targetMs: saved.targetMs,
+  };
+}
+
+export const UNKNOWN_SLA_GOAL =
+  'That saved goal no longer exists. Someone may have deleted it; pick another one.';
+
+export const GOAL_NAME_REQUIRED = 'Give the goal a name so the report can say what it measures.';
+
+export const GOALS_FULL =
+  `This project already has the maximum of ${String(MAX_SLA_GOALS)} saved goals. ` +
+  'Delete one before saving another.';
+
+/**
+ * Parse a goal a client asks to save.
+ *
+ * The id is generated here when absent rather than accepted from the client:
+ * a client-chosen id can collide with an existing goal and silently overwrite
+ * it. An id that *is* supplied is an explicit edit of that goal, which is a
+ * different intent and is allowed.
+ */
+export function parseGoalToSave(payload: unknown, now: number): StoredSlaGoal | 'no-name' {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  const rawName = typeof record['name'] === 'string' ? record['name'].trim() : '';
+  if (rawName === '') return 'no-name';
+  const id = record['id'];
+  const rawTarget = typeof record['targetMs'] === 'number' ? record['targetMs'] : Number.NaN;
+  return {
+    id: typeof id === 'string' && id !== '' ? id : newGoalId(now),
+    name: rawName.slice(0, MAX_GOAL_NAME_LENGTH),
+    countedStatusIds: stringArray(record['countedStatusIds']) ?? [],
+    // The same clamp the ad-hoc goal uses, so a goal cannot mean one thing
+    // saved and another unsaved.
+    targetMs: Number.isFinite(rawTarget)
+      ? Math.max(60_000, Math.min(365 * 86_400_000, rawTarget))
+      : 8 * 3_600_000,
+  };
+}
+
+/** Sortable, readable, and unique enough for a list capped at twenty. */
+function newGoalId(now: number): string {
+  return `g-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Listing 4 — the project's saved goals. */
+export async function handleListSlaGoals(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<readonly StoredSlaGoal[]>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  try {
+    return { ok: true, data: await runtime.slaGoals(auth.projectId) };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/**
+ * Save a goal for the project.
+ *
+ * Authorised like every other project-scoped resolver — browse permission on
+ * the project. A saved goal is shared configuration, so this is the first
+ * write in the product that one user makes and another sees, and it is worth
+ * being plain about: Jira exposes no project-admin permission this app holds
+ * a scope to check, so "can read this project's reports" is the only gate
+ * available. The app writes nothing to Jira and the blast radius is a list of
+ * twenty named goals, which is why that is an acceptable gate rather than a
+ * reason to drop the feature.
+ */
+export async function handleSaveSlaGoal(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<readonly StoredSlaGoal[]>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const goal = parseGoalToSave(invocation.payload, runtime.now());
+  if (goal === 'no-name') return { ok: false, error: GOAL_NAME_REQUIRED };
+  try {
+    const result = await runtime.saveSlaGoal(auth.projectId, goal);
+    return result.saved ? { ok: true, data: result.goals } : { ok: false, error: GOALS_FULL };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+/** Delete a saved goal. Deleting one that is already gone is not an error. */
+export async function handleDeleteSlaGoal(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<readonly StoredSlaGoal[]>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const record =
+    typeof invocation.payload === 'object' && invocation.payload !== null
+      ? (invocation.payload as Record<string, unknown>)
+      : {};
+  const id = record['id'];
+  if (typeof id !== 'string' || id === '') return { ok: false, error: UNKNOWN_SLA_GOAL };
+  try {
+    return { ok: true, data: await runtime.deleteSlaGoal(auth.projectId, id) };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
 }
 
 /** Listing 5 — filtered field-change history. */

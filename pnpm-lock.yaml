@@ -328,6 +328,9 @@ importers:
       '@atlaskit/spinner':
         specifier: ^20.4.0
         version: 20.4.0(react@18.3.1)
+      '@atlaskit/textfield':
+        specifier: ^10.2.1
+        version: 10.2.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@atlaskit/tokens':
         specifier: ^1.61.0
         version: 1.61.0(@types/react@18.3.31)(react@18.3.1)

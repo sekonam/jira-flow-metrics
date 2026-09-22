@@ -23,6 +23,7 @@ import {
   Stack,
   Strong,
   Text,
+  Textfield,
 } from '@forge/react';
 import type {
   ChartPoint,
@@ -36,7 +37,10 @@ import {
   describeHistoryWindow,
   historyWindowOptions,
   parseHistoryWindowValue,
+  toGoalChoice,
   toggleCountedStatus,
+  withTarget,
+  type SavedSlaGoal,
   type SimpleTable,
   type SlaGoalChoice,
 } from './listing-models.js';
@@ -182,35 +186,90 @@ export function GadgetConfigForm({
 }
 
 /**
- * The SLA page's goal picker — the counted statuses and the working-time
- * target every row is measured against.
+ * The SLA page's goal picker and editor.
  *
  * Status chips are toggle `Button`s rather than a multi-select because UI
  * Kit 2's `Select` is single-value; the target is a preset `Select` (see
  * `SLA_TARGET_OPTIONS`). An empty selection means every status counts, and
- * the caption says so — the goal is a view choice, and the reader must be
- * able to tell what the numbers on screen are measured against.
+ * the caption says so — the goal is what the numbers on screen are measured
+ * against, and the reader must be able to tell what it is.
+ *
+ * ★ Saved goals are the one piece of **stored configuration** in the
+ * product; everything else a page offers is a view choice that changes
+ * nothing for anyone else. Two people opening this report are meant to see
+ * the same numbers measured the same way, which is the whole reason
+ * PRODUCT-SPEC § 7 asked for an editor rather than another dropdown.
+ *
+ * Three states the design has to keep apart, because conflating them is how
+ * a report ends up labelled with a goal it is not computing:
+ *
+ * - **a saved goal, unmodified** — the report is resolved from storage by id;
+ * - **a saved goal, since edited** — `toggleCountedStatus`/`withTarget` drop
+ *   the id, so the report reverts to the ad-hoc path and the caption says the
+ *   selection is unsaved;
+ * - **never saved** — the v1 behaviour, unchanged.
  */
 export function SlaGoalForm({
   statuses,
   goal,
+  savedGoals,
   onChange,
+  onSave,
+  onDelete,
 }: {
   statuses: readonly { id: string; name: string }[];
   goal: SlaGoalChoice;
+  savedGoals?: readonly SavedSlaGoal[] | undefined;
   onChange: (next: SlaGoalChoice) => void;
+  onSave?: ((name: string) => Promise<void>) | undefined;
+  onDelete?: ((id: string) => Promise<void>) | undefined;
 }): React.JSX.Element {
+  const goals = savedGoals ?? [];
+  const [name, setName] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const defaultTarget = SLA_TARGET_OPTIONS.find((o) => o.value === String(goal.targetMs));
+  const active = goals.find((saved) => saved.id === goal.savedGoalId);
+
+  const run = React.useCallback((work: Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    work
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'That could not be saved.');
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }, []);
+
   return (
     <Stack space="space.150">
+      {onSave !== undefined && goals.length > 0 ? (
+        <>
+          <Label labelFor="sla-saved-goal">Saved goal</Label>
+          <Select
+            inputId="sla-saved-goal"
+            options={goals.map((saved) => ({ label: saved.name, value: saved.id }))}
+            placeholder="Choose a saved goal"
+            isDisabled={busy}
+            onChange={(option) => {
+              const id = (option as { value?: string } | null)?.value;
+              const saved = goals.find((candidate) => candidate.id === id);
+              if (saved !== undefined) onChange(toGoalChoice(saved));
+            }}
+          />
+        </>
+      ) : null}
+
       <Label labelFor="sla-goal-target">Working-time target</Label>
       <Select
         inputId="sla-goal-target"
         options={SLA_TARGET_OPTIONS}
-        {...(defaultTarget === undefined ? {} : { defaultValue: defaultTarget })}
+        {...(defaultTarget === undefined ? {} : { value: defaultTarget })}
         onChange={(option) => {
           const value = (option as { value?: string } | null)?.value;
-          if (value !== undefined) onChange({ ...goal, targetMs: Number(value) });
+          if (value !== undefined) onChange(withTarget(goal, Number(value)));
         }}
       />
       <Text size="small">
@@ -231,6 +290,62 @@ export function SlaGoalForm({
           </Button>
         ))}
       </Inline>
+
+      {onSave === undefined ? null : (
+        <Stack space="space.100">
+          <Text size="small">
+            {active === undefined
+              ? 'This selection is not saved. Name it to make it the goal everyone on this project sees.'
+              : `Measuring against the saved goal "${active.name}".`}
+          </Text>
+          <Inline space="space.100" alignBlock="center" shouldWrap>
+            <Label labelFor="sla-goal-name">Goal name</Label>
+            <Textfield
+              id="sla-goal-name"
+              value={name}
+              placeholder="Time to resolution"
+              isDisabled={busy}
+              onChange={(event) => {
+                // `SerialisableEvent.target.value` is typed `any` by
+                // `@forge/react` — the bridge hands back whatever the host
+                // serialised. Coerced here rather than asserted, so an
+                // absent or non-string value becomes an empty name the
+                // resolver refuses, not an `any` laundered into state.
+                setName(String(event.target.value ?? ''));
+              }}
+            />
+            <LoadingButton
+              isLoading={busy}
+              isDisabled={name.trim() === ''}
+              onClick={() => {
+                run(
+                  onSave(name.trim()).then(() => {
+                    setName('');
+                  }),
+                );
+              }}
+            >
+              Save goal
+            </LoadingButton>
+            {active !== undefined && onDelete !== undefined ? (
+              <Button
+                appearance="subtle"
+                isDisabled={busy}
+                onClick={() => {
+                  run(onDelete(active.id));
+                }}
+              >
+                Delete &ldquo;{active.name}&rdquo;
+              </Button>
+            ) : null}
+          </Inline>
+          {error !== null && (
+            <SectionMessage title="Could not save the goal" appearance="error">
+              <Text>{error}</Text>
+            </SectionMessage>
+          )}
+        </Stack>
+      )}
     </Stack>
   );
 }

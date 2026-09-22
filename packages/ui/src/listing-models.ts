@@ -146,6 +146,53 @@ export function toAgingChartData(report: AgingReport): ChartPoint[] {
 export interface SlaGoalChoice {
   readonly countedStatusIds: readonly string[];
   readonly targetMs: number;
+  /**
+   * Set when the choice came from a goal **saved for this project**.
+   *
+   * The report resolver then measures against the stored definition rather
+   * than these fields: the id is the whole payload, so a client cannot label
+   * a table with one goal's name and compute it from another's numbers.
+   * Editing any field below clears it — what is on screen is no longer that
+   * saved goal, and saying it is would be a lie the numbers cannot detect.
+   */
+  readonly savedGoalId?: string;
+}
+
+/** One saved goal as the picker sees it. Mirrors `StoredSlaGoal`. */
+export interface SavedSlaGoal {
+  readonly id: string;
+  readonly name: string;
+  readonly countedStatusIds: readonly string[];
+  readonly targetMs: number;
+}
+
+/** A saved goal, as a choice the form can render. */
+export function toGoalChoice(goal: SavedSlaGoal): SlaGoalChoice {
+  return {
+    countedStatusIds: goal.countedStatusIds,
+    targetMs: goal.targetMs,
+    savedGoalId: goal.id,
+  };
+}
+
+/**
+ * The payload the report and export resolvers take.
+ *
+ * A saved goal travels as its id alone. Sending the fields too would invite
+ * exactly the mismatch `savedGoalId` exists to prevent.
+ */
+export function toGoalPayload(goal: SlaGoalChoice): Record<string, unknown> {
+  if (goal.savedGoalId !== undefined) return { goalId: goal.savedGoalId };
+  return { countedStatusIds: [...goal.countedStatusIds], targetMs: goal.targetMs };
+}
+
+/** Does this choice still match the goal it was loaded from? */
+export function matchesSavedGoal(choice: SlaGoalChoice, goal: SavedSlaGoal): boolean {
+  return (
+    choice.targetMs === goal.targetMs &&
+    choice.countedStatusIds.length === goal.countedStatusIds.length &&
+    [...choice.countedStatusIds].sort().join(',') === [...goal.countedStatusIds].sort().join(',')
+  );
 }
 
 const HOUR_MS = 3_600_000;
@@ -169,12 +216,23 @@ export const SLA_TARGET_OPTIONS: readonly { label: string; value: string }[] = [
   { label: '80 working hours', value: String(80 * HOUR_MS) },
 ];
 
-/** Toggle one status in or out of the counted set. */
+/**
+ * Toggle one status in or out of the counted set.
+ *
+ * Drops `savedGoalId`: the choice on screen is no longer the goal it was
+ * loaded from, and keeping the id would make the report resolve the *stored*
+ * definition while the chips showed something else.
+ */
 export function toggleCountedStatus(goal: SlaGoalChoice, statusId: string): SlaGoalChoice {
   const counted = goal.countedStatusIds.includes(statusId)
     ? goal.countedStatusIds.filter((id) => id !== statusId)
     : [...goal.countedStatusIds, statusId];
-  return { ...goal, countedStatusIds: counted };
+  return { countedStatusIds: counted, targetMs: goal.targetMs };
+}
+
+/** Change the target. Detaches from a saved goal for the same reason. */
+export function withTarget(goal: SlaGoalChoice, targetMs: number): SlaGoalChoice {
+  return { countedStatusIds: goal.countedStatusIds, targetMs };
 }
 
 export function toSlaTable(report: SlaReport): SimpleTable {

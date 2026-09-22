@@ -44,6 +44,7 @@
     "@atlaskit/section-message": "^10.2.1",
     "@atlaskit/select": "^22.11.1",
     "@atlaskit/spinner": "^20.4.0",
+    "@atlaskit/textfield": "^10.2.1",
     "@atlaskit/tokens": "^1.61.0",
     "@forge/bridge": "^6.3.1",
     "@forge/react": "^12.1.3",

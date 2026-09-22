@@ -5,6 +5,7 @@ import {
   handleIndexProgress,
   handleHistoryReport,
   handleHistoryWindow,
+  handleListSlaGoals,
   handleListStatuses,
   handleSlaReport,
   handleWorklogReport,
@@ -42,6 +43,7 @@ export type ResolverKey =
   | 'getSlaReport'
   | 'getHistoryReport'
   | 'listStatuses'
+  | 'listSlaGoals'
   | 'exportCsv'
   | 'getHistoryWindow'
   | 'startIndexing';
@@ -130,6 +132,9 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
     getHistoryReport: await handleHistoryReport(runtime, INVOCATION),
     // The SLA goal picker's options — the statuses the pipeline stored.
     listStatuses: await handleListStatuses(runtime, INVOCATION),
+    // The goal editor's saved goals. Empty on every scenario: nothing has
+    // saved one, which is the state every project starts in.
+    listSlaGoals: await handleListSlaGoals(runtime, INVOCATION),
     // Produced by the real exporter, like everything else here, so the modal
     // shows the CSV a user would actually get rather than a sample of one.
     exportCsv: await handleExportCsv(runtime, INVOCATION),
@@ -203,6 +208,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'getSlaReport',
   'getHistoryReport',
   'listStatuses',
+  'listSlaGoals',
   'exportCsv',
   'getHistoryWindow',
   'startIndexing',

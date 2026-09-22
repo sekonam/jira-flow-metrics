@@ -12,6 +12,7 @@ import AdsSectionMessage from '@atlaskit/section-message';
 import AdsSpinner from '@atlaskit/spinner';
 import AdsDynamicTable from '@atlaskit/dynamic-table';
 import AdsSelect from '@atlaskit/select';
+import AdsTextfield from '@atlaskit/textfield';
 import { Label as AdsLabel } from '@atlaskit/form/label';
 
 /**
@@ -539,6 +540,44 @@ export const CodeBlock = ({ text }: { text?: string; language?: string }): React
   >
     {text}
   </pre>
+);
+
+export interface TextfieldProps {
+  readonly id?: string;
+  readonly value?: string;
+  readonly placeholder?: string;
+  readonly isDisabled?: boolean;
+  readonly onChange?: ((event: { target: { value: string } }) => void) | undefined;
+}
+
+/**
+ * `Textfield` is the one input whose *value* the product reads back.
+ *
+ * `@forge/react` types its `onChange` as a React change event, and the ADS
+ * textfield emits one; the narrowed prop type above is the part the product
+ * actually uses, so the stand-in cannot accidentally offer more than Forge
+ * does.
+ */
+export const Textfield = ({
+  id,
+  value,
+  placeholder,
+  isDisabled,
+  onChange,
+}: TextfieldProps): React.JSX.Element => (
+  <AdsTextfield
+    {...(id === undefined ? {} : { id })}
+    {...(value === undefined ? {} : { value })}
+    {...(placeholder === undefined ? {} : { placeholder })}
+    {...(isDisabled === undefined ? {} : { isDisabled })}
+    {...(onChange === undefined
+      ? {}
+      : {
+          onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+            onChange({ target: { value: event.target.value } });
+          },
+        })}
+  />
 );
 
 export interface LoadingButtonProps extends ButtonProps {

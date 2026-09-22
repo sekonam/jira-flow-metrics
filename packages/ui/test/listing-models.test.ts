@@ -19,7 +19,11 @@ import {
   toWorklogChartData,
   toWorklogTable,
   toWorklogTiles,
+  matchesSavedGoal,
+  toGoalChoice,
+  toGoalPayload,
   toggleCountedStatus,
+  withTarget,
 } from '../src/listing-models.js';
 
 const HOUR = 3_600_000;
@@ -388,5 +392,48 @@ describe('the history window', () => {
     // is what actually decides.
     expect(parseHistoryWindowValue('18')).toBeUndefined();
     expect(parseHistoryWindowValue('')).toBeUndefined();
+  });
+});
+
+describe('saved SLA goals', () => {
+  const saved = {
+    id: 'g-1',
+    name: 'Time to resolution',
+    countedStatusIds: ['3', '10200'],
+    targetMs: 4 * HOUR,
+  };
+
+  it('travels as its id alone, never alongside its fields', () => {
+    // A client that could send a goal's definition next to its id could show
+    // a table labelled "Time to resolution" measured against something else.
+    expect(toGoalPayload(toGoalChoice(saved))).toEqual({ goalId: 'g-1' });
+  });
+
+  it('sends the fields when the choice is ad-hoc', () => {
+    expect(toGoalPayload(DEFAULT_SLA_GOAL)).toEqual({
+      countedStatusIds: [],
+      targetMs: 8 * HOUR,
+    });
+  });
+
+  it('★ detaches from the saved goal the moment anything is edited', () => {
+    // Keeping the id here would make the resolver measure the *stored*
+    // definition while the chips on screen showed something else — the two
+    // disagreeing about the same report, which is the whole failure mode.
+    const choice = toGoalChoice(saved);
+    expect(toGoalPayload(toggleCountedStatus(choice, '99'))).not.toHaveProperty('goalId');
+    expect(toGoalPayload(withTarget(choice, 16 * HOUR))).not.toHaveProperty('goalId');
+  });
+
+  it('knows whether a choice still matches the goal it came from', () => {
+    const choice = toGoalChoice(saved);
+    expect(matchesSavedGoal(choice, saved)).toBe(true);
+    expect(matchesSavedGoal(withTarget(choice, 16 * HOUR), saved)).toBe(false);
+    expect(matchesSavedGoal(toggleCountedStatus(choice, '3'), saved)).toBe(false);
+    // Order is not identity: the same statuses chosen in another order is
+    // the same goal.
+    expect(matchesSavedGoal({ countedStatusIds: ['10200', '3'], targetMs: 4 * HOUR }, saved)).toBe(
+      true,
+    );
   });
 });
