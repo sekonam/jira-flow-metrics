@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm exec forge *)",
+      "Bash(cd /Users/s.prykhozhai/dev/jira-flow-metrics/apps/* && pnpm exec forge *)"
+    ]
+  }
+}
