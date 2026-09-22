@@ -21,7 +21,7 @@ them. Lint first on a clean checkout and every cross-package import is an unreso
 ### Looking at the UI
 
 ```bash
-pnpm run ui:screens                                       # 60 PNGs + an index page, each axe-audited
+pnpm run ui:screens                                       # 96 PNGs + an index page, each axe-audited
 pnpm --filter @jfm/ui-harness exec playwright install chromium   # once, if the browser is missing
 open packages/ui-harness/screens/index.html
 ```
@@ -29,6 +29,26 @@ open packages/ui-harness/screens/index.html
 Not part of `verify` — it needs a browser download. Run it whenever you change anything a user
 sees, and **look at the output**. Five defects in this repository were found that way and by no
 other means.
+
+### Testing what a user _does_
+
+```bash
+pnpm run e2e:ui                                           # real components, real resolvers, real browser
+```
+
+Also not part of `verify`, and for the same reason. The distinction from the suites above is worth
+being clear about: every other UI test mounts a frontend against a **frozen snapshot** of resolver
+responses, which proves each state renders and nothing about what happens next. A saved SLA goal
+that never comes back, an extended history window that leaves the banner unchanged, an export
+button whose modal never opens — all of those pass a snapshot test and fail a user.
+
+`e2e:ui` points the bridge at a live `ListingRuntime` in the dev server's own process (real engine,
+real store, seeded from the recorded fixtures, kept alive between calls), so a click in Chromium
+reaches the same handler a Forge resolver would and the next render reads back what it wrote. Flows
+live in `packages/ui-harness/e2e/*.flows.mjs`, one file per listing, and run in parallel.
+
+Add a flow whenever you add something a user can **press**. Rendering is covered; behaviour over
+time is not, unless you cover it here.
 
 ---
 
