@@ -145,9 +145,24 @@ export const Strong = ({ children }: { children?: React.ReactNode }): React.JSX.
 );
 
 /**
- * UI Kit `Heading` takes `as`; ADS `Heading` takes a `size` and an optional
- * `as`. The Forge host derives one from the other, so the mapping is explicit
- * here rather than implied.
+ * UI Kit `Heading` takes `as`; ADS `Heading` takes a required `size` and an
+ * optional `as`. So a mapping is unavoidable, and it is explicit here rather
+ * than implied.
+ *
+ * ⚠️ UNVERIFIED, and the direction matters. UI Kit 2's `HeadingProps` is a
+ * `Pick` of the ADS props with `size` optional, and documents `as` as
+ * "overriding a default element set by the `size` prop" — i.e. the real
+ * derivation runs `size → as`, the opposite way round. The product passes
+ * only `as` (nine usages, no `size`), so whether Forge's host supplies a
+ * default `size`, and which, is not knowable from this repo. If it does not,
+ * every heading in the real apps renders at one size and no screenshot here
+ * would show it.
+ *
+ * The typographic hierarchy in the screenshots — h1 page titles large, h3
+ * gadget titles small — is therefore this file's choice, not something the
+ * product asked for. On the RUNBOOK's tunnel checklist as an item to look at
+ * with real eyes; the cheap alternative is to pass `size` explicitly
+ * alongside `as` at all nine call sites and remove the guess entirely.
  */
 const HEADING_SIZE: Readonly<Record<string, 'large' | 'medium' | 'small' | 'xsmall'>> = {
   h1: 'large',
