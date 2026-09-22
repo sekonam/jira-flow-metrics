@@ -91,6 +91,30 @@ describe('every listing wires its own frontends to its own resolver', () => {
     expect(definedKeys(app)).toContain('exportCsv');
     expect(invokedKeys(app)).toContain('exportCsv');
   });
+
+  /**
+   * ★ The same rule, generalised — because `exportCsv` was not the only one.
+   *
+   * The assertion above pins one key by name, which is how it was written:
+   * that key had a known history. Nothing checked the others, and four of
+   * them had quietly gone the same way. `getReport` sat at the top of all
+   * five resolvers as copied boilerplate while only `time-in-status` ever
+   * invoked it — on `worklog-reports` and `issue-history`, which do not even
+   * ingest status durations, it would have answered with a report of issues
+   * and no durations at all. `getIndexProgress` was the mirror image: every
+   * listing but `time-in-status` needs it, and `time-in-status` defined it
+   * anyway while reading its progress off the report envelope.
+   *
+   * Neither was reachable, so neither could be *wrong* in front of a user —
+   * but a resolver is an entry point, and an entry point nobody calls is one
+   * nobody is checking either. The rule is symmetric now: every key a
+   * frontend invokes must be defined, and every key defined must be invoked.
+   */
+  it.each(APPS)('%s: defines no resolver its own frontends never invoke', (app) => {
+    const invoked = new Set(invokedKeys(app));
+    const unreachable = definedKeys(app).filter((key) => !invoked.has(key));
+    expect(unreachable).toEqual([]);
+  });
 });
 
 describe('test-support code cannot reach a Forge bundle', () => {

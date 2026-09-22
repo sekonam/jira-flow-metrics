@@ -5,7 +5,6 @@ import {
   handleExtendHistory,
   handleGetReport,
   handleHistoryWindow,
-  handleIndexProgress,
   handleIssueTimeline,
   handleIssueEvent,
   handleListProjects,
@@ -29,11 +28,6 @@ const resolver = new Resolver();
 resolver.define('getReport', (req) => handleGetReport(getRuntime(), req));
 resolver.define('exportCsv', (req) => handleExportCsv(getRuntime(), req));
 resolver.define('startIndexing', (req) => handleStartIndexing(getRuntime(), req));
-// The banner's data, without the report. Four of the five listings render the
-// banner beside a report they fetch from a different resolver, and the gadgets
-// need only "is indexing finished?" — asking `getReport` for that ran a whole
-// aggregation on the surface that renders most often.
-resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), req));
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
