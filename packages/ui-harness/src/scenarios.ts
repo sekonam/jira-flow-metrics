@@ -38,24 +38,20 @@ import {
  * `scripts/build-scenarios.mjs`.
  */
 
-export type ResolverKey =
-  | 'getReport'
-  | 'getIndexProgress'
-  | 'getWorklogReport'
-  | 'getAgingReport'
-  | 'getFlowReport'
-  | 'getSlaReport'
-  | 'getHistoryReport'
-  | 'listStatuses'
-  | 'listSlaGoals'
-  | 'exportCsv'
-  | 'getHistoryWindow'
-  | 'getIssueTimeline'
-  | 'getStorageEstimate'
-  | 'startIndexing';
+import { RESOLVER_KEYS, type ResolverKey } from './bridge.js';
+
+export type { ResolverKey } from './bridge.js';
 
 /** Everything the five frontends can ask for, in one JSON-serialisable object. */
-export type ResolverResponses = Readonly<Record<ResolverKey, unknown>>;
+/**
+ * A snapshot answer per resolver — **partial on purpose**.
+ *
+ * `RESOLVER_KEYS` includes the mutating keys (`saveSlaGoal`, `extendHistory`
+ * and friends), and a frozen snapshot has nothing meaningful to say about a
+ * resolver whose entire purpose is to change state. Those are exercised by
+ * `pnpm run e2e:ui`, which drives the real handlers over a live store instead.
+ */
+export type ResolverResponses = Readonly<Partial<Record<ResolverKey, unknown>>>;
 
 export const SCENARIO_IDS = [
   'populated',
@@ -220,23 +216,14 @@ export function rejectingResolvers(keys: readonly string[]): Record<string, () =
   );
 }
 
-/** Every resolver key any of the five frontends can invoke. */
-export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
-  'getReport',
-  'getIndexProgress',
-  'getWorklogReport',
-  'getAgingReport',
-  'getFlowReport',
-  'getSlaReport',
-  'getHistoryReport',
-  'listStatuses',
-  'listSlaGoals',
-  'exportCsv',
-  'getHistoryWindow',
-  'getIssueTimeline',
-  'getStorageEstimate',
-  'startIndexing',
-];
+/**
+ * Every resolver key any of the five frontends can invoke.
+ *
+ * Re-exported from `bridge.ts` rather than re-listed: the browser harness
+ * needs the same list and cannot import this module, which pulls in the
+ * Node-only pipeline.
+ */
+export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = RESOLVER_KEYS;
 
 /** Build every scenario once, keyed by id, for a suite that needs all of them. */
 export async function loadScenarios(): Promise<Readonly<Record<ScenarioId, Scenario>>> {

@@ -29,6 +29,37 @@
 
 export type ResolverHandler = (payload: unknown) => unknown;
 
+/**
+ * Every resolver key any of the frontends can invoke.
+ *
+ * It lives here, in the browser-safe module, because both consumers need it
+ * and one of them is the browser: `scenarios.ts` imports the Node-only
+ * pipeline and cannot be bundled. Keeping two lists in step by hand is
+ * exactly the drift `unregisteredResolvers` exists to catch, so there is one.
+ */
+export const RESOLVER_KEYS = [
+  'getReport',
+  'getIndexProgress',
+  'getWorklogReport',
+  'getAgingReport',
+  'getFlowReport',
+  'getSlaReport',
+  'getHistoryReport',
+  'listStatuses',
+  'listSlaGoals',
+  'saveSlaGoal',
+  'deleteSlaGoal',
+  'exportCsv',
+  'getHistoryWindow',
+  'extendHistory',
+  'getIssueTimeline',
+  'getStorageEstimate',
+  'listProjects',
+  'startIndexing',
+] as const;
+
+export type ResolverKey = (typeof RESOLVER_KEYS)[number];
+
 /** Thrown when a frontend invokes a resolver key nothing has registered. */
 export class UnregisteredResolverError extends Error {
   constructor(key: string) {

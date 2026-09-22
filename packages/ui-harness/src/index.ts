@@ -8,6 +8,7 @@
  */
 
 export * from './scenarios.js';
+export * from './live-resolvers.js';
 export * from './a11y.js';
 export * from './bridge.js';
 export * from './screen-contract.js';

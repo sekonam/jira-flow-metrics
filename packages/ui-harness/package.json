@@ -27,6 +27,10 @@
     "./scenarios": {
       "types": "./dist/scenarios.d.ts",
       "default": "./dist/scenarios.js"
+    },
+    "./live-resolvers": {
+      "types": "./dist/live-resolvers.d.ts",
+      "default": "./dist/live-resolvers.js"
     }
   },
   "scripts": {

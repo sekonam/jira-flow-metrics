@@ -4,7 +4,7 @@ import './bootstrap';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { setGlobalTheme } from '@atlaskit/tokens';
-import { setBridgeResolvers } from '../src/bridge';
+import { RESOLVER_KEYS, setBridgeResolvers } from '../src/bridge';
 import { SCREENS } from './screens';
 
 /**
@@ -38,15 +38,17 @@ interface Scenario {
 const params = new URLSearchParams(window.location.search);
 const screenId = params.get('screen');
 const scenarioId = params.get('scenario') ?? 'populated';
-
-const RESOLVER_KEYS = [
-  'getReport',
-  'getWorklogReport',
-  'getAgingReport',
-  'getSlaReport',
-  'getHistoryReport',
-  'startIndexing',
-] as const;
+/**
+ * `?live=<app>` swaps the frozen scenario snapshot for the **real resolvers**,
+ * running in the dev server's own Node process over a real engine and a real
+ * store that survives between calls.
+ *
+ * It is what makes an interaction testable at all: a snapshot can render every
+ * state but cannot answer "and then what happened", so saving an SLA goal or
+ * extending the history window had no observable effect in this harness until
+ * this existed. See `src/live-resolvers.ts`.
+ */
+const liveApp = params.get('live');
 
 async function loadScenarios(): Promise<Readonly<Record<string, Scenario>>> {
   const response = await fetch('/generated/scenarios.json');
@@ -59,7 +61,38 @@ async function loadScenarios(): Promise<Readonly<Record<string, Scenario>>> {
   return (await response.json()) as Readonly<Record<string, Scenario>>;
 }
 
+/**
+ * Bridge handlers backed by the live resolvers.
+ *
+ * Every unknown key still reaches the server and is refused there, rather
+ * than being answered locally — the point of the live mode is that nothing
+ * about the resolver layer is simulated in the browser.
+ */
+function liveResolvers(app: string): Record<string, (payload: unknown) => Promise<unknown>> {
+  const call = async (key: string, payload: unknown): Promise<unknown> => {
+    const response = await fetch('/__resolver', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ app, key, payload }),
+    });
+    if (!response.ok) throw new Error(`live resolver ${key} failed: ${String(response.status)}`);
+    return await response.json();
+  };
+  // A plain object over the known key list, not a Proxy: `setBridgeResolvers`
+  // spreads what it is handed, and spreading a Proxy copies its own
+  // enumerable keys — of which a Proxy over `{}` has none. The first run of
+  // this harness failed exactly that way, reporting every resolver as
+  // unregistered.
+  return Object.fromEntries(
+    RESOLVER_KEYS.map((key) => [key, (payload: unknown) => call(key, payload)]),
+  );
+}
+
 async function wireBridge(): Promise<void> {
+  if (liveApp !== null) {
+    setBridgeResolvers(liveResolvers(liveApp));
+    return;
+  }
   if (scenarioId === 'loading') {
     setBridgeResolvers(
       Object.fromEntries(RESOLVER_KEYS.map((key) => [key, () => new Promise<never>(() => {})])),

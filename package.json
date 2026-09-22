@@ -24,6 +24,7 @@
     "seed:dev-site": "node tools/seed-dev-site.mjs",
     "seed:bulk": "node tools/seed-bulk.mjs",
     "e2e:live": "node packages/ui-harness/scripts/live-e2e.mjs",
+    "e2e:ui": "node packages/ui-harness/scripts/build-scenarios.mjs && node packages/ui-harness/scripts/e2e-ui.mjs",
     "preflight": "node tools/preflight.mjs",
     "backfill:scale": "node packages/ui-harness/scripts/scale-backfill.mjs",
     "thumbnails": "node packages/ui-harness/scripts/render-thumbnails.mjs"
