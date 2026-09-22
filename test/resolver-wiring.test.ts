@@ -30,9 +30,20 @@ function definedKeys(app: string): string[] {
   return [...source.matchAll(/resolver\.define\('([^']+)'/g)].map((m) => m[1]!);
 }
 
-/** Keys the app's two frontends invoke over the bridge. */
+/**
+ * Every frontend file an app ships, so a surface added later cannot slip out
+ * of this scan. `time-in-status` ships a third (`panel.tsx`); a hard-coded
+ * pair would have checked two of its three.
+ */
+function frontendFiles(app: string): string[] {
+  return readdirSync(join(APPS_DIR, app, 'src', 'frontend')).filter((file) =>
+    file.endsWith('.tsx'),
+  );
+}
+
+/** Keys the app's frontends invoke over the bridge. */
 function invokedKeys(app: string): string[] {
-  const sources = ['index.tsx', 'gadget.tsx'].map((file) => read(app, 'src', 'frontend', file));
+  const sources = frontendFiles(app).map((file) => read(app, 'src', 'frontend', file));
   return [
     ...new Set(
       sources.flatMap((source) => [...source.matchAll(/invoke\('([^']+)'/g)].map((m) => m[1]!)),

@@ -18,6 +18,7 @@ import {
   handleDeleteSlaGoal,
   handleExtendHistory,
   handleHistoryWindow,
+  handleIssueTimeline,
   handleListSlaGoals,
   handleSaveSlaGoal,
   handleHistoryReport,
@@ -33,9 +34,11 @@ import {
   GOAL_NAME_REQUIRED,
   NARROWER_HISTORY,
   NOT_IN_PROJECT,
+  NOT_ON_AN_ISSUE,
   NO_PERMISSION,
   UNKNOWN_SLA_GOAL,
   UNUSABLE_HISTORY_WINDOW,
+  issueKeyFromContext,
   parseGoalToSave,
   parseHistoryWindow,
   parseReportRequest,
@@ -960,5 +963,54 @@ describe('saved SLA goals — ROADMAP stage 5, "stored SLA goals + a goal editor
       ok: false,
       error: NO_PERMISSION,
     });
+  });
+});
+
+describe('the issue panel resolver', () => {
+  const ISSUE_CONTEXT = {
+    extension: { project: { id: '10000' }, issue: { id: '20001', key: 'FLOW-1' } },
+  };
+
+  it('reads the issue from the context, never from the payload', () => {
+    expect(issueKeyFromContext(ISSUE_CONTEXT)).toBe('20001');
+    // A key stands in when the platform sends no id.
+    expect(issueKeyFromContext({ extension: { issue: { key: 'FLOW-7' } } })).toBe('FLOW-7');
+    expect(issueKeyFromContext({ extension: { project: { id: '10000' } } })).toBeNull();
+    expect(issueKeyFromContext(null)).toBeNull();
+  });
+
+  it('refuses outside an issue', async () => {
+    const { runtime } = build();
+    expect(await handleIssueTimeline(runtime, { context: { extension: {} } })).toEqual({
+      ok: false,
+      error: NOT_ON_AN_ISSUE,
+    });
+  });
+
+  it('★ refuses a caller who cannot browse the project the issue is in', async () => {
+    // The fetch happens before the check — it reads as the app — so what
+    // matters is that nothing it read crosses the boundary.
+    const { runtime, jira } = build();
+    jira.canBrowse = false;
+    const result = await handleIssueTimeline(runtime, { context: ISSUE_CONTEXT });
+    expect(result).toEqual({ ok: false, error: NO_PERMISSION });
+  });
+
+  it('returns the timeline to a caller who can', async () => {
+    const { runtime } = build();
+    const result = await handleIssueTimeline(runtime, { context: ISSUE_CONTEXT });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.issueKey).toBe('FLOW-1');
+  });
+
+  it('★ checks the project Jira reports, not the one the context claims', async () => {
+    // The stub issue belongs to project 10000; the context says 99999. The
+    // permission check must run against what Jira said, or the check and the
+    // data could describe different projects.
+    const { runtime, jira } = build();
+    await handleIssueTimeline(runtime, {
+      context: { extension: { project: { id: '99999' }, issue: { id: '20001' } } },
+    });
+    expect(jira.permissionCalls).toEqual(['10000']);
   });
 });

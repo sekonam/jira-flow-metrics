@@ -1,5 +1,11 @@
 import type { WorklogAggregateResult } from '@jfm/engine';
-import type { AgingReport, FlowReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
+import type {
+  AgingReport,
+  FlowReport,
+  HistoryReport,
+  IssueTimelineReport,
+  SlaReport,
+} from '@jfm/forge-runtime';
 import {
   WORKING_TIME,
   formatDateTime,
@@ -460,4 +466,85 @@ export function parseHistoryWindowValue(value: string): number | null | undefine
   if (value === 'all') return null;
   const months = Number(value);
   return HISTORY_WINDOW_MONTHS.includes(months) ? months : undefined;
+}
+
+// --------------------------------------------- the issue panel timeline ---
+
+/**
+ * One issue's visits, in order — the issue panel's table.
+ *
+ * Both bases in one table on purpose. The panel is opened beside Jira's own
+ * History tab, where every timestamp is wall-clock, so elapsed has to be
+ * there to be checkable; and working time is the figure the product's other
+ * reports are measured in, so leaving it out would make the panel disagree
+ * with the report page on the same issue.
+ */
+export function toTimelineTable(report: IssueTimelineReport): SimpleTable {
+  return {
+    headers: ['Status', 'Entered (UTC)', 'Left (UTC)', 'Elapsed', 'Working time'],
+    rows: report.visits.map((visit) => [
+      visit.statusName,
+      formatDateTime(visit.enteredAt),
+      visit.exitedAt === null ? 'still here' : formatDateTime(visit.exitedAt),
+      formatDurationForHumans(visit.elapsedMs),
+      formatDurationForHumans(visit.businessMs, WORKING_TIME),
+    ]),
+    footnotes: report.truncated
+      ? [
+          'This issue has more changelog entries than were read, so the visits below are a ' +
+            'lower bound.',
+        ]
+      : [],
+  };
+}
+
+/** The per-status totals, which is the report page's row for this one issue. */
+export function toTimelineTotals(report: IssueTimelineReport): SimpleTable {
+  return {
+    headers: ['Status', 'Visits', 'Elapsed, all visits', 'Working time, all visits'],
+    rows: report.totals.map((total) => [
+      total.statusName,
+      String(total.entries),
+      formatDurationForHumans(total.elapsedMs),
+      formatDurationForHumans(total.businessMs, WORKING_TIME),
+    ]),
+    footnotes: report.totals.some((total) => total.entries > 1)
+      ? [
+          'A status with more than one visit is one Jira’s own Control Chart reports only ' +
+            'the most recent stay in. The totals here cover every stay.',
+        ]
+      : [],
+  };
+}
+
+/** The panel's tiles: what the derived goal says about this issue. */
+export function toTimelineTiles(report: IssueTimelineReport): SummaryTile[] {
+  const tiles: SummaryTile[] = [
+    {
+      label: 'Visits recorded',
+      value: String(report.visits.length),
+      hint: `Since ${formatDate(report.createdAt)}.`,
+    },
+  ];
+  const sla = report.sla;
+  if (sla === null) return tiles;
+  tiles.push({
+    label: 'Working time in progress',
+    value: formatDurationForHumans(sla.elapsedWorkingMs, WORKING_TIME),
+    hint:
+      sla.pausedMs > 0
+        ? `${formatDurationForHumans(sla.pausedMs, WORKING_TIME)} back in a to-do status is not counted.`
+        : 'No time back in a to-do status to discount.',
+  });
+  tiles.push({
+    label: sla.breached ? 'Over one working day' : 'Within one working day',
+    value:
+      sla.remainingMs < 0
+        ? `over by ${formatDurationForHumans(-sla.remainingMs, WORKING_TIME)}`
+        : formatDurationForHumans(sla.remainingMs, WORKING_TIME),
+    // Derived from status categories, and the panel says so rather than
+    // letting the figure read as a goal somebody configured.
+    hint: 'Against a derived goal: starts at the first in-progress status, stops at the first done status.',
+  });
+  return tiles;
 }

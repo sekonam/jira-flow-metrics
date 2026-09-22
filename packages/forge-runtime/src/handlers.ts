@@ -17,6 +17,7 @@ import {
   worklogReportToCsv,
 } from './report-csv.js';
 import { MAX_GOAL_NAME_LENGTH, MAX_SLA_GOALS, type StoredSlaGoal } from './settings.js';
+import type { IssueTimelineReport } from './issue-timeline.js';
 import type { BackfillProgress, JiraProjectRef, StatusMetaRow } from '@jfm/engine';
 
 /**
@@ -439,6 +440,67 @@ export async function handleExtendHistory(
     }
     await runtime.setHistoryWindow(auth.projectId, requested);
     return { ok: true, data: { months: requested } };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
+export const NOT_ON_AN_ISSUE = 'This panel can only be opened from inside a Jira issue.';
+
+/**
+ * Read the issue from a `jira:issuePanel` context.
+ *
+ * Same rule as `projectIdFromContext`, for the same reason: the platform
+ * sets this from the issue the user is actually looking at, and a payload
+ * could name any issue in the instance.
+ */
+export function issueKeyFromContext(context: unknown): string | null {
+  if (typeof context !== 'object' || context === null) return null;
+  const extension = (context as Record<string, unknown>)['extension'];
+  if (typeof extension !== 'object' || extension === null) return null;
+  const issue = (extension as Record<string, unknown>)['issue'];
+  if (typeof issue !== 'object' || issue === null) return null;
+  const record = issue as Record<string, unknown>;
+  const id = idOf(record);
+  if (id !== null) return id;
+  const key = record['key'];
+  return typeof key === 'string' && key !== '' ? key : null;
+}
+
+/**
+ * The issue panel.
+ *
+ * Authorised against the project **Jira says the issue belongs to**, read
+ * back from the fetch rather than taken from the panel context. An issue
+ * panel's context does carry a project, but trusting it would mean the
+ * permission check and the data could describe different projects if the two
+ * ever disagreed — and the check exists precisely for the case where
+ * something is not what it appears.
+ *
+ * The fetch therefore happens before the authorisation, which is the one
+ * place in this codebase where that order is correct: it reads *as the app*,
+ * and nothing it read is returned unless the check passes.
+ */
+export async function handleIssueTimeline(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<IssueTimelineReport>> {
+  runtime.beginInvocation();
+  const issueKey = issueKeyFromContext(invocation.context);
+  if (issueKey === null) return { ok: false, error: NOT_ON_AN_ISSUE };
+  try {
+    const { report, projectId } = await runtime.issueTimeline(
+      issueKey,
+      projectIdFromContext(invocation.context) ?? '',
+    );
+    let allowed: boolean;
+    try {
+      allowed = await runtime.canBrowseProject(projectId);
+    } catch {
+      return { ok: false, error: NO_PERMISSION };
+    }
+    if (!allowed) return { ok: false, error: NO_PERMISSION };
+    return { ok: true, data: report };
   } catch (error: unknown) {
     return { ok: false, error: toUserMessage(error) };
   }

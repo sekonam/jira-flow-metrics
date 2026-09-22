@@ -24,6 +24,7 @@ import {
   type StatusMetaRow,
   type StatusReport,
 } from '@jfm/engine';
+import { buildIssueTimeline, type IssueTimelineReport } from './issue-timeline.js';
 import {
   MAX_SLA_GOALS,
   type ProjectSettings,
@@ -415,6 +416,35 @@ export class ListingRuntime {
     const goals = settings.slaGoals.filter((g) => g.id !== goalId);
     await this.deps.settings.put(projectId, { ...settings, slaGoals: goals }, this.clock.now());
     return goals;
+  }
+
+  /**
+   * One issue's timeline — the issue panel.
+   *
+   * Reads Jira rather than the store, and returns the project id it found so
+   * the caller can authorise against it. That ordering is deliberate: the
+   * panel's context names an *issue*, and the only trustworthy way to learn
+   * which project it belongs to is to ask Jira, not to take it from the
+   * client. See `handleIssueTimeline`, which refuses before returning a
+   * single figure if the caller cannot browse that project.
+   */
+  async issueTimeline(
+    issueIdOrKey: string,
+    projectIdHint: string,
+  ): Promise<{ report: IssueTimelineReport; projectId: string }> {
+    const settings = await this.deps.settings.get(projectIdHint);
+    return buildIssueTimeline(issueIdOrKey, {
+      api: this.deps.api,
+      calendar: settings.calendar,
+      now: this.clock.now(),
+      maxChangelogEntries: this.options.maxChangelogEntries ?? 2000,
+      pageSize: this.options.pageSize ?? 50,
+      // One working day. The panel's goal is derived, not configured, and
+      // the target only decides where "breached" falls — the consumed and
+      // paused figures beside it are true regardless.
+      targetMs: 8 * 3_600_000,
+      sleeper: this.deps.sleeper,
+    });
   }
 
   /** Projects the calling user may browse — the dashboard gadget's picker. */

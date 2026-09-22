@@ -4,6 +4,7 @@ import {
   handleExportCsv,
   handleGetReport,
   handleIndexProgress,
+  handleIssueTimeline,
   handleHistoryReport,
   handleHistoryWindow,
   handleListSlaGoals,
@@ -48,6 +49,7 @@ export type ResolverKey =
   | 'listSlaGoals'
   | 'exportCsv'
   | 'getHistoryWindow'
+  | 'getIssueTimeline'
   | 'startIndexing';
 
 /** Everything the five frontends can ask for, in one JSON-serialisable object. */
@@ -147,6 +149,14 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
     // The "extend history" control's current range. Read only when the
     // control is opened, so no screen fetches it on load.
     getHistoryWindow: await handleHistoryWindow(runtime, INVOCATION),
+    // The issue panel. Its context names an *issue*, not a project — the one
+    // resolver here that does — and it reads the fixture Jira rather than the
+    // store the other eleven read.
+    getIssueTimeline: await handleIssueTimeline(runtime, {
+      context: {
+        extension: { ...PIPELINE_CONTEXT.extension, issue: { id: CANONICAL_ISSUE.issue.id } },
+      },
+    }),
     startIndexing: { ok: true, data: { started: true } },
   };
 }
@@ -218,6 +228,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'listSlaGoals',
   'exportCsv',
   'getHistoryWindow',
+  'getIssueTimeline',
   'startIndexing',
 ];
 

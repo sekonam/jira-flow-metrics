@@ -6,6 +6,7 @@ import {
   handleGetReport,
   handleHistoryWindow,
   handleIndexProgress,
+  handleIssueTimeline,
   handleIssueEvent,
   handleListProjects,
   handleStartIndexing,
@@ -35,6 +36,10 @@ resolver.define('getIndexProgress', (req) => handleIndexProgress(getRuntime(), r
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
+// The issue panel. The one resolver in the product that reads Jira rather
+// than the store, and the one authorised against the project Jira says the
+// issue belongs to rather than against the context's own.
+resolver.define('getIssueTimeline', (req) => handleIssueTimeline(getRuntime(), req));
 // The "extend history" control. Both are read only when the control is
 // opened, so a page that nobody extends pays nothing for it.
 resolver.define('getHistoryWindow', (req) => handleHistoryWindow(getRuntime(), req));

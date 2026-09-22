@@ -20,6 +20,19 @@ modules:
         function: resolver
       title: Time in Status
 
+  # The issue panel — ROADMAP stage 5. It sits under Jira's own History tab
+  # on the issue view, which is the strongest place this product's argument
+  # can be made: the cumulative figure is checkable against the transitions
+  # listed immediately above it.
+  jira:issuePanel:
+    - key: time-in-status-panel
+      resource: panel
+      render: native
+      resolver:
+        function: resolver
+      title: Time in Status
+      icon: https://raw.githubusercontent.com/sekonam/jira-flow-metrics-assets/main/time-in-status.png
+
   jira:dashboardGadget:
     - key: time-in-status-gadget
       resource: gadget
@@ -110,6 +123,8 @@ resources:
     path: src/frontend/index.tsx
   - key: gadget
     path: src/frontend/gadget.tsx
+  - key: panel
+    path: src/frontend/panel.tsx
 
 app:
   runtime:
