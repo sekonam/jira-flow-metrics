@@ -373,6 +373,27 @@ describe('capped reports carry the real total', () => {
     expect(complete.rows.every((row) => row.totalMs > 0)).toBe(true);
   });
 
+  it('★ every capped export says so in the file, not only on the screen', async () => {
+    // The export button sits directly beside a cap banner, and produced 500
+    // silent rows of a 5,000-issue project. A CSV is the artefact that
+    // leaves the product — mailed, pasted into a deck, summed in a
+    // spreadsheet — and it was the one place the qualifier was missing.
+    const store = await threeIssueStore();
+    const goal = { id: 'g', name: 'Goal', countedStatusIds: [], targetMs: 8 * HOUR };
+
+    const aging = agingReportToCsv(await buildAgingReport(store, '10000', NOW, 2));
+    expect(aging.split('\n').at(-1)).toMatch(/^# This file covers 2 of 3 issues\./);
+
+    const sla = slaReportToCsv(await buildSlaReport(store, '10000', goal, NOW, 2));
+    expect(sla.split('\n').at(-1)).toMatch(/^# This file covers 2 of 3 issues\./);
+
+    // And a complete export carries no note at all — a spurious one would be
+    // as wrong as a missing one, and it would land in someone's spreadsheet.
+    const complete = agingReportToCsv(await buildAgingReport(store, '10000', NOW));
+    expect(complete).not.toContain('#');
+    expect(complete.split('\n')).toHaveLength(4); // header + three issues
+  });
+
   it('worklog report: capped when more entries match than were fetched', async () => {
     const store = new MemoryStore();
     await store.putWorklogs('1', [worklog('a', 'Anna'), worklog('b', 'Ben'), worklog('c', 'Cara')]);
