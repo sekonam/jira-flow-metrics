@@ -217,7 +217,7 @@ export class SqlMetricsStore implements MetricsStore {
       clauses.push(`status_id IN (${placeholders(query.statusIds.length)})`);
       params.push(...query.statusIds);
     }
-    const limit = clampLimit(query.limit ?? 10_000);
+    const limit = clampLimit(query.limit ?? STORE_MAX_ROWS);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_status_agg WHERE ${clauses.join(' AND ')}
@@ -265,7 +265,7 @@ export class SqlMetricsStore implements MetricsStore {
       clauses.push('(exited_at IS NULL OR exited_at > ?)');
       params.push(query.from);
     }
-    const limit = clampLimit(query.limit ?? 10_000);
+    const limit = clampLimit(query.limit ?? STORE_MAX_ROWS);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_status_visit WHERE ${clauses.join(' AND ')}
@@ -334,7 +334,7 @@ export class SqlMetricsStore implements MetricsStore {
 
   async queryWorklogs(query: WorklogQuery): Promise<WorklogRecord[]> {
     const { clauses, params } = worklogClauses(query);
-    const limit = clampLimit(query.limit ?? 10_000);
+    const limit = clampLimit(query.limit ?? STORE_MAX_ROWS);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM worklog WHERE ${clauses.join(' AND ')}
@@ -369,7 +369,7 @@ export class SqlMetricsStore implements MetricsStore {
 
   async queryHistory(query: HistoryQuery): Promise<HistoryRecord[]> {
     const { clauses, params } = historyClauses(query);
-    const limit = clampLimit(query.limit ?? 10_000);
+    const limit = clampLimit(query.limit ?? STORE_MAX_ROWS);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_history WHERE ${clauses.join(' AND ')}

@@ -62,6 +62,50 @@ export function formatDuration(ms: Millis, options: CsvOptions = {}): string | n
 }
 
 /** Render a status report as CSV. */
+/**
+ * The truncation note a capped export carries as its last row.
+ *
+ * ★ A CSV that is a page of a larger report has to say so *in the file*.
+ *
+ * Every one of these reports renders a cap banner on screen, and the export
+ * button beside it produced 500 silent rows of a 5,000-issue project. The
+ * file is the artefact that leaves the product — it gets mailed, pasted into
+ * a deck, summed in a spreadsheet by someone who never saw the page — so of
+ * the two places the qualifier could be missing, this was the worse one.
+ *
+ * ★ It lives here, and returns a *row*, so that it goes through `toCsv` and
+ * is escaped like any other cell. The first version built this note by
+ * string concatenation in `statusReportCsv` and appended it raw: every
+ * branch of the text contains a comma, and `toLocaleString` puts one inside
+ * the number itself, so a spreadsheet split "covers 500 of 5,000 issues"
+ * across two columns — at exactly the figure the note exists to state, in
+ * the flagship listing's own export. A note about truncation, truncated.
+ */
+export function capNoteRow(input: {
+  capped: boolean;
+  aggregatesCapped?: boolean;
+  included: number;
+  total: number;
+  noun: string;
+}): string[][] {
+  if (!input.capped && input.aggregatesCapped !== true) return [];
+  const included = input.included.toLocaleString('en-GB');
+  if (input.aggregatesCapped === true && input.included >= input.total) {
+    return [
+      [
+        `# Some of these ${included} ${input.noun} are missing measurements, so every figure in this file is a lower bound.`,
+      ],
+    ];
+  }
+  const tail =
+    input.aggregatesCapped === true ? ', and some of those are missing measurements' : '';
+  return [
+    [
+      `# This file covers ${included} of ${input.total.toLocaleString('en-GB')} ${input.noun}${tail}. Narrow the filters to export the rest.`,
+    ],
+  ];
+}
+
 export function statusReportToCsv(report: StatusReport, options: CsvOptions = {}): string {
   const includeEntries = options.includeEntryCounts ?? true;
   const header: (string | number)[] = ['Issue key', 'Current status', 'Created', 'Resolved'];
@@ -91,6 +135,15 @@ export function statusReportToCsv(report: StatusReport, options: CsvOptions = {}
     line.push(row.truncated ? 'partial' : 'complete');
     rows.push(line);
   }
+  rows.push(
+    ...capNoteRow({
+      capped: report.capped,
+      aggregatesCapped: report.aggregatesCapped,
+      included: report.issueCount,
+      total: report.matchingIssueCount,
+      noun: 'issues',
+    }),
+  );
   return toCsv(rows);
 }
 

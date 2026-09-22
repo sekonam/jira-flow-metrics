@@ -15,7 +15,11 @@ import {
   type StatusAggregateRow,
   type StatusMeta,
 } from '@jfm/engine';
-import { RecordingSqlExecutor, forgeSqlExecutor } from '../src/sql/executor.js';
+import {
+  LimitHonouringSqlExecutor,
+  RecordingSqlExecutor,
+  forgeSqlExecutor,
+} from '../src/sql/executor.js';
 import { SqlMetricsStore } from '../src/sql/sql-store.js';
 import {
   historyFromRow,
@@ -435,6 +439,52 @@ describe('SqlMetricsStore statement generation', () => {
     await store.upsertStatusMeta([]);
     await store.recordStatusNames([]);
     expect(sql.sql).toHaveLength(0);
+  });
+});
+
+describe('★ LimitHonouringSqlExecutor — the test double the cap checks depend on', () => {
+  // Four defects in this codebase came from a ceiling verified only against
+  // `MemoryStore`, which does not clamp. This executor exists so a test can
+  // see the ceiling the SQL adapter enforces — which makes *its* own honesty
+  // load-bearing: a stand-in that answers a statement it cannot model turns
+  // into a test that asserts the wrong thing.
+
+  it('applies LIMIT and OFFSET', async () => {
+    const rows = Array.from({ length: 10 }, (_u, i) => ({ issue_id: String(i) }));
+    const executor = new LimitHonouringSqlExecutor({ issue_meta: rows });
+    const page = await executor.query<{ issue_id: string }>(
+      'SELECT * FROM issue_meta WHERE project_id = ? LIMIT 3 OFFSET 2',
+      ['10000'],
+    );
+    expect(page.map((r) => r.issue_id)).toEqual(['2', '3', '4']);
+  });
+
+  it('answers a simple COUNT from the table it names', async () => {
+    const executor = new LimitHonouringSqlExecutor({ issue_meta: [{}, {}, {}] });
+    const rows = await executor.query<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM issue_meta WHERE project_id = ?',
+      ['10000'],
+    );
+    expect(rows[0]?.n).toBe(3);
+  });
+
+  it('★ refuses a statement shape it cannot model, rather than answering it wrongly', async () => {
+    // `countRows()` emits one SELECT of nine correlated sub-counts. Read
+    // naively this returns a single `n` and none of the nine named columns,
+    // so every table count comes back 0 and the admin storage page reports
+    // nothing at all — a test written against that could be "fixed" by
+    // asserting zero, which is how a lying stand-in becomes a lying test.
+    const executor = new LimitHonouringSqlExecutor({ issue_meta: [{}] });
+    await expect(
+      executor.query(
+        'SELECT (SELECT COUNT(*) FROM issue_meta) AS issue_meta, (SELECT COUNT(*) FROM worklog) AS worklog',
+      ),
+    ).rejects.toThrow(/cannot model/);
+    await expect(
+      executor.query(
+        'SELECT * FROM issue_meta JOIN worklog ON worklog.issue_id = issue_meta.issue_id',
+      ),
+    ).rejects.toThrow(/cannot model/);
   });
 });
 

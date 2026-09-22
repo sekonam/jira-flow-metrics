@@ -1,4 +1,4 @@
-import { formatDuration, tableToCsv, type Millis } from '@jfm/engine';
+import { capNoteRow, formatDuration, tableToCsv, type Millis } from '@jfm/engine';
 import type { AgingReport, HistoryReport, SlaReport, WorklogReport } from './reports.js';
 
 /**
@@ -20,46 +20,6 @@ function toIso(ms: Millis | null): string {
   return ms === null ? '' : new Date(ms).toISOString();
 }
 
-/**
- * The truncation note a capped export carries as its last row.
- *
- * ★ A CSV that is a page of a larger report has to say so *in the file*.
- *
- * Every one of these reports renders a cap banner on screen, and the export
- * button beside it produced 500 silent rows of a 5,000-issue project. The
- * file is the artefact that leaves the product — it gets mailed, pasted into
- * a deck, summed in a spreadsheet — and it was the one place the qualifier
- * was missing. A number without its qualifier is the failure this codebase
- * is organised around avoiding.
- *
- * A single-cell row prefixed with `#`, so it lands in column A of the last
- * line and cannot be mistaken for data.
- */
-function capNote(input: {
-  capped: boolean;
-  aggregatesCapped?: boolean;
-  included: number;
-  total: number;
-  noun: string;
-}): string[][] {
-  if (!input.capped) return [];
-  const included = input.included.toLocaleString('en-GB');
-  if (input.aggregatesCapped === true && input.included >= input.total) {
-    return [
-      [
-        `# Some of these ${included} ${input.noun} are missing measurements, so every figure in this file is a lower bound.`,
-      ],
-    ];
-  }
-  const tail =
-    input.aggregatesCapped === true ? ', and some of those are missing measurements' : '';
-  return [
-    [
-      `# This file covers ${included} of ${input.total.toLocaleString('en-GB')} ${input.noun}${tail}. Narrow the filters to export the rest.`,
-    ],
-  ];
-}
-
 export function worklogReportToCsv(report: WorklogReport, groupLabel: string): string {
   return tableToCsv(
     [groupLabel, 'Hours logged', 'Entries', 'Issues'],
@@ -70,7 +30,7 @@ export function worklogReportToCsv(report: WorklogReport, groupLabel: string): s
         group.entries,
         group.issueCount,
       ]),
-      ...capNote({
+      ...capNoteRow({
         capped: report.capped,
         included: report.entries,
         total: report.totalEntries,
@@ -99,7 +59,7 @@ export function agingReportToCsv(report: AgingReport): string {
         formatDuration(row.ageTotalMs, HOURS),
         toIso(row.enteredStatusAt),
       ]),
-      ...capNote({
+      ...capNoteRow({
         capped: report.capped,
         aggregatesCapped: report.aggregatesCapped,
         included: report.rows.length + report.excludedDone,
@@ -131,7 +91,7 @@ export function slaReportToCsv(report: SlaReport): string {
         toIso(row.dueDate.dueAt),
         row.dueDate.breached ? 'yes' : 'no',
       ]),
-      ...capNote({
+      ...capNoteRow({
         capped: report.capped,
         aggregatesCapped: report.aggregatesCapped,
         included: report.rows.length,
@@ -154,7 +114,7 @@ export function historyReportToCsv(report: HistoryReport): string {
         record.toValue,
         record.authorDisplayName,
       ]),
-      ...capNote({
+      ...capNoteRow({
         capped: report.capped,
         included: report.total,
         total: report.totalMatching,

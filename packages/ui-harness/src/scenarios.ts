@@ -56,6 +56,7 @@ export type ResolverResponses = Readonly<Partial<Record<ResolverKey, unknown>>>;
 export const SCENARIO_IDS = [
   'populated',
   'canonical',
+  'capped',
   'partial',
   'empty',
   'not-indexed',
@@ -73,7 +74,19 @@ export interface Scenario {
 }
 
 const SCENARIO_SETUP: Readonly<
-  Record<ScenarioId, { label: string; note: string; options: PipelineOptions }>
+  Record<
+    ScenarioId,
+    {
+      label: string;
+      note: string;
+      /**
+       * `reportLimit` is not a pipeline option: it is the page size the
+       * *resolver* is asked for, which is what makes a report capped
+       * without needing thousands of fixture issues.
+       */
+      options: PipelineOptions & { reportLimit?: number };
+    }
+  >
 > = {
   populated: {
     label: 'Populated',
@@ -84,6 +97,11 @@ const SCENARIO_SETUP: Readonly<
     label: 'Canonical end-to-end issue',
     note: 'The single issue asserted in end-to-end.test.ts: In Progress 12h across two visits, 27h working hours, 76h elapsed.',
     options: { issues: [CANONICAL_ISSUE] },
+  },
+  capped: {
+    label: 'Report capped',
+    note: 'More issues match than the report will fetch. Every figure is a lower bound and the banner has to say so — the one state whose absence is invisible.',
+    options: { issues: [...IN_FLIGHT_ISSUES, CANONICAL_ISSUE], reportLimit: 2 },
   },
   partial: {
     label: 'Backfill still running',
@@ -132,9 +150,12 @@ const SCENARIO_SETUP: Readonly<
 
 const INVOCATION = { context: PIPELINE_CONTEXT };
 
-async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
+async function collect(runtime: ListingRuntime, reportLimit?: number): Promise<ResolverResponses> {
   return {
-    getReport: await handleGetReport(runtime, INVOCATION),
+    getReport: await handleGetReport(runtime, {
+      ...INVOCATION,
+      ...(reportLimit === undefined ? {} : { payload: { limit: reportLimit } }),
+    }),
     getIndexProgress: await handleIndexProgress(runtime, INVOCATION),
     getWorklogReport: await handleWorklogReport(runtime, INVOCATION),
     getAgingReport: await handleAgingReport(runtime, INVOCATION),
@@ -190,12 +211,13 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
 /** Build one scenario by running the pipeline and calling every resolver. */
 export async function buildScenario(id: ScenarioId): Promise<Scenario> {
   const setup = SCENARIO_SETUP[id];
-  const { runtime } = await runPipeline(setup.options);
+  const { reportLimit, ...pipelineOptions } = setup.options;
+  const { runtime } = await runPipeline(pipelineOptions);
   return {
     id,
     label: setup.label,
     note: setup.note,
-    responses: await collect(runtime),
+    responses: await collect(runtime, reportLimit),
   };
 }
 

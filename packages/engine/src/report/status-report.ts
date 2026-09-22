@@ -154,9 +154,16 @@ export async function buildStatusReport(
     limit: AGGREGATE_ROW_CAP + 1,
   });
   const aggregatesCapped = aggregates.length > AGGREGATE_ROW_CAP;
+  //
+  // ★ Every row read is kept, including the probe row. Slicing back to the
+  // cap threw away a row that was genuinely returned — at exactly
+  // `STORE_MAX_ROWS` matching rows (500 issues on a 20-status workflow, the
+  // default page size) that cost one issue a status column and left its
+  // total short, where the old code had been exact. The extra row is a
+  // *signal*, not a row to discard: when it arrives, all of them are valid.
 
   const byIssue = new Map<string, StatusAggregateRow[]>();
-  for (const row of aggregatesCapped ? aggregates.slice(0, AGGREGATE_ROW_CAP) : aggregates) {
+  for (const row of aggregates) {
     const list = byIssue.get(row.issueId) ?? [];
     list.push(row);
     byIssue.set(row.issueId, list);

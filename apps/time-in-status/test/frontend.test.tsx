@@ -90,6 +90,90 @@ describe('time-in-status: the listing-specific behaviour', () => {
   });
 });
 
+describe('★ time-in-status: a capped report says so on both surfaces', () => {
+  // The page and the gadget each read `capped` and `aggregatesCapped` and
+  // pass them to the banner, and *nothing held that wiring*: replacing both
+  // with `aggregatesCapped: false` — deleting exactly what the commit that
+  // added the flag claimed to deliver — left all 1,060 tests and all 40
+  // browser flows green, because no scenario produced a capped report.
+  //
+  // That is this cycle's own lens one layer up: the flag was verified where
+  // it is computed and nowhere where it is rendered.
+
+  it('renders the cap banner on the project page', async () => {
+    setBridgeResolvers(resolversFor(scenarios.capped.responses));
+    render(<App />);
+    expect(await screen.findByText(/Report capped at 2 of 4 issues/)).toBeDefined();
+    cleanup();
+  });
+
+  it('renders the cap notice in the gadget', async () => {
+    setBridgeResolvers(resolversFor(scenarios.capped.responses));
+    render(<Gadget />);
+    expect(await screen.findByText(/Covering 2 of 4 issues/)).toBeDefined();
+    cleanup();
+  });
+
+  /**
+   * The aggregate ceiling, which no fixture can reach.
+   *
+   * `aggregatesCapped` needs more than 9,999 aggregate rows to fire, so the
+   * scenario pipeline cannot produce it without a fixture of thousands of
+   * issues. The shape is taken from the real capped response and adjusted to
+   * the one combination real data would give: every matching issue on the
+   * page (`capped` false), some of them missing measurements.
+   *
+   * Asserting the first two tests alone was not enough — gutting the wiring
+   * to `aggregatesCapped: false` left them green, because `capped` on its
+   * own still renders a banner. The two flags have to be distinguished.
+   */
+  function aggregateCappedResponses(): Record<string, unknown> {
+    const base = scenarios.capped.responses.getReport as {
+      ok: true;
+      data: { report: Record<string, unknown> };
+    };
+    return {
+      ...scenarios.capped.responses,
+      getReport: {
+        ...base,
+        data: {
+          ...base.data,
+          report: {
+            ...base.data.report,
+            capped: false,
+            aggregatesCapped: true,
+            matchingIssueCount: base.data.report['issueCount'],
+          },
+        },
+      },
+    };
+  }
+
+  it('★ distinguishes the aggregate ceiling from the issue page on the project page', async () => {
+    setBridgeResolvers(resolversFor(aggregateCappedResponses()));
+    render(<App />);
+    expect(await screen.findByText(/are missing measurements/)).toBeDefined();
+    expect(screen.queryByText(/Report capped at/)).toBeNull();
+    cleanup();
+  });
+
+  it('★ and in the gadget', async () => {
+    setBridgeResolvers(resolversFor(aggregateCappedResponses()));
+    render(<Gadget />);
+    expect(await screen.findByText(/are missing measurements/)).toBeDefined();
+    cleanup();
+  });
+
+  it('says nothing when the report is complete', async () => {
+    // A spurious banner is as wrong as a missing one.
+    setBridgeResolvers(resolversFor(scenarios.populated.responses));
+    render(<App />);
+    await screen.findByText('FLOW-3');
+    expect(screen.queryByText(/Report capped/)).toBeNull();
+    cleanup();
+  });
+});
+
 describe('time-in-status: the report chart', () => {
   it('the chart above the table plots one bar per measured status', async () => {
     setBridgeResolvers(resolversFor(scenarios.populated.responses));

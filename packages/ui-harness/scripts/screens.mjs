@@ -50,6 +50,11 @@ const SCENARIOS = [
     note: 'The single issue end-to-end.test.ts asserts: 12h in progress across two visits, 27 working hours, 76h elapsed.',
   },
   {
+    id: 'capped',
+    label: 'Report capped',
+    note: 'More issues match than the report fetched. Every figure is a lower bound and the banner has to say so.',
+  },
+  {
     id: 'partial',
     label: 'Backfill running',
     note: 'Half the issues indexed. Numbers must be labelled partial.',

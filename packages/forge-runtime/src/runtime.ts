@@ -288,16 +288,10 @@ export class ListingRuntime {
   /** CSV of the same report, for the export button. */
   async statusReportCsv(request: StatusReportRequest): Promise<string> {
     const envelope = await this.statusReport({ ...request, limit: request.limit ?? 500 });
-    const csv = statusReportToCsv(envelope.report, { durationFormat: 'hours' });
-    // The same qualifier the page renders, in the file. See `capNote`: the
-    // export is the artefact that leaves the product, and it was the one
-    // place a truncated report said nothing about being truncated.
-    const { report } = envelope;
-    if (!report.capped && !report.aggregatesCapped) return csv;
-    const note = report.capped
-      ? `# This file covers ${report.issueCount.toLocaleString('en-GB')} of ${report.matchingIssueCount.toLocaleString('en-GB')} issues${report.aggregatesCapped ? ', and some of those are missing measurements' : ''}. Narrow the filters to export the rest.`
-      : `# Some of these ${report.issueCount.toLocaleString('en-GB')} issues are missing measurements, so every figure in this file is a lower bound.`;
-    return `${csv}\n${note}`;
+    // The cap note is `statusReportToCsv`'s own last row, not something
+    // concatenated here: a note appended outside `toCsv` is not escaped, and
+    // every branch of its text contains a comma.
+    return statusReportToCsv(envelope.report, { durationFormat: 'hours' });
   }
 
   /** Listing 2 — worklog totals grouped by author, issue, day, week or month. */

@@ -179,7 +179,10 @@ async function readAggregates(
     limit: AGGREGATE_ROW_CAP + 1,
   });
   const capped = rows.length > AGGREGATE_ROW_CAP;
-  return { aggregates: capped ? rows.slice(0, AGGREGATE_ROW_CAP) : rows, capped };
+  // ★ Every row read is kept, the probe row included — see the note in
+  // `buildStatusReport`. Discarding it made one issue's figures worse than
+  // they were before this check existed.
+  return { aggregates: rows, capped };
 }
 
 const AGING_BUCKETS: readonly { label: string; fromDays: number; toDays: number | null }[] = [

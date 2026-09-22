@@ -13,7 +13,13 @@ import {
 } from '@jfm/engine';
 import { LimitHonouringSqlExecutor, RecordingSqlExecutor } from '../src/sql/executor.js';
 import { SQL_MAX_ROWS, SqlMetricsStore } from '../src/sql/sql-store.js';
-import { STORE_MAX_ROWS, buildStatusReport } from '@jfm/engine';
+import {
+  STORE_MAX_ROWS,
+  buildStatusReport,
+  capNoteRow,
+  statusReportToCsv,
+  tableToCsv,
+} from '@jfm/engine';
 import { SettingsStore } from '../src/settings.js';
 import { ListingRuntime } from '../src/runtime.js';
 import {
@@ -291,6 +297,61 @@ describe('capped reports carry the real total', () => {
     expect(aging.aggregatesCapped).toBe(true);
   });
 
+  it('★ keeps every row it read, including the one that revealed the cap', async () => {
+    // 500 issues on a 20-status workflow is exactly `STORE_MAX_ROWS`: the
+    // store returns all 10,000, the probe sees the ceiling and flags it —
+    // and slicing back to the cap then threw away a row that had genuinely
+    // arrived, costing one issue a status column and leaving its total
+    // short. The flag is a signal about what might be missing, not a reason
+    // to discard what is present.
+    const issues = 500;
+    const statuses = 20;
+    const metaRows = Array.from({ length: issues }, (_u, i) => ({
+      issue_id: String(i + 1),
+      issue_key: `FLOW-${String(i + 1)}`,
+      project_id: '10000',
+      issue_type_id: null,
+      priority_id: null,
+      assignee_account_id: null,
+      current_status_id: '100',
+      created_at: NOW - 30 * DAY,
+      resolved_at: null,
+      due_at: null,
+      history_through_at: NOW,
+      truncated: 0,
+      updated_at: NOW,
+    }));
+    const aggRows = metaRows.flatMap((row) =>
+      Array.from({ length: statuses }, (_u, s2) => ({
+        issue_id: row.issue_id,
+        status_id: String(100 + s2),
+        project_id: '10000',
+        elapsed_ms: 4 * HOUR,
+        business_ms: 4 * HOUR,
+        entries: 1,
+        last_entered_at: NOW - DAY,
+        last_exited_at: null,
+        updated_at: NOW,
+      })),
+    );
+    expect(aggRows).toHaveLength(STORE_MAX_ROWS);
+
+    const report = await buildStatusReport(
+      new SqlMetricsStore(
+        new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
+        { migrate: () => Promise.resolve() },
+      ),
+      { projectId: '10000', basis: 'business', limit: issues, offset: 0 },
+    );
+
+    // Flagged, because at exactly the ceiling there is no way to know — and
+    // withholding is the recoverable direction.
+    expect(report.aggregatesCapped).toBe(true);
+    // But every figure is the one the store actually returned: 20 statuses
+    // at four hours each, for all 500 issues, none short.
+    expect(report.rows.every((row) => row.totalMs === statuses * 4 * HOUR)).toBe(true);
+  });
+
   it('★ the flagship report detects a truncated aggregate read too', async () => {
     // `buildStatusReport` passed **no** `limit` to `queryStatusDurations`,
     // which does not mean "no limit": the SQL adapter clamps an unspecified
@@ -387,11 +448,94 @@ describe('capped reports carry the real total', () => {
     const sla = slaReportToCsv(await buildSlaReport(store, '10000', goal, NOW, 2));
     expect(sla.split('\n').at(-1)).toMatch(/^# This file covers 2 of 3 issues\./);
 
+    // All five exports, not two: the worklog and history notes were added in
+    // the same commit and asserted nowhere, so deleting either left the
+    // suite green.
+    const worklogStore = new MemoryStore();
+    await worklogStore.putWorklogs('1', [
+      worklog('a', 'Anna'),
+      worklog('b', 'Ben'),
+      worklog('c', 'Cara'),
+    ]);
+    const worklogCsv = worklogReportToCsv(
+      await buildWorklogReport(worklogStore, { projectId: '10000', limit: 2 }, 'UTC'),
+      'Author',
+    );
+    expect(worklogCsv.split('\r\n').at(-1)).toContain('of 3 worklog entries');
+
+    const historyStore = new MemoryStore();
+    const change = {
+      issueId: '1',
+      issueKey: 'FLOW-1',
+      projectId: '10000',
+      at: NOW - DAY,
+      authorAccountId: 'anna',
+      authorDisplayName: 'Anna',
+      fromValue: null,
+      toValue: 'Done',
+      fromId: null,
+      toId: '10001',
+      field: 'status',
+      fieldLabel: 'status',
+    };
+    await historyStore.putHistory('1', [
+      { ...change, changeId: 'a' },
+      { ...change, changeId: 'b' },
+      { ...change, changeId: 'c' },
+    ]);
+    const historyCsv = historyReportToCsv(
+      await buildHistoryReport(historyStore, { projectId: '10000', limit: 2 }),
+    );
+    expect(historyCsv.split('\r\n').at(-1)).toContain('of 3 changes');
+
     // And a complete export carries no note at all — a spurious one would be
     // as wrong as a missing one, and it would land in someone's spreadsheet.
     const complete = agingReportToCsv(await buildAgingReport(store, '10000', NOW));
     expect(complete).not.toContain('#');
-    expect(complete.split('\n')).toHaveLength(4); // header + three issues
+    expect(complete.split('\r\n')).toHaveLength(4); // header + three issues
+  });
+
+  it('★ escapes the truncation note like any other cell', async () => {
+    // The note was built by string concatenation in `statusReportCsv` and
+    // appended raw, outside `toCsv`. Every branch of its text contains a
+    // comma — and `toLocaleString` puts one inside the number itself — so a
+    // spreadsheet split "covers 500 of 5,000 issues" across two columns, at
+    // exactly the figure the note exists to state. A note about truncation,
+    // truncated.
+    const rows = capNoteRow({
+      capped: true,
+      included: 500,
+      total: 5000,
+      noun: 'issues',
+    });
+    expect(rows).toHaveLength(1);
+    const line = tableToCsv(['Issue key'], rows).split('\r\n').at(-1)!;
+    expect(line.startsWith('"')).toBe(true);
+    expect(line.endsWith('"')).toBe(true);
+    // One cell: everything between the quotes, commas included.
+    expect(line.slice(1, -1)).toBe(
+      '# This file covers 500 of 5,000 issues. Narrow the filters to export the rest.',
+    );
+
+    // The status CSV is the path that had the bug, and it now goes through
+    // the same writer as the other four — including the line ending, which
+    // was a bare LF in a CRLF document.
+    const report = await buildStatusReport(await threeIssueStore(), {
+      projectId: '10000',
+      basis: 'elapsed',
+      limit: 2,
+      offset: 0,
+    });
+    const csv = statusReportToCsv(report, { durationFormat: 'hours' });
+    // No bare LF: the concatenated version joined with `\n` into a document
+    // whose every other separator is CRLF.
+    expect(csv).not.toMatch(/(?<!\r)\n/);
+    // Unquoted here, and correctly so — `toCsv` quotes only a cell that
+    // needs it, and "2 of 3" carries no separator. That is the same writer
+    // doing the same job; what mattered was going through it at all.
+    expect(csv.split('\r\n').at(-1)).toBe(
+      '# This file covers 2 of 3 issues. Narrow the filters to export the rest.',
+    );
   });
 
   it('worklog report: capped when more entries match than were fetched', async () => {
