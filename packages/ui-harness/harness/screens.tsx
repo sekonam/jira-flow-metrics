@@ -9,6 +9,12 @@ import { App as SlaPage } from '../../../apps/sla-breach/src/frontend/index';
 import { Gadget as SlaGadget } from '../../../apps/sla-breach/src/frontend/gadget';
 import { App as HistoryPage } from '../../../apps/issue-history/src/frontend/index';
 import { Gadget as HistoryGadget } from '../../../apps/issue-history/src/frontend/gadget';
+import { Panel as TimeInStatusPanel } from '../../../apps/time-in-status/src/frontend/panel';
+import { Admin as TimeInStatusAdmin } from '../../../apps/time-in-status/src/frontend/admin';
+import { Admin as WorklogAdmin } from '../../../apps/worklog-reports/src/frontend/admin';
+import { Admin as AgingAdmin } from '../../../apps/wip-aging/src/frontend/admin';
+import { Admin as SlaAdmin } from '../../../apps/sla-breach/src/frontend/admin';
+import { Admin as HistoryAdmin } from '../../../apps/issue-history/src/frontend/admin';
 
 /**
  * Every screen the five listings ship, imported from the app sources.
@@ -18,7 +24,7 @@ import { Gadget as HistoryGadget } from '../../../apps/issue-history/src/fronten
  * against the stand-in host renderer aliased in `vite.config.mts`.
  */
 
-export type Surface = 'page' | 'gadget';
+export type Surface = 'page' | 'gadget' | 'panel' | 'admin';
 
 export interface HarnessScreen {
   readonly id: string;
@@ -31,8 +37,57 @@ export interface HarnessScreen {
 
 const PAGE = { width: 1280, height: 900 };
 const GADGET = { width: 520, height: 420 };
+/**
+ * An `jira:issueActivity` tab renders inside the issue view's Activity
+ * panel, which is narrower than a project page and taller than a gadget.
+ */
+const PANEL = { width: 880, height: 900 };
+/** An admin page is a full settings page, same width as a project page. */
+const ADMIN = { width: 1280, height: 700 };
 
 export const SCREENS: readonly HarnessScreen[] = [
+  {
+    id: 'time-in-status-panel',
+    listing: 'Time in Status',
+    surface: 'panel',
+    Component: TimeInStatusPanel,
+    viewport: PANEL,
+  },
+  {
+    id: 'time-in-status-admin',
+    listing: 'Time in Status',
+    surface: 'admin',
+    Component: TimeInStatusAdmin,
+    viewport: ADMIN,
+  },
+  {
+    id: 'worklog-reports-admin',
+    listing: 'Worklog Reports',
+    surface: 'admin',
+    Component: WorklogAdmin,
+    viewport: ADMIN,
+  },
+  {
+    id: 'wip-aging-admin',
+    listing: 'WIP Aging',
+    surface: 'admin',
+    Component: AgingAdmin,
+    viewport: ADMIN,
+  },
+  {
+    id: 'sla-breach-admin',
+    listing: 'SLA & Due Dates',
+    surface: 'admin',
+    Component: SlaAdmin,
+    viewport: ADMIN,
+  },
+  {
+    id: 'issue-history-admin',
+    listing: 'Issue History',
+    surface: 'admin',
+    Component: HistoryAdmin,
+    viewport: ADMIN,
+  },
   {
     id: 'time-in-status-page',
     listing: 'Time in Status',

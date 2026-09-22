@@ -280,13 +280,27 @@ export const LineChart = ({
       {subtitle === undefined ? null : <Text size="small">{subtitle}</Text>}
       <Stack space="space.050">
         {[...bySeries.entries()].map(([series, points]) => (
-          <Inline key={series} space="space.100" alignBlock="center" shouldWrap>
-            <Text size="small">{series}</Text>
-            {points.map((point, index) => (
-              <Text key={`${point.x}-${String(index)}`} size="small">
-                {`${point.x}: ${point.y}`}
-              </Text>
-            ))}
+          <Inline key={series} space="space.100" alignBlock="center">
+            {/* Fixed width so the legend column cannot be squeezed into one
+                letter per line by the clipped point row beside it. */}
+            <div style={{ minWidth: 110, whiteSpace: 'nowrap' }}>
+              <Text size="small">{series}</Text>
+            </div>
+            {/*
+              Every point stays in the DOM — that is what this stand-in is
+              for — but a 30-day series across five statuses is 150 text
+              nodes, which wrapped into a wall that buried the rest of the
+              page in `pnpm run ui:screens`. One clipped row per series
+              keeps the screenshot readable and changes nothing a test or an
+              axe audit can see.
+            */}
+            <div style={{ maxHeight: 18, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              {points.map((point, index) => (
+                <Text key={`${point.x}-${String(index)}`} size="small">
+                  {`${point.x}: ${point.y}  `}
+                </Text>
+              ))}
+            </div>
           </Inline>
         ))}
       </Stack>

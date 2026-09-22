@@ -9,6 +9,7 @@ import {
   handleHistoryWindow,
   handleListSlaGoals,
   handleListStatuses,
+  handleStorageEstimate,
   handleSlaReport,
   handleWorklogReport,
   type ListingRuntime,
@@ -50,6 +51,7 @@ export type ResolverKey =
   | 'exportCsv'
   | 'getHistoryWindow'
   | 'getIssueTimeline'
+  | 'getStorageEstimate'
   | 'startIndexing';
 
 /** Everything the five frontends can ask for, in one JSON-serialisable object. */
@@ -157,6 +159,9 @@ async function collect(runtime: ListingRuntime): Promise<ResolverResponses> {
         extension: { ...PIPELINE_CONTEXT.extension, issue: { id: CANONICAL_ISSUE.issue.id } },
       },
     }),
+    // The admin usage page. Instance-wide and unscoped by project, which is
+    // why it takes no invocation context at all.
+    getStorageEstimate: await handleStorageEstimate(runtime),
     startIndexing: { ok: true, data: { started: true } },
   };
 }
@@ -229,6 +234,7 @@ export const ALL_RESOLVER_KEYS: readonly ResolverKey[] = [
   'exportCsv',
   'getHistoryWindow',
   'getIssueTimeline',
+  'getStorageEstimate',
   'startIndexing',
 ];
 

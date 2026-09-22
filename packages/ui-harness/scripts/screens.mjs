@@ -61,6 +61,12 @@ const SCENARIOS = [
  * exactly the failure this script exists to prevent.
  */
 const SCREENS = [
+  { id: 'time-in-status-panel', listing: 'Time in Status', surface: 'panel' },
+  { id: 'time-in-status-admin', listing: 'Time in Status', surface: 'admin' },
+  { id: 'worklog-reports-admin', listing: 'Worklog Reports', surface: 'admin' },
+  { id: 'wip-aging-admin', listing: 'WIP Aging', surface: 'admin' },
+  { id: 'sla-breach-admin', listing: 'SLA & Due Dates', surface: 'admin' },
+  { id: 'issue-history-admin', listing: 'Issue History', surface: 'admin' },
   { id: 'time-in-status-page', listing: 'Time in Status', surface: 'page' },
   { id: 'time-in-status-gadget', listing: 'Time in Status', surface: 'gadget' },
   { id: 'worklog-reports-page', listing: 'Worklog Reports', surface: 'page' },
@@ -76,6 +82,10 @@ const SCREENS = [
 const VIEWPORT = {
   page: { width: 1280, height: 900 },
   gadget: { width: 520, height: 420 },
+  // An issueActivity tab renders inside the issue view's Activity panel:
+  // narrower than a project page, taller than a gadget.
+  panel: { width: 880, height: 900 },
+  admin: { width: 1280, height: 700 },
 };
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
