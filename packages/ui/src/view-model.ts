@@ -90,7 +90,14 @@ export function formatDurationForHumans(ms: Millis, format: DurationFormat = ELA
     const minutes = wholeMinutes % 60;
     return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
   }
-  return formatJiraDuration(ms, { hoursPerDay: 24, daysPerWeek: 7 });
+  // ★ Days, never weeks. The arithmetic below is right — an elapsed week is
+  // seven 24-hour days — but the *rendering* collides with Jira's own
+  // convention: Jira's time-tracking format defaults to a five-day week, so
+  // a Jira-literate reader decodes "1w 2d" as seven days where the value
+  // behind it is nine. That is `DurationFormat`'s argument one unit up, and
+  // the fix is the same: drop the ambiguous unit rather than explain it.
+  // "9d" costs one character and cannot be misread.
+  return formatJiraDuration(ms, { hoursPerDay: 24, daysPerWeek: 3650 });
 }
 
 /** `12 Mar 2026` — short, unambiguous and locale-independent. */

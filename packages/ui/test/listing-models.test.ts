@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WorklogAggregateResult } from '@jfm/engine';
 import type { AgingReport, HistoryReport, SlaReport } from '@jfm/forge-runtime';
+import { formatDurationForHumans } from '../src/view-model.js';
 import {
   CHART_CATEGORY_LIMIT,
   DEFAULT_SLA_GOAL,
@@ -175,7 +176,7 @@ describe('aging view model', () => {
   it('lists in-flight issues and explains the exclusions', () => {
     const table = toAgingTable(aging);
     expect(table.rows[0]?.[0]).toBe('FLOW-2');
-    expect(table.rows[0]?.[2]).toBe('5w 5d');
+    expect(table.rows[0]?.[2]).toBe('40d');
     expect(table.footnotes[0]).toContain('5 finished issues are excluded');
     // "1 finished issues are excluded" was on screen until someone looked.
     expect(toAgingTable({ ...aging, excludedDone: 1 }).footnotes[0]).toContain(
@@ -672,5 +673,18 @@ describe('★ tiles that must not contradict the data beside them', () => {
     const column = table.headers.indexOf('Working hours');
     expect(table.rows[0]?.[column]).toBe('30h');
     expect(table.footnotes.join(' ')).toContain('shown separately');
+  });
+});
+
+describe('★ elapsed durations never roll up into weeks', () => {
+  it('reads an eight-week age in days, which cannot be misread', () => {
+    // The arithmetic was right — an elapsed week is seven 24-hour days — and
+    // the rendering collided with Jira's own convention, whose time-tracking
+    // format defaults to a five-day week. A Jira-literate reader decodes
+    // "1w 2d" as seven days where the value behind it is nine. Same argument
+    // as `DurationFormat` one unit up, same fix: drop the ambiguous unit.
+    expect(formatDurationForHumans(9 * DAY)).toBe('9d');
+    expect(formatDurationForHumans(56 * DAY)).toBe('56d');
+    expect(formatDurationForHumans(9 * DAY)).not.toContain('w');
   });
 });

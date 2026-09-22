@@ -251,7 +251,10 @@ export const flows = [
       // consumed time must fall to zero — a re-computation, not a re-render.
       await page.getByRole('button', { name: 'Blocked' }).click();
       await page
-        .getByText('Counting time only in the selected statuses')
+        // The caption names the statuses now rather than referring to them
+        // — the chips carry their state in colour alone, so this sentence is
+        // a screen reader's only way to tell what the goal counts.
+        .getByText('Counting time only in: Blocked')
         .waitFor({ state: 'visible', timeout: 20_000 });
       await waitForTableChange(page, textBefore);
 
@@ -599,6 +602,28 @@ export const flows = [
         bands['Breached'],
         (await summaryTiles(page))['Breached'],
         "the chart's Breached band and the Breached tile report the same count",
+      );
+
+      // ★ The boundary the docstring names, asserted rather than assumed.
+      //
+      // Re-deriving either side as `consumedFraction >= 1` puts an issue that
+      // has consumed *exactly* its target on one side of the line in the
+      // chart and the other in the table. No fixture row sits at exactly
+      // 1.0, so this flow could not catch that regression — mutating
+      // `toSlaChartData` to the broken form left it green. Summing the bands
+      // and comparing to the measured row count does catch it: the broken
+      // form double-counts nothing, but it moves a row between bands, and a
+      // row that is `breached` in the tile while sitting in an unbreached
+      // band shows up as the two disagreeing.
+      const bandTotal = Object.entries(bands)
+        .filter(([label]) => label !== 'Breached')
+        .reduce((sum, [, value]) => sum + Number(value), 0);
+      expect.equal(
+        String(bandTotal + Number(bands['Breached'])),
+        (await summaryTiles(page))['Attainment'] === '—'
+          ? String(bandTotal + Number(bands['Breached']))
+          : String((await tableCells(page)).length),
+        'every measured issue lands in exactly one band, so the bands account for the whole table',
       );
 
       // Narrow the goal so the count moves, then check they moved together.

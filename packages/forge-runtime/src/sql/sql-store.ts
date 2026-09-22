@@ -245,7 +245,11 @@ export class SqlMetricsStore implements MetricsStore {
   async queryStatusVisits(query: StatusVisitQuery): Promise<StatusVisitRow[]> {
     const clauses = ['project_id = ?'];
     const params: unknown[] = [query.projectId];
-    if (query.issueIds !== undefined && query.issueIds.length > 0) {
+    if (query.issueIds !== undefined) {
+      // No `.length > 0` guard: an empty list must match nothing, and
+      // `placeholders(0)` is `NULL`, so `issue_id IN (NULL)` does exactly
+      // that. See `StatusVisitQuery.issueIds` — this is a page of ids the
+      // caller holds, not a filter a user chose.
       clauses.push(`issue_id IN (${placeholders(query.issueIds.length)})`);
       params.push(...query.issueIds);
     }

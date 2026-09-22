@@ -292,17 +292,15 @@ export const flows = [
       // The round trip a snapshot cannot show: re-open the control and the
       // range in force has actually changed.
       //
-      // ⚠️ FAILS TODAY, and deliberately left failing. `runPipeline` builds the
-      // live runtime's `SettingsStore` on a `RecordingSqlExecutor`, which
-      // records every write and answers every SELECT with no rows — so
-      // `backfillMonths` reverts to the default 12 on the very next read.
-      // `handlers.test.ts` already met this and built `StatefulSettingsSql` to
-      // get past it ("the whole point is that the second sees the first"); the
-      // fixture behind the live harness never got the same treatment. The
-      // consequence is worse than a failing assertion: `setHistoryWindow`
-      // writes the setting and then re-reads it to compute the backfill's lower
-      // bound, so the re-index this flow just triggered covered twelve months
-      // while telling the user it covered two years.
+      // This used to fail, and the comment here used to say so at length —
+      // `runPipeline` built the live runtime's `SettingsStore` on a
+      // `RecordingSqlExecutor`, which answers every SELECT with no rows, so
+      // `backfillMonths` reverted to 12 on the very next read. That was a
+      // defect in the fixture rather than in the product, and it is fixed
+      // (`SettingsSqlExecutor`). The note is kept short deliberately: a
+      // stale "this is broken" comment on a passing flow is its own kind of
+      // lie, and this one claimed a live data-correctness bug that does not
+      // ship.
       await page.getByRole('button', { name: 'Extend history' }).click();
       const reopened = page.getByRole('dialog');
       await reopened.waitFor({ state: 'visible', timeout: 15_000 });
@@ -430,6 +428,17 @@ export const flows = [
       expect.ok(
         (await table.locator('tbody tr').count()) > 0,
         'every table this app owns is listed, including the ones holding nothing',
+      );
+      // ★ And a real count is read, not just the presence of rows. Asserting
+      // only that rows are *listed* passed unchanged when every count was
+      // rendered as "0" — a storage page reporting an empty database for a
+      // populated one is exactly what this flow is supposed to catch.
+      const issueMetaRow = (
+        await table.locator('tbody tr').filter({ hasText: 'issue_meta' }).first().innerText()
+      ).split('\t');
+      expect.ok(
+        /^[1-9][\d,]*$/.test((issueMetaRow[1] ?? '').trim()),
+        `issue_meta reports what the pipeline actually stored, but it reads "${(issueMetaRow[1] ?? '').trim()}"`,
       );
 
       // Never presented as measured: it is row counts times per-row size

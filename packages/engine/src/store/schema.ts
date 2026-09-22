@@ -128,7 +128,14 @@ export const CREATE_STATEMENTS: readonly string[] = [
      to_value            TEXT         NULL,
      from_id             VARCHAR(128) NULL,
      to_id               VARCHAR(128) NULL,
-     PRIMARY KEY (change_id),
+     -- ★ (issue_id, change_id), not change_id alone. A change id is
+     -- entryId:itemIndex, which is globally unique only while Jira supplies
+     -- an entry id; toHistoryRecords falls back to idx-<n> when it does
+     -- not, so two different issues each with an id-less first changelog
+     -- entry both produce idx-0:0 and the second insert silently overwrote
+     -- the first. MemoryStore partitions by issue and kept both, so the
+     -- reference store and the shipping one disagreed on the row count.
+     PRIMARY KEY (issue_id, change_id),
      KEY idx_history_project_time (project_id, changed_at),
      KEY idx_history_issue (issue_id, changed_at),
      KEY idx_history_field (project_id, field, changed_at)

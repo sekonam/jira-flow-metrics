@@ -211,6 +211,19 @@ export function GadgetConfigForm({
  *   selection is unsaved;
  * - **never saved** — the v1 behaviour, unchanged.
  */
+/** The chosen statuses by name, in the order the chips are shown. */
+function countedNames(
+  statuses: readonly { id: string; name: string }[],
+  countedStatusIds: readonly string[],
+): string {
+  const chosen = statuses.filter((status) => countedStatusIds.includes(status.id));
+  // An id with no matching status is still worth naming: it means the goal
+  // counts something this project no longer has, and silently dropping it
+  // would make the caption disagree with the numbers.
+  const unknown = countedStatusIds.filter((id) => !statuses.some((s) => s.id === id));
+  return [...chosen.map((s) => s.name), ...unknown].join(', ');
+}
+
 export function SlaGoalForm({
   statuses,
   goal,
@@ -290,10 +303,21 @@ export function SlaGoalForm({
           if (value !== undefined) onChange(withTarget(goal, Number(value)));
         }}
       />
+      {/*
+        ★ The caption names the counted statuses rather than referring to
+        them. An ADS `Button` with `isSelected` emits no `aria-pressed`,
+        `aria-selected` or `aria-current` — the state is carried by
+        background colour alone, so a screen-reader user toggling "In
+        Progress" hears "In Progress, button" before and after, with no way
+        to tell which statuses the goal counts. Every number on this page is
+        divided by that goal, so a text fallback is not a nicety. axe does
+        not flag it (an absent `aria-pressed` is not a violation), which is
+        why it survived the audit that runs on every screen.
+      */}
       <Text size="small">
         {goal.countedStatusIds.length === 0
           ? 'Counting time in every status. Select statuses to count only those.'
-          : 'Counting time only in the selected statuses.'}
+          : `Counting time only in: ${countedNames(statuses, goal.countedStatusIds)}.`}
       </Text>
       <Inline space="space.100" shouldWrap>
         {statuses.map((status) => (

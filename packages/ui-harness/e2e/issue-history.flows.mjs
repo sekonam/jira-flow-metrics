@@ -466,8 +466,8 @@ export const flows = [
         'the issue_history table this listing fills is listed by name',
       );
       expect.ok(
-        /^[\d,]+$/.test(historyRow[1]),
-        `the issue_history row count is a number, but it reads "${historyRow[1]}"`,
+        /^[1-9][\d,]*$/.test(historyRow[1]),
+        `the issue_history row count is a real stored count, but it reads "${historyRow[1]}"`,
       );
 
       const body = await page.locator('body').innerText();

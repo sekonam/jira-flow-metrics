@@ -471,8 +471,8 @@ export const flows = [
       const worklogRow = rows.find((row) => row[0] === 'worklog');
       expect.ok(worklogRow !== undefined, 'the worklog table this listing fills is listed by name');
       expect.ok(
-        /^[\d,]+$/.test(worklogRow[1]),
-        `the worklog table's row count is a number, but it reads "${worklogRow[1]}"`,
+        /^[1-9][\d,]*$/.test(worklogRow[1]),
+        `the worklog table's row count is a real stored count, but it reads "${worklogRow[1]}"`,
       );
 
       const body = await page.locator('body').innerText();

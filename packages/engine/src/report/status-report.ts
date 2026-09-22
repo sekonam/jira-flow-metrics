@@ -32,7 +32,20 @@ export interface StatusReport {
   readonly columns: readonly { statusId: StatusId; name: string }[];
   readonly rows: readonly StatusReportRow[];
   readonly basis: DurationBasis;
-  /** Per-status distribution across the whole result set. */
+  /**
+   * Per-status distribution across **this page**, not the whole match.
+   *
+   * It used to say "the whole result set", which it never was: the
+   * percentiles are computed from `rows`, while `matchingIssueCount` is a
+   * real `COUNT(*)`. On a capped report that means "median 2h" can describe
+   * the 3 issues shown rather than the 10 that matched — so the page must
+   * render `capped` beside it, which it does, and this comment must not
+   * claim otherwise.
+   *
+   * Computing it over the full match would mean fetching every matching
+   * issue's aggregates on every render, which is the cost the page size
+   * exists to bound.
+   */
   readonly summaryByStatus: Readonly<Record<StatusId, DistributionSummary>>;
   /** Issues on this page. */
   readonly issueCount: number;

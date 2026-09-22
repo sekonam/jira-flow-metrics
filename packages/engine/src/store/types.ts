@@ -53,6 +53,7 @@ export interface StatusVisitRow {
 
 export interface StatusVisitQuery {
   readonly projectId: string;
+  /** Restrict to these issues. An empty array matches nothing, as above. */
   readonly issueIds?: readonly string[];
   /** Visits overlapping `[from, to)`. A visit still open has no end to compare. */
   readonly from?: Millis;
@@ -143,6 +144,17 @@ export interface IssueMetaQuery {
 
 export interface StatusDurationQuery {
   readonly projectId: string;
+  /**
+   * Restrict to these issues. **An empty array matches nothing.**
+   *
+   * Deliberately the opposite of the filters on {@link IssueMetaQuery},
+   * where an empty array means "no filter" — and the difference is not an
+   * inconsistency but the two different questions being asked. There, an
+   * empty list is a *user* who filtered on nothing. Here, it is a *caller*
+   * handing over the page of issue ids it already holds, and an empty page
+   * means there is nothing to fetch. Returning the whole project for it
+   * would be the worst possible reading.
+   */
   readonly issueIds?: readonly string[];
   readonly statusIds?: readonly StatusId[];
   readonly limit?: number;

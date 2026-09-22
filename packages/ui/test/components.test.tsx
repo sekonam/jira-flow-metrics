@@ -376,7 +376,11 @@ describe('SlaGoalForm', () => {
     onChange.mockClear();
     const goal = { ...DEFAULT_SLA_GOAL, countedStatusIds: ['10200'] };
     render(<SlaGoalForm statuses={STATUSES} goal={goal} onChange={onChange} />);
-    expect(screen.getByText(/only in the selected statuses/)).toBeDefined();
+    // The caption names the statuses rather than referring to them: an ADS
+    // Button with `isSelected` carries its state in colour alone, so this
+    // sentence is the only thing a screen reader can use to tell which
+    // statuses the goal counts.
+    expect(screen.getByText(/only in: In Review/)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'In Review' }));
     expect(onChange).toHaveBeenCalledWith({ ...goal, countedStatusIds: [] });
   });
