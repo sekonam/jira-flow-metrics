@@ -495,6 +495,16 @@ export interface DynamicTableProps {
  * into the ADS `head`/`rows` props. Passing them through directly is what the
  * host effectively does, and it keeps a real `<table>` in the DOM, which is
  * what the accessibility audit and the column-order assertions need.
+ *
+ * ⚠️ **`getByRole('columnheader')` matches nothing here — use
+ * `table thead th`.** ADS emits a correct `<thead><tr><th>` and the computed
+ * display values are genuine table semantics (checked: `table`,
+ * `table-header-group`, `table-row`, `table-cell`), so this is neither a
+ * markup nor a styling fault. It is Playwright's html-aria mapping, which
+ * resolves a `<th>` carrying no `scope` attribute as `cell` rather than
+ * `columnheader`. Two e2e flow authors lost time to it independently, and it
+ * fails *silently* — a role query that matches nothing looks exactly like a
+ * missing header.
  */
 export const DynamicTable = ({
   head,
