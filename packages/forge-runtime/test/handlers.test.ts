@@ -9,7 +9,7 @@ import {
   type JiraSearchPage,
   type StatusMeta,
 } from '@jfm/engine';
-import { RecordingSqlExecutor } from '../src/sql/executor.js';
+import { RecordingSqlExecutor, SettingsSqlExecutor } from '../src/sql/executor.js';
 import { SettingsStore } from '../src/settings.js';
 import { ListingRuntime } from '../src/runtime.js';
 import {
@@ -631,42 +631,21 @@ describe('untrusted payload limits', () => {
 });
 
 /**
- * A settings executor that actually remembers what was written.
+ * The runtime, but with a settings store that persists.
  *
- * `RecordingSqlExecutor` answers every SELECT with no rows, which is right
- * for statement-shape assertions and useless here: extending the history
- * window is a write followed by a read, and the whole point is that the
- * second sees the first.
+ * `build()` uses `RecordingSqlExecutor`, which answers every SELECT with no
+ * rows — right for statement-shape assertions and useless here: extending the
+ * history window and saving a goal are both a write followed by a read, and
+ * the whole point is that the second sees the first. `SettingsSqlExecutor`
+ * lives beside the recorder in `sql/executor.ts` so the live UI harness can
+ * use it too; it used to be a private copy in this file, and the pipeline
+ * fixture that needed it most did not have one.
  */
-class StatefulSettingsSql extends RecordingSqlExecutor {
-  private readonly rows = new Map<string, string>();
-
-  override query<T>(statement: string, params: readonly unknown[] = []): Promise<T[]> {
-    void super.query(statement, params);
-    if (!statement.includes('app_settings')) return Promise.resolve([]);
-    const found = params
-      .filter((p): p is string => typeof p === 'string')
-      .flatMap((scope) => {
-        const settings = this.rows.get(scope);
-        return settings === undefined ? [] : [{ scope_key: scope, settings }];
-      });
-    return Promise.resolve(found as T[]);
-  }
-
-  override execute(statement: string, params: readonly unknown[] = []): Promise<void> {
-    void super.execute(statement, params);
-    if (statement.includes('app_settings')) {
-      this.rows.set(String(params[0]), String(params[1]));
-    }
-    return Promise.resolve();
-  }
-}
-
 function buildWithSettings() {
   const built = build();
   // Same runtime, but with a settings store that persists. Rebuilt rather
   // than mutated so the other suites keep the cheap recording executor.
-  const sql = new StatefulSettingsSql();
+  const sql = new SettingsSqlExecutor();
   const runtime = new ListingRuntime(
     {
       api: built.jira,
@@ -722,6 +701,31 @@ describe('the history window — ROADMAP stage 5, "extend history beyond 12 mont
     // applying to some future backfill nobody triggers.
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.projectId).toBe('10000');
+  });
+
+  it('★ the re-index a widening triggers actually covers the new range', async () => {
+    // The sharp consequence behind the round-trip, and the reason a settings
+    // store that forgets is worse than it first looks: `setHistoryWindow`
+    // writes the setting and *then* calls `startBackfill`, which re-reads
+    // `backfillMonths` to compute the backfill's lower bound. Against a store
+    // that does not persist, the re-index a user just asked for silently
+    // covers the old range while the page reports the new one — a wrong
+    // answer arrived at through two correct-looking steps.
+    const { runtime, store } = buildWithSettings();
+    const now = Date.parse('2026-03-06T00:00:00Z');
+    const twelveMonths = now - 12 * 30 * 86_400_000;
+
+    await handleStartIndexing(runtime, { context: CONTEXT });
+    expect((await store.getIndexState('10000'))?.backfillFrom).toBe(twelveMonths);
+
+    await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: 36 } });
+    // Three years back, not one: the state the next slice reads its JQL bound
+    // from has to reflect what was just saved.
+    expect((await store.getIndexState('10000'))?.backfillFrom).toBe(now - 36 * 30 * 86_400_000);
+
+    // And all history really means no lower bound at all.
+    await handleExtendHistory(runtime, { context: CONTEXT, payload: { months: null } });
+    expect((await store.getIndexState('10000'))?.backfillFrom).toBeNull();
   });
 
   it('refuses to narrow the window, and does not start a backfill', async () => {

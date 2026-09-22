@@ -119,6 +119,54 @@ export class RecordingSqlExecutor implements SqlExecutor {
   }
 }
 
+/**
+ * A `RecordingSqlExecutor` that also **remembers what was written** to
+ * `app_settings`.
+ *
+ * `RecordingSqlExecutor` answers every SELECT with no rows, which is exactly
+ * right for asserting on statement shape and quietly wrong for anything that
+ * writes and then reads. Every stored setting in this product is that shape:
+ * extending the history window and saving an SLA goal are both a `put`
+ * followed by a `get`, and the whole point is that the second sees the first.
+ *
+ * Without this, a harness built on `RecordingSqlExecutor` shows both of those
+ * as having silently failed — and cannot see the sharper consequence:
+ * `setHistoryWindow` writes the setting and then calls `startBackfill`, which
+ * **re-reads** `backfillMonths` to compute the backfill's lower bound. Against
+ * a store that forgets, the re-index a user just asked for covers the old
+ * range while the UI reports the new one.
+ *
+ * Only `app_settings` is modelled, because it is the only table reached
+ * through this port — the metrics tables go through `MetricsStore`, whose
+ * in-memory reference implementation already persists.
+ */
+export class SettingsSqlExecutor extends RecordingSqlExecutor {
+  private readonly rows = new Map<string, string>();
+
+  override query<T>(statement: string, params: readonly unknown[] = []): Promise<T[]> {
+    void super.query(statement, params);
+    if (!statement.includes('app_settings')) return Promise.resolve([]);
+    // `SettingsStore.get` selects the project scope and the global one in a
+    // single `IN (?, ?)` and chooses between them in code — see the comment
+    // there about Forge SQL refusing a bound parameter inside ORDER BY.
+    const found = params
+      .filter((param): param is string => typeof param === 'string')
+      .flatMap((scope) => {
+        const settings = this.rows.get(scope);
+        return settings === undefined ? [] : [{ scope_key: scope, settings }];
+      });
+    return Promise.resolve(found as T[]);
+  }
+
+  override execute(statement: string, params: readonly unknown[] = []): Promise<void> {
+    void super.execute(statement, params);
+    if (statement.includes('app_settings')) {
+      this.rows.set(String(params[0]), String(params[1]));
+    }
+    return Promise.resolve();
+  }
+}
+
 function normalise(statement: string): string {
   return statement.replace(/\s+/g, ' ').trim();
 }

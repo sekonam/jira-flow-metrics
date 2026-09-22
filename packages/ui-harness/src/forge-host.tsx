@@ -356,6 +356,21 @@ export interface SelectProps {
   readonly options?: readonly SelectOption[];
   readonly placeholder?: string;
   readonly defaultValue?: SelectOption;
+  /**
+   * The **controlled** selection. `null` clears it.
+   *
+   * Forwarded rather than dropped, which it used to be — and that omission
+   * made a real product guarantee unobservable: the SLA page passes `value`
+   * so the saved-goal picker stops naming a goal the report is no longer
+   * computed from, and with the prop discarded here the picker went on
+   * naming it whatever the product did. A stand-in that silently ignores a
+   * prop cannot fail, which is worse than failing.
+   *
+   * `undefined` is left off entirely so the control stays uncontrolled where
+   * the product means it to be; `null` is passed through, because to
+   * react-select that is a cleared value rather than an absent prop.
+   */
+  readonly value?: SelectOption | null;
   readonly isDisabled?: boolean;
   readonly isLoading?: boolean;
   readonly onChange?: (option: SelectOption | null) => void;
@@ -366,6 +381,7 @@ export const Select = ({
   options,
   placeholder,
   defaultValue,
+  value,
   isDisabled,
   isLoading,
   onChange,
@@ -375,6 +391,7 @@ export const Select = ({
     {...(options === undefined ? {} : { options })}
     {...(placeholder === undefined ? {} : { placeholder })}
     {...(defaultValue === undefined ? {} : { defaultValue })}
+    {...(value === undefined ? {} : { value })}
     {...(isDisabled === undefined ? {} : { isDisabled })}
     {...(isLoading === undefined ? {} : { isLoading })}
     {...(onChange === undefined ? {} : { onChange })}

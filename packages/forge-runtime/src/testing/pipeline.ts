@@ -16,7 +16,7 @@ import {
   type SearchParams,
   type StatusMeta,
 } from '@jfm/engine';
-import { RecordingSqlExecutor } from '../sql/executor.js';
+import { SettingsSqlExecutor } from '../sql/executor.js';
 import { SettingsStore } from '../settings.js';
 import { ListingRuntime } from '../runtime.js';
 import { handleBackfillJob, handleStartIndexing } from '../handlers.js';
@@ -353,7 +353,13 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   const issues = options.issues ?? [CANONICAL_ISSUE];
   const store = new MemoryStore();
   const jira = new FixtureJira(issues, 2, options.browseAllowed ?? true, options.statuses);
-  const sql = new RecordingSqlExecutor();
+  // `SettingsSqlExecutor`, not `RecordingSqlExecutor`: settings are written
+  // and then read back — extending the history window and saving an SLA goal
+  // are both a `put` followed by a `get` — and an executor that answers every
+  // SELECT with no rows makes both silently no-ops. Found by the live UI
+  // harness, which exists to catch exactly that shape of failure and caught
+  // it in its own fixture first.
+  const sql = new SettingsSqlExecutor();
   const settings = new SettingsStore(sql);
   const queue: { projectId: string; slice: number }[] = [];
   const now = options.now ?? PIPELINE_NOW;

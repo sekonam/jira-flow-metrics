@@ -25,9 +25,11 @@ import { callLiveResolver, resetLiveRuntimes } from '@jfm/ui-harness/live-resolv
  * recorded Jira fixtures, and kept alive between calls so state round-trips.
  * See `src/live-resolvers.ts`.
  *
- * Flows run in parallel, one browser context each, and each gets its own
- * freshly-built runtimes so one flow's saved goal cannot leak into another's
- * assertions.
+ * Flows run in parallel, one browser context each, bounded by `LANES` —
+ * unbounded, forty contexts hammering one dev server and one Node process
+ * running real pipelines starved each other into 30-second timeouts that look
+ * exactly like product failures. Parallel enough to be fast, bounded enough
+ * that a red result means something.
  *
  * ⚠️ What this still does not prove: that Forge's own renderer draws this
  * tree, or that Atlassian's bridge reaches a deployed resolver. Only a real
@@ -36,6 +38,33 @@ import { callLiveResolver, resetLiveRuntimes } from '@jfm/ui-harness/live-resolv
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E2E = join(HERE, '..', 'e2e');
+
+/**
+ * How many flows run at once.
+ *
+ * Every flow drives a real browser context against one dev server, and every
+ * resolver call it makes runs a real report over a real store in this single
+ * Node process. Past this the contexts spend their time waiting on each other
+ * and time out on first paint — a failure indistinguishable from a broken
+ * page, which is the worst kind to have in a suite.
+ */
+const LANES = Number(process.env['JFM_E2E_LANES'] ?? 6);
+
+/** Run `work` over `items`, at most `limit` at a time, preserving order. */
+async function mapWithLimit(items, limit, work) {
+  const results = new Array(items.length);
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await work(items[index]);
+    }
+  });
+  await Promise.all(lanes);
+  return results;
+}
 
 /** `expect`, small enough to read and specific enough to debug from. */
 function makeExpect(flowName) {
@@ -118,6 +147,12 @@ async function main() {
   const server = await createServer({
     configFile: join(HERE, '..', 'harness', 'vite.config.mts'),
     logLevel: 'warn',
+    // The harness config pins port 5183 with `strictPort`, which is right for
+    // `ui:screens` (a predictable URL to open by hand) and wrong here: two
+    // concurrent runs — a developer's and CI's, or two agents' — kill each
+    // other with "Port 5183 is already in use". Port 0 asks the OS for a free
+    // one, and the runner reads the real URL back off the server anyway.
+    server: { port: 0, strictPort: false },
     plugins: [
       {
         name: 'jfm-live-resolvers',
@@ -145,7 +180,9 @@ async function main() {
   });
   await server.listen();
   const base = server.resolvedUrls.local[0].replace(/\/$/, '');
-  process.stdout.write(`harness at ${base}\nrunning ${String(flows.length)} flows in parallel\n\n`);
+  process.stdout.write(
+    `harness at ${base}\nrunning ${String(flows.length)} flows, ${String(LANES)} at a time\n\n`,
+  );
 
   // One set of runtimes per run, built lazily on first call and shared by the
   // flows — each flow asserts only on what it did, and the fixtures are the
@@ -153,7 +190,7 @@ async function main() {
   resetLiveRuntimes();
 
   const browser = await chromium.launch();
-  const results = await Promise.all(flows.map((flow) => runFlow(browser, base, flow)));
+  const results = await mapWithLimit(flows, LANES, (flow) => runFlow(browser, base, flow));
   await browser.close();
   await server.close();
 
