@@ -706,6 +706,16 @@ the real `invoke`, its payload validation and its rate limiter all run.
     A regression test builds 600 ancient closed issues plus one recent live one and asserts the
     chart finds the recent one.
 
+    **Two more from the same review are worth naming**, because both were the same class of
+    mistake — a correct rule reintroduced incorrectly one layer out. The SLA goal editor sent no
+    `id` when saving and then found "its" goal in the response _by name_, so two goals sharing a
+    name would have silently attached the page to the older definition: exactly what
+    `resolveSlaGoal` refuses to let a payload do, done by the client instead. And the
+    extend-history modal collapsed "could not read the current range" into "the range is all
+    history", so a transient failure rendered an error box above a confident, false claim that
+    everything was already indexed. The server now returns the id it saved, and unknown is its own
+    state.
+
 15. **Platform findings from the September 2026 documentation sweep, recorded because they bear on
     decisions already made here.**
 
