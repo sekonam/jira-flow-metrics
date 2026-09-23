@@ -59,10 +59,10 @@ human more than a field left out.
 | **Remote hostnames**              | ✅ None. "Atlassian reports the build eligible for Runs on Atlassian — the app makes no external egress" — `apps/time-in-status/manifest.yml:8-11`. Answer the submission question "none".                                                                                               | manifests                                                                          |
 | **Privacy statement text**        | ✅ Written, five per-listing variants, each ~5 bullets incl. the stated residual                                                                                                                                                                                                         | `docs/LISTING-COPY.md:99-120` and the equivalent section in each of the other four |
 | **Security statement text**       | ✅ Same block as above. Source of record for the residual is `TECHNICAL-SPEC.md` § 11 item 6                                                                                                                                                                                             | as above                                                                           |
-| **Privacy policy URL**            | ⚠️ **Content drafted, URL still missing.** The page text now exists at `docs/public-site/privacy-policy.md` (placeholders `[VENDOR NAME]`, `[CONTACT EMAIL]`, `[EFFECTIVE DATE]` unfilled); it must be hosted — see § 6 — before there is a URL to paste                                | `docs/public-site/privacy-policy.md`                                               |
+| **Privacy policy URL**            | ⚠️ **Content drafted, URL still missing.** The page text now exists at `docs/public-site/privacy-policy.md` (placeholders `[VENDOR NAME]`, `[CONTACT EMAIL]`, `[EFFECTIVE DATE]` unfilled); it must be hosted — see § 6 — before there is a URL to paste                                 | `docs/public-site/privacy-policy.md`                                               |
 | **EULA / End User Terms**         | ❌ **Not decided.** No terms document, and no recorded decision to use Atlassian's standard end-user agreement                                                                                                                                                                           | —                                                                                  |
 | **Documentation URL**             | ❌ **Does not exist.** The source repo is private (`package.json:7` — `"license": "UNLICENSED"`); only `github.com/sekonam/jira-flow-metrics-assets` is public, and it holds five PNG icons                                                                                              | —                                                                                  |
-| **Support contact / URL**         | ⚠️ **Page drafted, contact still missing.** `docs/public-site/support.md` exists with a two-business-day first-reply commitment for the human to confirm; `[SUPPORT EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]`, `[DOCS URL]` unfilled, and the page is not hosted — see § 6                 | `docs/public-site/support.md`                                                      |
+| **Support contact / URL**         | ⚠️ **Page drafted, contact still missing.** `docs/public-site/support.md` exists with a two-business-day first-reply commitment for the human to confirm; `[SUPPORT EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]`, `[DOCS URL]` unfilled, and the page is not hosted — see § 6                  | `docs/public-site/support.md`                                                      |
 | **Vendor profile (name, logo)**   | ⚠️ Partial. Developer Space "AskMe Solutions" exists (`START-HERE.md:77`); the Marketplace **vendor account does not** (`START-HERE.md:79`, `ROADMAP.md:196`). No vendor logo in the repo                                                                                                | `assets/thumbnails/` holds app icons only                                          |
 | **Highlights**                    | ❌ **No copy written for any listing.** The field is structured (title + caption + image). `PROMOTION.md:225` lists it — "the console's short bullets; nouns, not adjectives" — and nothing was drafted                                                                                  | —                                                                                  |
 | **YouTube / demo video**          | ❌ None, and optional. Ship without it                                                                                                                                                                                                                                                   | —                                                                                  |
@@ -493,7 +493,7 @@ answer pre-filled from the files.
    `support@` address on the same domain and "two business days" is a commitment a solo developer
    can actually honour; "same day" is not. The support page is drafted at
    `docs/public-site/support.md` with exactly that commitment — confirm it, fill `[SUPPORT
-   EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]` and `[DOCS URL]`, and publish it alongside `/privacy`.
+EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]` and `[DOCS URL]`, and publish it alongside `/privacy`.
 
 ### Phase B — make the app sellable (blocking, needs a manifest change)
 
@@ -632,8 +632,6 @@ hosting also works), publish the same two files at `/privacy` and `/support`. Co
 DNS wait, reads as a vendor site, and gives the `/docs` and `/terms` pages from Phase A step 3 a
 home with a stable identity. Route (a) can ship first and route (b) can take over later — a
 listing's URLs can be edited after approval.
-
-
 
 **This is roughly two weeks of human work away from a submittable listing ①, and the single
 biggest blocker is that no Marketplace vendor account exists** — every other blocking item either

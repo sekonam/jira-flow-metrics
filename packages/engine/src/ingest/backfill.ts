@@ -64,6 +64,13 @@ export interface BackfillOptions {
    * without re-checking every issue against every viewer.
    */
   readonly excludeRestrictedIssues?: boolean;
+  /**
+   * Walk only issues whose key sorts after this one, in key order. The
+   * corrupted-cursor recovery's second tier — see {@link buildBackfillJql}.
+   * Never set by callers; it exists on the options because the JQL builder
+   * is where both orderings live.
+   */
+  readonly afterKey?: string | null;
   readonly issuesPerSlice: number;
   readonly pageSize: number;
   readonly timeBudgetMs: number;
@@ -147,6 +154,25 @@ export function buildBackfillJql(options: BackfillOptions): string {
   if (options.historyFrom !== undefined && options.historyFrom !== null) {
     clauses.push(`created >= ${formatJqlInstant(options.historyFrom)}`);
   }
+  // ★ Key mode — the second reseek tier, and a different ordering on
+  // purpose.
+  //
+  // A created-date reseek is minute-grained (`formatJqlInstant`), so a
+  // corrupted pagination token *inside* a cluster of issues sharing one
+  // created-minute cannot be skipped past by date: the reseek re-lands on
+  // the same page and receives the same corrupted token — observed live on
+  // a bulk-seeded project, hundreds of issues in a few minutes. Issue keys
+  // have no such granularity: within one project they are a strictly
+  // increasing sequence, `issuekey > K` excludes everything already written
+  // *exactly*, and `ORDER BY issuekey ASC` makes every page's tail the
+  // maximum key walked — so the next reseek bound is always strictly past
+  // the last, and progress is monotonic no matter how the corruption
+  // recurs. The walk stays in key order from here to the end; created order
+  // only exists for the cursor arithmetic, which key order provides better.
+  if (options.afterKey !== undefined && options.afterKey !== null) {
+    clauses.push(`issuekey > ${quoteJql(options.afterKey)}`);
+    return `${clauses.join(' AND ')} ORDER BY issuekey ASC`;
+  }
   return `${clauses.join(' AND ')} ORDER BY created ASC`;
 }
 
@@ -217,11 +243,23 @@ const CURSOR_SEEK_MARKER = '::seek=';
  */
 const CURSOR_ATTEMPTED_MARKER = '::attempted=';
 
+/**
+ * The last successfully written issue key, and the key bound of the most
+ * recent key-mode reseek attempt. The second reseek tier's equivalents of
+ * `::seek=`/`::attempted=`, with the same division of labour: `::key=` is
+ * the resume bookmark, `::keyattempted=` is what detects a reseek that made
+ * no progress. Present only once the walk has entered key mode.
+ */
+const CURSOR_KEY_MARKER = '::key=';
+const CURSOR_KEY_ATTEMPTED_MARKER = '::keyattempted=';
+
 export function encodeCursor(
   token: string | null,
   skip: number,
   seekFrom?: Millis | null,
   attemptedSeek?: Millis | null,
+  lastKey?: string | null,
+  attemptedKeySeek?: string | null,
 ): string | null {
   let encoded = skip > 0 ? `${token ?? ''}${CURSOR_SKIP_MARKER}${String(skip)}` : token;
   if (seekFrom !== undefined && seekFrom !== null) {
@@ -229,6 +267,12 @@ export function encodeCursor(
   }
   if (attemptedSeek !== undefined && attemptedSeek !== null) {
     encoded = `${encoded ?? ''}${CURSOR_ATTEMPTED_MARKER}${String(attemptedSeek)}`;
+  }
+  if (lastKey !== undefined && lastKey !== null) {
+    encoded = `${encoded ?? ''}${CURSOR_KEY_MARKER}${lastKey}`;
+  }
+  if (attemptedKeySeek !== undefined && attemptedKeySeek !== null) {
+    encoded = `${encoded ?? ''}${CURSOR_KEY_ATTEMPTED_MARKER}${attemptedKeySeek}`;
   }
   return encoded;
 }
@@ -254,9 +298,36 @@ export function decodeCursor(raw: string | null): {
   skip: number;
   seekFrom: Millis | null;
   attemptedSeek: Millis | null;
+  lastKey: string | null;
+  attemptedKeySeek: string | null;
 } {
-  if (raw === null) return { token: null, skip: 0, seekFrom: null, attemptedSeek: null };
+  if (raw === null)
+    return {
+      token: null,
+      skip: 0,
+      seekFrom: null,
+      attemptedSeek: null,
+      lastKey: null,
+      attemptedKeySeek: null,
+    };
   let rest = raw;
+  // Markers are appended in a fixed order and parsed back in reverse, each
+  // slice removing its own tail. A truncated marker decodes to null, like
+  // `parseMarkerInstant` — an empty key is no bookmark.
+  let attemptedKeySeek: string | null = null;
+  const keyAttemptedAt = rest.indexOf(CURSOR_KEY_ATTEMPTED_MARKER);
+  if (keyAttemptedAt !== -1) {
+    const text = rest.slice(keyAttemptedAt + CURSOR_KEY_ATTEMPTED_MARKER.length);
+    attemptedKeySeek = text === '' ? null : text;
+    rest = rest.slice(0, keyAttemptedAt);
+  }
+  let lastKey: string | null = null;
+  const keyAt = rest.indexOf(CURSOR_KEY_MARKER);
+  if (keyAt !== -1) {
+    const text = rest.slice(keyAt + CURSOR_KEY_MARKER.length);
+    lastKey = text === '' ? null : text;
+    rest = rest.slice(0, keyAt);
+  }
   let attemptedSeek: Millis | null = null;
   const attemptedAt = rest.indexOf(CURSOR_ATTEMPTED_MARKER);
   if (attemptedAt !== -1) {
@@ -270,13 +341,16 @@ export function decodeCursor(raw: string | null): {
     rest = rest.slice(0, seekAt);
   }
   const skipAt = rest.indexOf(CURSOR_SKIP_MARKER);
-  if (skipAt === -1) return { token: rest || null, skip: 0, seekFrom, attemptedSeek };
+  if (skipAt === -1)
+    return { token: rest || null, skip: 0, seekFrom, attemptedSeek, lastKey, attemptedKeySeek };
   const skip = Number(rest.slice(skipAt + CURSOR_SKIP_MARKER.length));
   return {
     token: rest.slice(0, skipAt) || null,
     skip: Number.isFinite(skip) && skip > 0 ? skip : 0,
     seekFrom,
     attemptedSeek,
+    lastKey,
+    attemptedKeySeek,
   };
 }
 
@@ -394,20 +468,63 @@ export async function runBackfillSlice(
   // rewritten — safe (idempotent), but unbounded and billed for on a
   // consumption-priced platform, which is worse than failing loudly.
   let lastAttemptedSeek: Millis | null = initialCursor.attemptedSeek;
+  // The key-mode bookkeeping — see `buildBackfillJql`'s key-mode note.
+  // `lastWrittenKey` is the tail of the last written batch (in key mode,
+  // the maximum key walked, because pages come back key-ordered);
+  // `lastAttemptedKeySeek` detects a key reseek that wrote nothing.
+  let lastWrittenKey: string | null = initialCursor.lastKey;
+  let lastAttemptedKeySeek: string | null = initialCursor.attemptedKeySeek;
+  // Once entered, the walk stays in key mode: its bounds are exact where
+  // the created-minute bound is not, so falling back would only re-open the
+  // ambiguity that forced the switch.
+  let keyMode = initialCursor.attemptedKeySeek !== null;
+  if (keyMode) {
+    jql = buildBackfillJql({ ...options, afterKey: lastWrittenKey });
+  }
 
   try {
     outer: for (;;) {
       const usingUnrestrictedJql = jql === buildBackfillJql(unrestricted(options));
 
       if (cursor !== null && isCorruptedCursor(cursor) && lastCreatedAt !== null) {
-        if (lastCreatedAt === lastAttemptedSeek) {
-          throw new Error(
-            `Backfill stuck: Jira handed back a corrupted pagination cursor and a reseek from ` +
-              `the same bound (${String(lastCreatedAt)}) was already attempted, with nothing ` +
-              `written since. Likely too many issues share this created-minute for a ` +
-              `minute-grained JQL bound to skip past the corrupted boundary — see ` +
-              `TECHNICAL-SPEC § 11 item 11.`,
+        if (keyMode || lastCreatedAt === lastAttemptedSeek) {
+          // ★ The second tier: reseek by issue key, in key order.
+          //
+          // The created-date reseek below is minute-grained, and a corrupted
+          // token *inside* a cluster of issues sharing one created-minute
+          // re-lands on the same page and receives the same corrupted token
+          // — observed live on a bulk-seeded project (hundreds of issues in
+          // minutes), where the old behaviour here was to fail loudly with a
+          // diagnostic naming exactly this cause. Keys have no granularity
+          // problem: within one project they are a strictly increasing
+          // sequence, so `issuekey > lastWrittenKey` resumes *exactly* after
+          // what is durably stored, and in key order every subsequent page's
+          // tail strictly advances the next bound. Loud failure remains for
+          // the only case with no move left: a key reseek that wrote nothing
+          // and hit the corruption again.
+          if (lastWrittenKey === null || lastWrittenKey === lastAttemptedKeySeek) {
+            throw new Error(
+              `Backfill stuck: Jira handed back a corrupted pagination cursor, and both ` +
+                `recovery tiers are exhausted — a created-date reseek from ` +
+                `${String(lastCreatedAt)} and a key reseek from ` +
+                `${lastWrittenKey ?? '(nothing written)'} each made no progress. ` +
+                `See TECHNICAL-SPEC § 11 item 11.`,
+            );
+          }
+          deps.logger?.log(
+            'warn',
+            'corrupted cursor inside a same-minute cluster; switching to a key-ordered walk',
+            { projectId: options.projectId, slice, afterKey: lastWrittenKey },
           );
+          keyMode = true;
+          lastAttemptedKeySeek = lastWrittenKey;
+          jql = buildBackfillJql({
+            ...(usingUnrestrictedJql ? unrestricted(options) : options),
+            afterKey: lastWrittenKey,
+          });
+          cursor = null;
+          pendingSkip = 0;
+          continue;
         }
         // Jira handed back this `nextPageToken` in an earlier *successful*
         // response whose own payload is corrupt (TECHNICAL-SPEC § 11 item
@@ -577,10 +694,11 @@ export async function runBackfillSlice(
       // Step 4: write results *before* advancing the cursor.
       await writeProcessed(deps.store, batch, deps.config.datasets);
       if (batch.length > 0) {
-        // `batch` preserves the fetch order, which the JQL guarantees is
-        // `created ASC` — its last element is the latest `created` this
-        // backfill has durably written so far.
+        // `batch` preserves the fetch order — `created ASC` normally, key
+        // order in key mode — so its last element is the furthest point this
+        // backfill has durably written, on whichever axis the walk is using.
         lastCreatedAt = batch[batch.length - 1]!.meta.createdAt;
+        lastWrittenKey = batch[batch.length - 1]!.meta.issueKey;
       }
 
       const nextToken = page.nextPageToken ?? null;
@@ -624,10 +742,24 @@ export async function runBackfillSlice(
           // persisted. `lastAttemptedSeek` travels too, so a next slice that
           // inherits an already-corrupted `nextToken` can tell whether this
           // exact bound was tried and failed already.
-          cursor = encodeCursor(nextToken, 0, lastCreatedAt, lastAttemptedSeek);
+          cursor = encodeCursor(
+            nextToken,
+            0,
+            lastCreatedAt,
+            lastAttemptedSeek,
+            lastWrittenKey,
+            lastAttemptedKeySeek,
+          );
           if (pageWasLast) done = true;
         } else {
-          cursor = encodeCursor(cursor, skipNow + handledInPage, lastCreatedAt, lastAttemptedSeek);
+          cursor = encodeCursor(
+            cursor,
+            skipNow + handledInPage,
+            lastCreatedAt,
+            lastAttemptedSeek,
+            lastWrittenKey,
+            lastAttemptedKeySeek,
+          );
         }
         break outer;
       }
@@ -659,6 +791,8 @@ export async function runBackfillSlice(
       firstIteration ? pendingSkip : 0,
       lastCreatedAt,
       lastAttemptedSeek,
+      lastWrittenKey,
+      lastAttemptedKeySeek,
     );
     await deps.store.putIndexState({
       ...state,

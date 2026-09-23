@@ -445,7 +445,7 @@ describe('backfill', () => {
     // slice could recover by JQL bound if this cursor ever turned out to be
     // corrupted — see `isCorruptedCursor`.
     expect(d.scheduler.jobs).toEqual([
-      { projectId: '10000', cursor: '::skip=1::seek=1772438400000', slice: 1 },
+      { projectId: '10000', cursor: '::skip=1::seek=1772438400000::key=FLOW-1', slice: 1 },
     ]);
 
     // The write happened before the cursor advanced, so the issue is persisted.
@@ -764,8 +764,10 @@ describe('backfill cursor advancement', () => {
     // though no skip is pending — see `isCorruptedCursor`'s recovery
     // path, which needs this on every persisted cursor, not only the ones
     // that stopped mid-page.
-    expect(first.nextCursor).toBe('P3::seek=1772438400000');
-    expect((await d.store.getIndexState('10000'))?.backfillCursor).toBe('P3::seek=1772438400000');
+    expect(first.nextCursor).toBe('P3::seek=1772438400000::key=FLOW-4');
+    expect((await d.store.getIndexState('10000'))?.backfillCursor).toBe(
+      'P3::seek=1772438400000::key=FLOW-4',
+    );
 
     const second = await runBackfillSlice(d, {
       ...DEFAULT_BACKFILL_OPTIONS,
@@ -801,7 +803,7 @@ describe('backfill cursor advancement', () => {
     // issue 3 instead of reprocessing it and stopping at the same spot again.
     // The trailing `::seek=` is issue 3's `created`, carried for a possible
     // corrupted-cursor recovery later.
-    expect(first.nextCursor).toBe('P2::skip=1::seek=1772438400000');
+    expect(first.nextCursor).toBe('P2::skip=1::seek=1772438400000::key=FLOW-3');
 
     // Without that skip, this second call would re-fetch page 2, reprocess
     // issue 3, and stop again after issue 4 — never reaching page 3 at all.
@@ -839,6 +841,8 @@ describe('cursor encoding carries a seek marker alongside skip', () => {
       skip: 0,
       seekFrom: null,
       attemptedSeek: null,
+      lastKey: null,
+      attemptedKeySeek: null,
     });
   });
 
@@ -850,6 +854,8 @@ describe('cursor encoding carries a seek marker alongside skip', () => {
       skip: 0,
       seekFrom: T('2026-03-02T08:00:00Z'),
       attemptedSeek: null,
+      lastKey: null,
+      attemptedKeySeek: null,
     });
   });
 
@@ -860,6 +866,8 @@ describe('cursor encoding carries a seek marker alongside skip', () => {
       skip: 3,
       seekFrom: T('2026-03-02T08:00:00Z'),
       attemptedSeek: null,
+      lastKey: null,
+      attemptedKeySeek: null,
     });
   });
 
@@ -870,6 +878,8 @@ describe('cursor encoding carries a seek marker alongside skip', () => {
       skip: 0,
       seekFrom: T('2026-03-02T08:00:00Z'),
       attemptedSeek: null,
+      lastKey: null,
+      attemptedKeySeek: null,
     });
   });
 
@@ -883,6 +893,8 @@ describe('cursor encoding carries a seek marker alongside skip', () => {
       skip: 0,
       seekFrom: T('2026-03-02T08:05:00Z'),
       attemptedSeek: T('2026-03-02T08:00:00Z'),
+      lastKey: null,
+      attemptedKeySeek: null,
     });
   });
 });
@@ -1210,6 +1222,129 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(2);
   });
 
+  it('★ escalates to a key-ordered walk when the corruption sits in a same-minute cluster', async () => {
+    // The live failure this reproduces: a bulk-seeded project put hundreds
+    // of issues in the same created-minute, and the created-date reseek —
+    // minute-grained by `formatJqlInstant` — re-landed on the same page and
+    // received the same corrupted token. The old behaviour was a loud
+    // failure naming exactly this cause; the fix is a second tier that
+    // bounds by issue key, which has no granularity to cluster under.
+    //
+    // The stub answers by *which JQL* it is asked, not by call order,
+    // because the recovery's whole content is the queries it builds:
+    //   created-order walk: page 1 ok, then a corrupted token;
+    //   created-bound reseek: same cluster, same page, same corruption;
+    //   key-bound walk (issuekey > SEEK-2): the remaining issues, cleanly.
+    const sameMinute = issue(1).fields!.created!;
+    const clustered = (n: number): JiraIssue => ({
+      ...issue(n),
+      fields: { ...issue(n).fields!, created: sameMinute },
+    });
+    const asked: string[] = [];
+    const api = new (class extends ScriptedSearchApi {
+      constructor() {
+        super([]);
+      }
+      override searchIssues(params: SearchParams): Promise<JiraSearchPage> {
+        this.searchCalls.push(params);
+        asked.push(params.jql);
+        if (params.jql.includes('issuekey >')) {
+          // Key mode. The bound must be the last durably written key.
+          if (!params.jql.includes('issuekey > "SEEK-2"')) {
+            throw new Error(`key reseek bounded wrongly: ${params.jql}`);
+          }
+          return Promise.resolve(
+            params.nextPageToken === 'K2'
+              ? {
+                  issues: [clustered(5), clustered(6)],
+                  isLast: true,
+                  nextPageToken: null,
+                  total: 6,
+                }
+              : {
+                  issues: [clustered(3), clustered(4)],
+                  isLast: false,
+                  nextPageToken: 'K2',
+                  total: 6,
+                },
+          );
+        }
+        // Created order — first walk and the created-bound reseek both land
+        // here, and both meet the same corrupted continuation.
+        return Promise.resolve({
+          issues: [clustered(1), clustered(2)],
+          isLast: false,
+          nextPageToken: corruptToken('CLUSTER'),
+          total: 6,
+        });
+      }
+    })();
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.stoppedBecause).toBe('complete');
+    expect(result.done).toBe(true);
+    expect(await d.store.countIssueMeta({ projectId: '10000' })).toBe(6);
+    // The escalation happened, in order: plain walk, created reseek, key walk.
+    expect(asked.some((q) => q.includes('created >='))).toBe(true);
+    expect(asked.some((q) => q.includes('ORDER BY issuekey ASC'))).toBe(true);
+    const state = await d.store.getIndexState('10000');
+    expect(state?.state).toBe('complete');
+  });
+
+  it('★ still fails loudly when even the key walk cannot advance', async () => {
+    // Both tiers exhausted: the key-bound query itself comes back with a
+    // corrupted continuation and nothing new written. Anything but a loud
+    // stop here would be the 900-second billed spin this file exists to
+    // prevent.
+    const sameMinute = issue(1).fields!.created!;
+    const clustered = (n: number): JiraIssue => ({
+      ...issue(n),
+      fields: { ...issue(n).fields!, created: sameMinute },
+    });
+    const api = new (class extends ScriptedSearchApi {
+      constructor() {
+        super([]);
+      }
+      override searchIssues(params: SearchParams): Promise<JiraSearchPage> {
+        this.searchCalls.push(params);
+        if (params.jql.includes('issuekey >')) {
+          // The key walk yields nothing new — only the corrupted token.
+          return Promise.resolve({
+            issues: [],
+            isLast: false,
+            nextPageToken: corruptToken('KEYSTUCK'),
+            total: 6,
+          });
+        }
+        return Promise.resolve({
+          issues: [clustered(1), clustered(2)],
+          isLast: false,
+          nextPageToken: corruptToken('CLUSTER'),
+          total: 6,
+        });
+      }
+    })();
+    const d = deps(api);
+    const result = await runBackfillSlice(d, {
+      ...DEFAULT_BACKFILL_OPTIONS,
+      projectId: '10000',
+      pageSize: 2,
+    });
+
+    expect(result.stoppedBecause).toBe('error');
+    expect(result.done).toBe(false);
+    const state = await d.store.getIndexState('10000');
+    expect(state?.state).toBe('failed');
+    expect(state?.lastError).toMatch(/both recovery tiers are exhausted/);
+    // Bounded: no spin. Two created-order walks, two key attempts at most.
+    expect(api.searchCalls.length).toBeLessThanOrEqual(5);
+  });
+
   it('reseeks by created date instead of trusting a corrupted token, and finishes', async () => {
     // Page 1 ok, page 2 ok (hands back a token that decodes to corrupted).
     // The *next* iteration detects that before sending it — no third call
@@ -1334,7 +1469,9 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
       issuesPerSlice: 2,
     });
     expect(first.stoppedBecause).toBe('issue_budget');
-    expect(first.nextCursor).toBe(`${corruptToken('END')}::seek=${T(issue(2).fields!.created!)}`);
+    expect(first.nextCursor).toBe(
+      `${corruptToken('END')}::seek=${T(issue(2).fields!.created!)}::key=SEEK-2`,
+    );
 
     // Second slice: starts from that persisted, already-corrupted cursor.
     // Detected before any request — the first (and only) call this slice
