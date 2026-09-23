@@ -34,6 +34,31 @@ shots below are blocked on state that is not a framing decision.
 
 ---
 
+## Status update — capture session of 2026-09-23
+
+Four preconditions moved under this list's feet, recorded here rather than
+rewritten around, so the original reasoning stays legible:
+
+- **P6 is obsolete.** The claude-in-chrome toolchain screenshots Forge
+  iframes in real Jira and clicks inside them; the whole listing-1 sequence
+  below was captured by automation into
+  `docs/listing-assets/raw-2026-09-23/`. Two operational caveats: Jira's SPA
+  keeps pages "busy" for 20–60s after navigation, so captures need patient
+  retries; and a minimized Chrome window breaks both screenshots (zero
+  width) and clicks into the cross-origin iframe.
+- **P1 has a wrinkle the list did not know.** All five listings have
+  _production_ installs on the dev site — but they run the stale 2026-09-10
+  build (no charts, no filters, week-rollups the current code removed), so
+  an unbadged production screenshot misrepresents the product. The honest
+  frame is the Dev install, whose badge appears only in Jira's project-tab
+  strip, outside the app content.
+- **P4 is done.** All ten JFM issues renamed to plausible product-team
+  summaries via the API, labels cleared. `tools/seed-report.md`'s margins
+  key on issue keys, which are untouched.
+- **P5's JFMB failure fired live** and produced the key-ordered reseek tier
+  (`packages/engine/src/ingest/backfill.ts`); the WIP-aging retry on the
+  live site is pending a visible browser window.
+
 ## Listing 1 — Time in Status & Cycle Time · `apps/time-in-status` · `docs/listing-assets/`
 
 Modules: `jira:projectPage` (`time-in-status-page`, title **Time in Status**), `jira:issueActivity`
