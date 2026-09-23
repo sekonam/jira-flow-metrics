@@ -133,8 +133,11 @@ one click.
 
 ### What it does not do
 
-No run charts or cumulative flow diagrams yet — the arithmetic exists in the engine and is tested,
-but no screen renders it, so it is not claimed here. No aging by assignee or swimlane, no
+No run charts — the arithmetic exists in the engine and is tested, but no screen renders it, so it
+is not claimed here. (The cumulative flow diagram _is_ rendered, on the project page; an earlier
+version of this paragraph denied it while the feature list above promised it, which is the kind of
+contradiction a reviewer reads as carelessness and a customer reads as untrustworthy.) No aging by
+assignee or swimlane, no
 board-scoped or sprint-scoped aging, no forecasting, no predictive analytics. It answers one
 recurring question — what is sitting, where, and for how long — properly, rather than many
 questions adequately.

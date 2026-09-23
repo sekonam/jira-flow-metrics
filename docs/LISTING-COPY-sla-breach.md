@@ -2,8 +2,9 @@
 
 > Drafted from `PROMOTION.md` § 1 and § 9 and `PRODUCT-SPEC.md` § 7. Every claim here is one this
 > repository can back with a test or the deployed app — nothing is aspirational copy waiting on a
-> feature. In particular: **stored SLA goals and a goal editor are v1.1 and are not promised
-> anywhere below**, and the CSV export is described as the copyable modal it actually is, never as
+> feature. Stored SLA goals and the goal editor shipped with v1.1 (2026-09-22) and are promised
+> below because they exist; an earlier version of this note said the opposite, before they were
+> built. The CSV export is described as the copyable modal it actually is, never as
 > a download. `ROADMAP.md` stage 4 flags this listing specifically: _"the counted-statuses model
 > needs the clearest listing copy"_ — the model section below exists because of that line, and any
 > edit that blurs it should be treated as a regression, not a style choice.
@@ -145,8 +146,8 @@ before you install is the point of this section.
 
 ### What it does not do
 
-No stored SLA goals and no goal editor — the goal is evaluated per view, not saved as
-configuration. No notifications, no escalation rules, no calendars per goal. No integration with
+No notifications, no escalation rules, no calendars per goal — a saved goal is one target and one
+set of counted statuses, deliberately. No integration with
 Jira Service Management's SLA fields — if you have JSM, use JSM's SLAs. No predictive analytics.
 It does one report, properly, rather than many reports adequately — and it tells you its
 measurement model up front instead of letting you discover it after a quarter of wrong numbers.
