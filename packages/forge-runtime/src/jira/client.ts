@@ -2,11 +2,13 @@ import {
   HttpError,
   parseRetryAfter,
   toStatusCategory,
+  type IssueTypeRef,
   type JiraApi,
   type JiraChangelogPage,
   type JiraIssue,
   type JiraProjectRef,
   type JiraProjectSearchPage,
+  type JiraUserRef,
   type JiraSearchPage,
   type JiraStatusRef,
   type JiraWorklogPage,
@@ -188,6 +190,47 @@ export class JiraRestClient implements JiraApi {
         name: s.name ?? s.id,
         category: toStatusCategory(s.statusCategory?.key),
       }));
+  }
+
+  /**
+   * The project's own issue-type catalogue, for the report filter.
+   *
+   * Read as the app, like {@link getStatuses}: the caller has already been
+   * authorised for the project by `authoriseProject` before any handler
+   * reaches this, and the catalogue is a property of the project rather
+   * than of the viewer.
+   */
+  async getIssueTypes(projectIdOrKey: string): Promise<readonly IssueTypeRef[]> {
+    const project = await this.get<{
+      issueTypes?: readonly { id?: string; name?: string }[];
+    }>(`/rest/api/3/project/${encodeURIComponent(projectIdOrKey)}`);
+    return (project.issueTypes ?? [])
+      .filter((t): t is { id: string; name?: string } => typeof t.id === 'string')
+      .map((t) => ({ id: t.id, name: t.name ?? t.id }));
+  }
+
+  /**
+   * Users assignable in the project — the filter's assignee options.
+   *
+   * `fetchAsUser`, like {@link listProjects}: the endpoint's answer is
+   * itself permission-scoped, and asking as the app would answer for a
+   * caller Jira would refuse. One page of fifty; the filter is a picker,
+   * not a directory.
+   */
+  async getAssignableUsers(projectIdOrKey: string): Promise<readonly JiraUserRef[]> {
+    const query = new URLSearchParams({
+      project: projectIdOrKey,
+      maxResults: '50',
+    });
+    const users = await this.request<readonly { accountId?: string; displayName?: string }[]>(
+      `/rest/api/3/user/assignable/search?${query.toString()}`,
+      this.fetchAsUser,
+    );
+    return (users ?? [])
+      .filter(
+        (u): u is { accountId: string; displayName?: string } => typeof u.accountId === 'string',
+      )
+      .map((u) => ({ accountId: u.accountId, displayName: u.displayName ?? u.accountId }));
   }
 
   /**

@@ -61,6 +61,8 @@ exactly the time of the earlier visit — and says why.
   everything whenever you want, from the report page.
 - **An admin storage page** — exactly how many rows and how many megabytes this app holds in your
   tenant, so "what is it storing?" has an answer you can read rather than one you have to trust.
+- **Filters** — assignee, issue type, creation window. Pick "Anna's bugs from
+  last quarter" and both the table and the export narrow to exactly that.
 - **CSV export** — for the finance and QBR audience that wants the export more than the chart.
 - **A dashboard gadget** — the report your team sees without anyone installing anything.
 - **An honest indexing banner** — visible for as long as the numbers are built from partial

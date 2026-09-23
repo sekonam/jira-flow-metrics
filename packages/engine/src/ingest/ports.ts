@@ -1,6 +1,8 @@
 import type {
   JiraChangelogPage,
+  IssueTypeRef,
   JiraProjectRef,
+  JiraUserRef,
   JiraSearchPage,
   JiraWorklogPage,
   JiraIssue,
@@ -62,6 +64,27 @@ export interface JiraApi {
   getWorklogs(issueIdOrKey: string, page: PageParams): Promise<JiraWorklogPage>;
   /** `/rest/api/3/status`, used to resolve status categories and names. */
   getStatuses(): Promise<readonly StatusMeta[]>;
+
+  /**
+   * The issue types one project uses, `{id, name}`, for the report filter.
+   *
+   * Read from the project's own catalogue rather than the instance-wide
+   * `/rest/api/3/issuetype`, for the same reason `listStatuses` narrows to
+   * the project once it can: an instance-wide list on a project surface
+   * offers names from projects the caller may not be allowed to see.
+   */
+  getIssueTypes(projectIdOrKey: string): Promise<readonly IssueTypeRef[]>;
+
+  /**
+   * Users assignable in this project, `{accountId, displayName}`.
+   *
+   * Read as the **calling user** — the endpoint's answer is itself
+   * permission-scoped, and reading it as the app would answer for callers
+   * who cannot browse the project at all. Same reasoning as
+   * {@link JiraApi.canBrowseProject}. One request, capped by the endpoint's
+   * own page size; the filter is a picker, not a directory.
+   */
+  getAssignableUsers(projectIdOrKey: string): Promise<readonly JiraUserRef[]>;
 
   /**
    * Projects the **current user** may browse.

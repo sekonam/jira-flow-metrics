@@ -58,6 +58,47 @@ async function openSelect(page, inputId) {
 export const flows = [
   {
     /**
+     * The filters narrow the real store, not just the request.
+     *
+     * The unit tests prove the picker puts `assigneeAccountIds` on the
+     * payload; this proves the *product* answers it — the same fixture
+     * issues run through the real ingester, filtered by the real SQL-shaped
+     * predicate, rendered back with the rows it excluded genuinely gone.
+     * FLOW-1 belongs to Ben and FLOW-4 to nobody, so a filter for Anna that
+     * still shows either is a picker naming a value the table ignores — the
+     * defect class the round-one Select fix documented.
+     */
+    name: 'time-in-status: filtering by assignee narrows the table and clearing restores it',
+    app: 'time-in-status',
+    screen: 'time-in-status-page',
+    async run({ page, expect }) {
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+      expect.ok(await page.getByText('FLOW-1').count(), 'FLOW-1 visible before filtering');
+
+      await page.locator('#filter-assignee').press('ArrowDown');
+      const option = page.getByRole('option', { name: 'Anna Weber', exact: true });
+      await option.waitFor({ state: 'visible', timeout: 15_000 });
+      await option.click();
+
+      // Anna's issues stay; Ben's and the unassigned one go.
+      await page
+        .getByText('FLOW-1')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => undefined);
+      expect.equal(await page.getByText('FLOW-1').count(), 0, 'FLOW-1 gone under the Anna filter');
+      expect.equal(await page.getByText('FLOW-4').count(), 0, 'FLOW-4 gone under the Anna filter');
+      expect.ok(await page.getByText('FLOW-3').count(), 'FLOW-3 still present');
+      expect.ok(await page.getByText('FLOW-2').count(), 'FLOW-2 still present');
+
+      // Clearing brings the full table back.
+      await page.getByRole('button', { name: 'Clear filters' }).click();
+      await page.getByText('FLOW-1').first().waitFor({ state: 'visible', timeout: 15_000 });
+      expect.ok(await page.getByText('FLOW-4').count(), 'FLOW-4 back after clearing');
+    },
+  },
+  {
+    /**
      * The product's entire argument in one screenshot: a status entered twice,
      * badged `x2`, against a figure that is the sum of both stays.
      *

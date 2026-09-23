@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   CodeBlock,
+  DatePicker,
   DynamicTable,
   EmptyState,
   Heading,
@@ -907,4 +908,169 @@ export function CsvExport({
       </ModalTransition>
     </>
   );
+}
+
+// --------------------------------------------------------------- filters ---
+
+export interface FilterOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface ReportFilterState {
+  readonly assigneeAccountId: string | null;
+  readonly issueTypeId: string | null;
+  /** ISO dates (`YYYY-MM-DD`), as UI Kit's DatePicker speaks them. */
+  readonly createdFrom: string | null;
+  readonly createdTo: string | null;
+}
+
+export const EMPTY_FILTERS: ReportFilterState = {
+  assigneeAccountId: null,
+  issueTypeId: null,
+  createdFrom: null,
+  createdTo: null,
+};
+
+/**
+ * The report filters — assignee, issue type, creation window.
+ *
+ * PRODUCT-SPEC scopes these into v1 as "the minimum a report needs to be
+ * usable in a review meeting", and the listing copy sold them while no
+ * screen rendered them — the submission audit caught the gap, and this
+ * closes it in the direction of more product rather than less copy.
+ *
+ * Single-select per dimension, deliberately: the resolver accepts arrays,
+ * but "Anna's bugs from last quarter" is the review-meeting question, and a
+ * multi-select's chrome costs more than its answer here. Every control is
+ * controlled, like the SLA goal picker after its round-one defect — a
+ * filter naming a value the table is not filtered by is the same lie one
+ * listing over.
+ *
+ * The two date pickers bound each other: a window cannot be constructed
+ * inverted from this UI, which is why the parser passes an inverted pair
+ * through rather than guessing at intent.
+ */
+export const ReportFilters = ({
+  assignees,
+  issueTypes,
+  filters,
+  isDisabled,
+  onChange,
+}: {
+  assignees: readonly FilterOption[];
+  issueTypes: readonly FilterOption[];
+  filters: ReportFilterState;
+  isDisabled?: boolean;
+  onChange: (next: ReportFilterState) => void;
+}): React.JSX.Element => {
+  const toOption = (option: FilterOption): { label: string; value: string } => ({
+    label: option.name,
+    value: option.id,
+  });
+  const selected = (
+    options: readonly FilterOption[],
+    id: string | null,
+  ): { label: string; value: string } | null => {
+    const found = options.find((option) => option.id === id);
+    return found === undefined ? null : toOption(found);
+  };
+
+  return (
+    <Inline space="space.150" alignBlock="end" shouldWrap>
+      <Stack space="space.050">
+        <Label labelFor="filter-assignee">Assignee</Label>
+        <Select
+          inputId="filter-assignee"
+          placeholder="All assignees"
+          options={assignees.map(toOption)}
+          value={selected(assignees, filters.assigneeAccountId)}
+          isDisabled={isDisabled === true}
+          onChange={(option) => {
+            onChange({
+              ...filters,
+              assigneeAccountId: (option as { value?: string } | null)?.value ?? null,
+            });
+          }}
+        />
+      </Stack>
+      <Stack space="space.050">
+        <Label labelFor="filter-issue-type">Issue type</Label>
+        <Select
+          inputId="filter-issue-type"
+          placeholder="All types"
+          options={issueTypes.map(toOption)}
+          value={selected(issueTypes, filters.issueTypeId)}
+          isDisabled={isDisabled === true}
+          onChange={(option) => {
+            onChange({
+              ...filters,
+              issueTypeId: (option as { value?: string } | null)?.value ?? null,
+            });
+          }}
+        />
+      </Stack>
+      <Stack space="space.050">
+        <Label labelFor="filter-created-from">Created from</Label>
+        <DatePicker
+          id="filter-created-from"
+          value={filters.createdFrom ?? ''}
+          {...(filters.createdTo === null ? {} : { maxDate: filters.createdTo })}
+          isDisabled={isDisabled === true}
+          onChange={(value) => {
+            onChange({ ...filters, createdFrom: value === '' ? null : value });
+          }}
+        />
+      </Stack>
+      <Stack space="space.050">
+        <Label labelFor="filter-created-to">Created to</Label>
+        <DatePicker
+          id="filter-created-to"
+          value={filters.createdTo ?? ''}
+          {...(filters.createdFrom === null ? {} : { minDate: filters.createdFrom })}
+          isDisabled={isDisabled === true}
+          onChange={(value) => {
+            onChange({ ...filters, createdTo: value === '' ? null : value });
+          }}
+        />
+      </Stack>
+      {filters === EMPTY_FILTERS ||
+      (filters.assigneeAccountId === null &&
+        filters.issueTypeId === null &&
+        filters.createdFrom === null &&
+        filters.createdTo === null) ? null : (
+        <Button
+          onClick={() => {
+            onChange(EMPTY_FILTERS);
+          }}
+        >
+          Clear filters
+        </Button>
+      )}
+    </Inline>
+  );
+};
+
+/**
+ * Filter state as the `getReport` payload fields the resolver parses.
+ *
+ * Dates become epoch milliseconds at UTC midnight; `createdTo` is the *end*
+ * of its chosen day, because a person picking "to 12 Mar" means including
+ * the 12th — a half-open `[from, to)` window that ends at 00:00 of the
+ * picked day would silently drop a day from every query.
+ */
+export function filtersToRequest(filters: ReportFilterState): Record<string, unknown> {
+  const request: Record<string, unknown> = {};
+  if (filters.assigneeAccountId !== null)
+    request['assigneeAccountIds'] = [filters.assigneeAccountId];
+  if (filters.issueTypeId !== null) request['issueTypeIds'] = [filters.issueTypeId];
+  if (filters.createdFrom !== null) {
+    const at = Date.parse(`${filters.createdFrom}T00:00:00Z`);
+    if (Number.isFinite(at)) request['createdFrom'] = at;
+  }
+  if (filters.createdTo !== null) {
+    const at = Date.parse(`${filters.createdTo}T00:00:00Z`);
+    if (Number.isFinite(at)) request['createdTo'] = at + 86_400_000;
+  }
+  return request;
 }

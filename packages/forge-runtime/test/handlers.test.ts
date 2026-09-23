@@ -8,6 +8,8 @@ import {
   type JiraProjectRef,
   type JiraSearchPage,
   type StatusMeta,
+  type IssueTypeRef,
+  type JiraUserRef,
 } from '@jfm/engine';
 import { RecordingSqlExecutor, SettingsSqlExecutor } from '../src/sql/executor.js';
 import { SettingsStore } from '../src/settings.js';
@@ -62,6 +64,15 @@ const ISSUE: JiraIssue = {
 const CONTEXT = { extension: { project: { id: '10000', key: 'FLOW' } } };
 
 class StubJira implements JiraApi {
+  issueTypes: readonly IssueTypeRef[] | undefined;
+  assignableUsers: readonly JiraUserRef[] | undefined;
+
+  getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+    return Promise.resolve(this.issueTypes ?? []);
+  }
+  getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+    return Promise.resolve(this.assignableUsers ?? []);
+  }
   failWith: Error | null = null;
   canBrowse = true;
   admin = true;

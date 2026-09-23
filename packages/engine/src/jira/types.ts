@@ -126,6 +126,18 @@ export interface JiraSearchPage {
   readonly total?: number;
 }
 
+/** One issue type, as the report filter offers it. */
+export interface IssueTypeRef {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** One user, as the report filter offers them. */
+export interface JiraUserRef {
+  readonly accountId: string;
+  readonly displayName: string;
+}
+
 export interface JiraProjectRef {
   readonly id?: string;
   readonly key?: string;

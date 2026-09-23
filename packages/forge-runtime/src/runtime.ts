@@ -24,6 +24,8 @@ import {
   type Sleeper,
   type StatusMetaRow,
   type StatusReport,
+  type IssueTypeRef,
+  type JiraUserRef,
 } from '@jfm/engine';
 import { buildIssueTimeline, type IssueTimelineReport } from './issue-timeline.js';
 import {
@@ -87,6 +89,11 @@ export interface StatusReportRequest {
   readonly issueTypeIds?: readonly string[];
   readonly createdFrom?: Millis;
   readonly createdTo?: Millis;
+}
+
+export interface FilterOptions {
+  readonly assignees: readonly JiraUserRef[];
+  readonly issueTypes: readonly IssueTypeRef[];
 }
 
 export interface ReportEnvelope {
@@ -502,6 +509,25 @@ export class ListingRuntime {
    * indexed it has no aggregates, so the full list stands in — a usable
    * picker beats an empty row while indexing runs.
    */
+  /**
+   * The report filter's option lists: assignable users and issue types.
+   *
+   * Both from Jira rather than from the store, because a filter has to
+   * offer what the *project* has, not what happens to be indexed — a
+   * half-indexed project offering two assignees out of ten would read as a
+   * fact about the team. Each list degrades to empty on its own failure:
+   * losing the assignee lookup is not a reason to lose the issue-type
+   * filter, and an empty list renders as a disabled picker rather than an
+   * error screen.
+   */
+  async listFilterOptions(projectId: string): Promise<FilterOptions> {
+    const [assignees, issueTypes] = await Promise.all([
+      this.deps.api.getAssignableUsers(projectId).catch(() => []),
+      this.deps.api.getIssueTypes(projectId).catch(() => []),
+    ]);
+    return { assignees, issueTypes };
+  }
+
   async listStatuses(projectId: string): Promise<readonly StatusMetaRow[]> {
     await this.deps.store.migrate();
     const all = await this.deps.store.getStatusMeta();

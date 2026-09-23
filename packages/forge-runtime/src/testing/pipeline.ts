@@ -8,7 +8,9 @@ import {
   type JiraChangelogEntry,
   type JiraChangelogPage,
   type JiraIssue,
+  type IssueTypeRef,
   type JiraProjectRef,
+  type JiraUserRef,
   type JiraSearchPage,
   type JiraWorklogEntry,
   type JiraWorklogPage,
@@ -115,6 +117,11 @@ export const CANONICAL_ISSUE: FixtureIssue = {
     key: 'FLOW-3',
     fields: {
       summary: 'Checkout fails for guest customers on the second attempt',
+      // Assignee and type exist so the report filters have something real
+      // to offer and to narrow by — an option list over fixtures without
+      // the fields would be empty, and every filter test vacuous.
+      assignee: { accountId: 'acc-anna', displayName: 'Anna Weber' },
+      issuetype: { id: '10004', name: 'Bug' },
       created: '2026-03-02T08:00:00.000+0000',
       updated: '2026-03-05T11:30:00.000+0000',
       resolutiondate: '2026-03-05T11:30:00.000+0000',
@@ -170,6 +177,8 @@ export const IN_FLIGHT_ISSUES: readonly FixtureIssue[] = [
       key: 'FLOW-1',
       fields: {
         summary: 'Search returns stale results after a bulk import',
+        assignee: { accountId: 'acc-ben', displayName: 'Ben Ito' },
+        issuetype: { id: '10004', name: 'Bug' },
         created: '2026-02-23T08:00:00.000+0000',
         updated: '2026-02-23T09:00:00.000+0000',
         resolutiondate: null,
@@ -188,6 +197,8 @@ export const IN_FLIGHT_ISSUES: readonly FixtureIssue[] = [
       key: 'FLOW-2',
       fields: {
         summary: 'Invoice PDF renders the wrong VAT rate for Austrian customers',
+        assignee: { accountId: 'acc-anna', displayName: 'Anna Weber' },
+        issuetype: { id: '10004', name: 'Bug' },
         created: '2026-03-03T10:00:00.000+0000',
         updated: '2026-03-03T14:00:00.000+0000',
         resolutiondate: null,
@@ -209,6 +220,9 @@ export const IN_FLIGHT_ISSUES: readonly FixtureIssue[] = [
       key: 'FLOW-4',
       fields: {
         summary: 'Add a webhook for subscription cancellations',
+        // Deliberately unassigned: the assignee filter must not hide the
+        // existence of unassigned work, and FLOW-4 is how a test can see it.
+        issuetype: { id: '10002', name: 'Task' },
         created: '2026-03-05T08:00:00.000+0000',
         updated: '2026-03-05T08:00:00.000+0000',
         resolutiondate: null,
@@ -302,6 +316,33 @@ export class FixtureJira implements JiraApi {
 
   listProjects(): Promise<readonly JiraProjectRef[]> {
     return Promise.resolve([]);
+  }
+
+  /**
+   * Derived from the fixture issues, so the filter offers exactly the types
+   * and assignees the data can answer for — an option list disagreeing with
+   * the rows it filters is the defect the picker exists to avoid.
+   */
+  getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+    this.requests.push('issuetypes');
+    const seen = new Map<string, string>();
+    for (const fixture of this.issues) {
+      const t = fixture.issue.fields?.issuetype;
+      if (t?.id !== undefined) seen.set(t.id, t.name ?? t.id);
+    }
+    return Promise.resolve([...seen].map(([id, name]) => ({ id, name })));
+  }
+
+  getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+    this.requests.push('assignable');
+    const seen = new Map<string, string>();
+    for (const fixture of this.issues) {
+      const a = fixture.issue.fields?.assignee;
+      if (a?.accountId !== undefined) seen.set(a.accountId, a.displayName ?? a.accountId);
+    }
+    return Promise.resolve(
+      [...seen].map(([accountId, displayName]) => ({ accountId, displayName })),
+    );
   }
 
   private find(issueIdOrKey: string): FixtureIssue {

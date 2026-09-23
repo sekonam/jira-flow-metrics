@@ -1,5 +1,10 @@
 import { jobFromPayload } from './scheduler.js';
-import type { ListingRuntime, ReportEnvelope, StatusReportRequest } from './runtime.js';
+import type {
+  FilterOptions,
+  ListingRuntime,
+  ReportEnvelope,
+  StatusReportRequest,
+} from './runtime.js';
 import type {
   AgingReport,
   FlowReport,
@@ -101,6 +106,8 @@ export function parseReportRequest(projectId: string, payload: unknown): StatusR
     offset?: number;
     assigneeAccountIds?: string[];
     issueTypeIds?: string[];
+    createdFrom?: number;
+    createdTo?: number;
     // NOTE: `projectId` is assigned on its own line below and never inside an
     // object spread, so no future payload-derived spread can overwrite it.
   } = { projectId };
@@ -122,6 +129,19 @@ export function parseReportRequest(projectId: string, payload: unknown): StatusR
   if (assignees !== null) request.assigneeAccountIds = assignees;
   const issueTypes = stringArray(record['issueTypeIds']);
   if (issueTypes !== null) request.issueTypeIds = issueTypes;
+  // The creation window, as epoch milliseconds. Finite numbers only, like
+  // every other numeric field here; an inverted window is passed through
+  // rather than silently swapped — the engine answers it with an empty
+  // report, which is the true answer to a question about an empty range,
+  // and the UI's own pickers prevent constructing one.
+  const createdFrom = record['createdFrom'];
+  if (typeof createdFrom === 'number' && Number.isFinite(createdFrom)) {
+    request.createdFrom = createdFrom;
+  }
+  const createdTo = record['createdTo'];
+  if (typeof createdTo === 'number' && Number.isFinite(createdTo)) {
+    request.createdTo = createdTo;
+  }
   return request;
 }
 
@@ -409,6 +429,25 @@ export async function handleListProjects(
  * stored instance-wide, and its names are information about projects the
  * caller may not be allowed to see.
  */
+/**
+ * The filter pickers' options. Authorised like every project read: the
+ * assignee list is fetched as the calling user, so Jira itself answers
+ * according to what this caller may see.
+ */
+export async function handleListFilterOptions(
+  runtime: ListingRuntime,
+  invocation: ResolverInvocation,
+): Promise<HandlerResult<FilterOptions>> {
+  runtime.beginInvocation();
+  const auth = await authoriseProject(runtime, invocation);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  try {
+    return { ok: true, data: await runtime.listFilterOptions(auth.projectId) };
+  } catch (error: unknown) {
+    return { ok: false, error: toUserMessage(error) };
+  }
+}
+
 export async function handleListStatuses(
   runtime: ListingRuntime,
   invocation: ResolverInvocation,

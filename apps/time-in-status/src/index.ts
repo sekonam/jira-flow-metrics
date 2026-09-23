@@ -7,6 +7,7 @@ import {
   handleHistoryWindow,
   handleIssueTimeline,
   handleIssueEvent,
+  handleListFilterOptions,
   handleListProjects,
   handleStartIndexing,
   handleStorageEstimate,
@@ -31,6 +32,9 @@ resolver.define('startIndexing', (req) => handleStartIndexing(getRuntime(), req)
 // The dashboard gadget's edit-mode project picker. No project context exists
 // yet at this point — that is what the picker is for.
 resolver.define('listProjects', () => handleListProjects(getRuntime()));
+// The report filters' option lists — assignees and issue types. Only this
+// listing renders filters, so only this listing pays for the resolver.
+resolver.define('listFilterOptions', (req) => handleListFilterOptions(getRuntime(), req));
 // The admin usage page. Instance-wide and unscoped by project on purpose —
 // see `handleStorageEstimate`, which checks the caller is an administrator
 // itself. It cannot rely on the `jira:adminPage` module for that: Forge

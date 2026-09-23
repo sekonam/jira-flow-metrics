@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ForgeReconciler, { Box, Button, ButtonGroup, Stack, Text } from '@forge/react';
 import { invoke } from '@forge/bridge';
-import type { ReportEnvelope } from '@jfm/forge-runtime';
+import type { FilterOptions, ReportEnvelope } from '@jfm/forge-runtime';
 import {
   CsvExport,
+  EMPTY_FILTERS,
   EmptySurface,
   ErrorSurface,
   ExtendHistoryControl,
@@ -11,14 +12,17 @@ import {
   LoadingSurface,
   PageHeader,
   ReportBarChart,
+  ReportFilters,
   ReportTable,
   SummaryTiles,
+  filtersToRequest,
   surfaceStateOf,
   toReportCapBanner,
   toProgressBanner,
   toReportTable,
   toStatusChartData,
   toSummaryTiles,
+  type ReportFilterState,
 } from '@jfm/ui';
 
 /**
@@ -47,56 +51,77 @@ export const App = (): React.JSX.Element => {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const [basis, setBasis] = useState<'elapsed' | 'business'>('elapsed');
+  const [filters, setFilters] = useState<ReportFilterState>(EMPTY_FILTERS);
+  // The pickers' options. Fetched once on mount; each list degrades to
+  // empty on failure (see `listFilterOptions`), so a lost lookup renders a
+  // disabled picker rather than replacing a working report with an error.
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    assignees: [],
+    issueTypes: [],
+  });
 
-  const load = useCallback(async (nextBasis: 'elapsed' | 'business') => {
-    // ★ Only the newest request may write to the screen.
-    //
-    // Every control on this page re-runs `load`, each `invoke` is a separate
-    // Forge lambda, and answers arrive in whatever order they finish — so
-    // without this the *older* reply can land last and win. The gadgets
-    // guarded against it with a `cancelled` flag from the start; the pages
-    // never did.
-    //
-    // What that looked like: click a status chip, the narrowed report
-    // renders, the original answer then arrives and overwrites it — leaving
-    // chips that say one goal above numbers computed from another, with
-    // nothing loading and no way to tell. On the time-in-status page it also
-    // stranded the reader: the basis had already been set, so pressing the
-    // same button again changed no state, re-ran no effect, and the caption
-    // kept contradicting the control until they toggled twice.
-    const mine = requestId.current + 1;
-    requestId.current = mine;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = (await invoke('getReport', { basis: nextBasis })) as Result<ReportEnvelope>;
-      if (mine !== requestId.current) return;
-      if (result.ok) setEnvelope(result.data);
-      else setError(result.error);
-    } catch {
-      // Guarded too: a superseded request that fails must not paint an error
-      // over the screen a newer, successful one has already drawn.
-      if (mine === requestId.current) {
-        setError('The report could not be loaded. Try again in a moment.');
+  const load = useCallback(
+    async (nextBasis: 'elapsed' | 'business', nextFilters: ReportFilterState) => {
+      // ★ Only the newest request may write to the screen.
+      //
+      // Every control on this page re-runs `load`, each `invoke` is a separate
+      // Forge lambda, and answers arrive in whatever order they finish — so
+      // without this the *older* reply can land last and win. The gadgets
+      // guarded against it with a `cancelled` flag from the start; the pages
+      // never did.
+      //
+      // What that looked like: click a status chip, the narrowed report
+      // renders, the original answer then arrives and overwrites it — leaving
+      // chips that say one goal above numbers computed from another, with
+      // nothing loading and no way to tell. On the time-in-status page it also
+      // stranded the reader: the basis had already been set, so pressing the
+      // same button again changed no state, re-ran no effect, and the caption
+      // kept contradicting the control until they toggled twice.
+      const mine = requestId.current + 1;
+      requestId.current = mine;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = (await invoke('getReport', {
+          basis: nextBasis,
+          ...filtersToRequest(nextFilters),
+        })) as Result<ReportEnvelope>;
+        if (mine !== requestId.current) return;
+        if (result.ok) setEnvelope(result.data);
+        else setError(result.error);
+      } catch {
+        // Guarded too: a superseded request that fails must not paint an error
+        // over the screen a newer, successful one has already drawn.
+        if (mine === requestId.current) {
+          setError('The report could not be loaded. Try again in a moment.');
+        }
+      } finally {
+        // A superseded request must not clear the spinner the newer one
+        // put up, or the page reads as settled while it is still fetching.
+        if (mine === requestId.current) setLoading(false);
       }
-    } finally {
-      // A superseded request must not clear the spinner the newer one
-      // put up, or the page reads as settled while it is still fetching.
-      if (mine === requestId.current) setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // The `exportCsv` resolver has existed since the first commit with no
   // caller; this is the caller. `CsvExport` owns the presentation, so all
   // that belongs here is the bridge call and unwrapping the envelope.
   const requestCsv = useCallback(async () => {
-    const result = (await invoke('exportCsv', { basis })) as Result<{
+    // The exported file is measured against exactly the report on screen —
+    // basis *and* filters. An export that quietly ignored the filters would
+    // hand someone a wider file than the table they just read, which is the
+    // same lie the SLA listing's goal resolution exists to prevent.
+    const result = (await invoke('exportCsv', {
+      basis,
+      ...filtersToRequest(filters),
+    })) as Result<{
       filename: string;
       csv: string;
     }>;
     if (!result.ok) throw new Error(result.error);
     return result.data;
-  }, [basis]);
+  }, [basis, filters]);
 
   /**
    * The "extend history" control's two calls. Both are made only when the
@@ -116,19 +141,35 @@ export const App = (): React.JSX.Element => {
       if (!result.ok) throw new Error(result.error);
       // Re-indexing has just started; reload so the banner shows it rather
       // than leaving the page claiming the index is complete.
-      await load(basis);
+      await load(basis, filters);
     },
-    [load, basis],
+    [load, basis, filters],
   );
 
   useEffect(() => {
-    void load(basis);
-  }, [basis, load]);
+    void load(basis, filters);
+  }, [basis, filters, load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = (await invoke('listFilterOptions', {})) as Result<FilterOptions>;
+        if (!cancelled && result.ok) setFilterOptions(result.data);
+      } catch {
+        // Empty lists stay; the pickers render disabled rather than the
+        // page trading its report for an error about a dropdown.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const startIndexing = useCallback(async () => {
     await invoke('startIndexing', {});
-    void load(basis);
-  }, [basis, load]);
+    void load(basis, filters);
+  }, [basis, filters, load]);
 
   const state = surfaceStateOf({ loading, error, rowCount: envelope?.report.rows.length ?? 0 });
 
@@ -161,6 +202,13 @@ export const App = (): React.JSX.Element => {
         }
       />
 
+      <ReportFilters
+        assignees={filterOptions.assignees.map((a) => ({ id: a.accountId, name: a.displayName }))}
+        issueTypes={filterOptions.issueTypes.map((t) => ({ id: t.id, name: t.name }))}
+        filters={filters}
+        onChange={setFilters}
+      />
+
       {/*
         Withheld while loading and while refused. `toProgressBanner(null)`
         reads as "not indexed yet", and `progress` is still null in both of
@@ -183,7 +231,7 @@ export const App = (): React.JSX.Element => {
         <ErrorSurface
           message={error ?? 'Unknown error'}
           onRetry={() => {
-            void load(basis);
+            void load(basis, filters);
           }}
         />
       ) : null}

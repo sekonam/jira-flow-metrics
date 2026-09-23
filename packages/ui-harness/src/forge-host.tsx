@@ -12,6 +12,7 @@ import AdsSectionMessage from '@atlaskit/section-message';
 import AdsSpinner from '@atlaskit/spinner';
 import AdsDynamicTable from '@atlaskit/dynamic-table';
 import AdsSelect from '@atlaskit/select';
+import { DatePicker as AdsDatePicker } from '@atlaskit/datetime-picker';
 import AdsTextfield from '@atlaskit/textfield';
 import { Label as AdsLabel } from '@atlaskit/form/label';
 
@@ -410,6 +411,52 @@ export const Select = ({
     {...(isDisabled === undefined ? {} : { isDisabled })}
     {...(isLoading === undefined ? {} : { isLoading })}
     {...(onChange === undefined ? {} : { onChange })}
+  />
+);
+
+export interface DatePickerProps {
+  readonly id?: string;
+  /** ISO date, `YYYY-MM-DD`. Empty string clears, mirroring UI Kit. */
+  readonly value?: string;
+  readonly placeholder?: string;
+  readonly isDisabled?: boolean;
+  /**
+   * Declared because the product passes them — the filter's two pickers
+   * bound each other so an inverted window cannot be built. A stand-in that
+   * silently drops a prop the product relies on is the `Select value`
+   * defect again, and the prop scanner can only see props that are
+   * *declared* and unread, not ones never declared at all.
+   */
+  readonly minDate?: string;
+  readonly maxDate?: string;
+  readonly onChange?: (value: string) => void;
+}
+
+/**
+ * Backed by the same ADS package UI Kit's own DatePicker wraps
+ * (`@atlaskit/datetime-picker`), so the calendar, parsing and clearing
+ * behaviour in tests is the real widget's. Props follow UI Kit's contract:
+ * `value` is an ISO date string and `onChange` receives one (empty on
+ * clear).
+ */
+export const DatePicker = ({
+  id,
+  value,
+  placeholder,
+  isDisabled,
+  minDate,
+  maxDate,
+  onChange,
+}: DatePickerProps): React.JSX.Element => (
+  <AdsDatePicker
+    {...(id === undefined ? {} : { id })}
+    {...(value === undefined ? {} : { value })}
+    {...(placeholder === undefined ? {} : { placeholder })}
+    {...(isDisabled === undefined ? {} : { isDisabled })}
+    {...(minDate === undefined ? {} : { minDate })}
+    {...(maxDate === undefined ? {} : { maxDate })}
+    {...(onChange === undefined ? {} : { onChange })}
+    shouldShowCalendarButton
   />
 );
 

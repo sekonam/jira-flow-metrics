@@ -7,6 +7,7 @@ import {
   handleIssueTimeline,
   handleHistoryReport,
   handleHistoryWindow,
+  handleListFilterOptions,
   handleListSlaGoals,
   handleListStatuses,
   handleStorageEstimate,
@@ -193,6 +194,9 @@ async function collect(runtime: ListingRuntime, reportLimit?: number): Promise<R
     }),
     // The SLA goal picker's options — the statuses the pipeline stored.
     listStatuses: await handleListStatuses(runtime, INVOCATION),
+    // The report filters' options — assignees and issue types, derived by
+    // the fixture Jira from the same issues the report is built from.
+    listFilterOptions: await handleListFilterOptions(runtime, INVOCATION),
     // The goal editor's saved goals. Empty on every scenario: nothing has
     // saved one, which is the state every project starts in.
     listSlaGoals: await handleListSlaGoals(runtime, INVOCATION),

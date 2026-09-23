@@ -14,6 +14,8 @@ import {
   type Sleeper,
   type StatusAggregateRow,
   type StatusMeta,
+  type IssueTypeRef,
+  type JiraUserRef,
 } from '@jfm/engine';
 import {
   LimitHonouringSqlExecutor,
@@ -868,6 +870,15 @@ describe('settings', () => {
 
 describe('ListingRuntime', () => {
   class StubJira implements JiraApi {
+    issueTypes: readonly IssueTypeRef[] | undefined;
+    assignableUsers: readonly JiraUserRef[] | undefined;
+
+    getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+      return Promise.resolve(this.issueTypes ?? []);
+    }
+    getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+      return Promise.resolve(this.assignableUsers ?? []);
+    }
     constructor(private readonly issue: JiraIssue) {}
     canBrowseProject(): Promise<boolean> {
       return Promise.resolve(true);

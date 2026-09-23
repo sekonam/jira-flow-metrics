@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describeScreen, loadScenarios, resolversFor, setBridgeResolvers } from '@jfm/ui-harness';
+import { filtersToRequest } from '@jfm/ui';
 
 /**
  * The Time in Status project page and dashboard gadget, rendered.
@@ -37,8 +38,8 @@ describeScreen(
     name: 'time-in-status project page',
     Component: App,
     surface: 'page',
-    resolverKeys: ['getReport', 'startIndexing'],
-    invokedOnLoad: ['getReport'],
+    resolverKeys: ['getReport', 'startIndexing', 'listFilterOptions'],
+    invokedOnLoad: ['getReport', 'listFilterOptions'],
     heading: 'Time in Status',
     emptyText: 'No indexed issues yet',
     populatedText: 'FLOW-3',
@@ -83,6 +84,81 @@ describe('time-in-status: the listing-specific behaviour', () => {
     await waitFor(() => {
       expect(asked).toEqual(['elapsed', 'business', 'elapsed']);
     });
+  });
+
+  it('★ sends the chosen filters with the report request, and with the export', async () => {
+    // PRODUCT-SPEC scopes filters into v1; the listing copy sold them while
+    // no screen rendered them. This is the assertion that the control is
+    // wired to the request — a picker naming a value the table is not
+    // filtered by would be the SLA goal-picker defect one listing over.
+    const payloads: Record<string, unknown>[] = [];
+    setBridgeResolvers({
+      ...resolversFor(scenarios.populated.responses),
+      getReport: (payload) => {
+        payloads.push(payload as Record<string, unknown>);
+        return scenarios.populated.responses.getReport;
+      },
+    });
+    render(<App />);
+    await screen.findByText('FLOW-3');
+    expect(payloads[0]).toEqual({ basis: 'elapsed' });
+
+    // Pick an assignee. The fixture pipeline derives the options from the
+    // same issues the report is built from, so "Anna Weber" is real data.
+    const assignee = screen.getByLabelText('Assignee');
+    fireEvent.keyDown(assignee, { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByText('Anna Weber'));
+    await waitFor(() => {
+      expect(payloads.at(-1)).toEqual({
+        basis: 'elapsed',
+        assigneeAccountIds: ['acc-anna'],
+      });
+    });
+
+    // And the export carries exactly the filters on screen: a wider file
+    // than the table someone just read is a lie in a spreadsheet.
+    const exported: Record<string, unknown>[] = [];
+    setBridgeResolvers({
+      ...resolversFor(scenarios.populated.responses),
+      getReport: () => scenarios.populated.responses.getReport,
+      exportCsv: (payload) => {
+        exported.push(payload as Record<string, unknown>);
+        return { ok: true, data: { filename: 'x.csv', csv: 'a,b' } };
+      },
+    });
+    screen.getByRole('button', { name: 'Export CSV' }).click();
+    await waitFor(() => {
+      expect(exported.at(-1)).toEqual({
+        basis: 'elapsed',
+        assigneeAccountIds: ['acc-anna'],
+      });
+    });
+  });
+
+  it('★ converts a picked creation window to an inclusive span of whole days', () => {
+    // `createdTo` is the *end* of its chosen day: a person picking
+    // "to 12 Mar" means including the 12th, and a half-open window ending
+    // at 00:00 of the picked day would silently drop a day from every
+    // query.
+    expect(
+      filtersToRequest({
+        assigneeAccountId: null,
+        issueTypeId: null,
+        createdFrom: '2026-03-01',
+        createdTo: '2026-03-12',
+      }),
+    ).toEqual({
+      createdFrom: Date.parse('2026-03-01T00:00:00Z'),
+      createdTo: Date.parse('2026-03-13T00:00:00Z'),
+    });
+    expect(
+      filtersToRequest({
+        assigneeAccountId: 'acc-anna',
+        issueTypeId: '10004',
+        createdFrom: null,
+        createdTo: null,
+      }),
+    ).toEqual({ assigneeAccountIds: ['acc-anna'], issueTypeIds: ['10004'] });
   });
 
   it('★ shows the re-entry badge, which is the whole product argument', async () => {

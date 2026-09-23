@@ -8,6 +8,8 @@ import {
   type JiraProjectRef,
   type JiraSearchPage,
   type StatusMeta,
+  type IssueTypeRef,
+  type JiraUserRef,
 } from '@jfm/engine';
 import { buildIssueTimeline, deriveGoal } from '../src/issue-timeline.js';
 
@@ -49,6 +51,15 @@ const STATUSES: readonly StatusMeta[] = [
 ];
 
 class StubJira implements JiraApi {
+  issueTypes: readonly IssueTypeRef[] | undefined;
+  assignableUsers: readonly JiraUserRef[] | undefined;
+
+  getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+    return Promise.resolve(this.issueTypes ?? []);
+  }
+  getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+    return Promise.resolve(this.assignableUsers ?? []);
+  }
   changelogPages: JiraChangelogPage[] = [];
   statuses: readonly StatusMeta[] = STATUSES;
   issue: JiraIssue = {

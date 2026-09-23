@@ -10,6 +10,7 @@ import {
   handleIndexProgress,
   handleIssueTimeline,
   handleListProjects,
+  handleListFilterOptions,
   handleListSlaGoals,
   handleListStatuses,
   handleSaveSlaGoal,
@@ -142,6 +143,8 @@ export async function callLiveResolver(
       return handleHistoryReport(runtime, invocation);
     case 'listStatuses':
       return handleListStatuses(runtime, invocation);
+    case 'listFilterOptions':
+      return handleListFilterOptions(runtime, invocation);
     case 'listSlaGoals':
       return handleListSlaGoals(runtime, invocation);
     case 'saveSlaGoal':

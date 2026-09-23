@@ -45,6 +45,7 @@ export const RESOLVER_KEYS = [
   'getFlowReport',
   'getSlaReport',
   'getHistoryReport',
+  'listFilterOptions',
   'listStatuses',
   'listSlaGoals',
   'saveSlaGoal',

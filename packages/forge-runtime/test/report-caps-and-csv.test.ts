@@ -10,6 +10,8 @@ import {
   type StatusAggregateRow,
   type StatusMeta,
   type WorklogRecord,
+  type IssueTypeRef,
+  type JiraUserRef,
 } from '@jfm/engine';
 import { LimitHonouringSqlExecutor, RecordingSqlExecutor } from '../src/sql/executor.js';
 import { SQL_MAX_ROWS, SqlMetricsStore } from '../src/sql/sql-store.js';
@@ -766,6 +768,15 @@ const ISSUE: JiraIssue = {
 };
 
 class StubJira implements JiraApi {
+  issueTypes: readonly IssueTypeRef[] | undefined;
+  assignableUsers: readonly JiraUserRef[] | undefined;
+
+  getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+    return Promise.resolve(this.issueTypes ?? []);
+  }
+  getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+    return Promise.resolve(this.assignableUsers ?? []);
+  }
   canBrowse = true;
   canBrowseProject(): Promise<boolean> {
     return Promise.resolve(this.canBrowse);

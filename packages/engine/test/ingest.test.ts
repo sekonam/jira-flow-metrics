@@ -38,9 +38,11 @@ import {
 } from '../src/ingest/process-issue.js';
 import { MemoryStore } from '../src/store/memory-store.js';
 import type {
+  IssueTypeRef,
   JiraChangelogPage,
   JiraIssue,
   JiraSearchPage,
+  JiraUserRef,
   JiraWorklogPage,
 } from '../src/jira/types.js';
 import {
@@ -971,6 +973,13 @@ describe('recovering from a corrupted Jira pagination cursor (TECHNICAL-SPEC § 
     isAdmin(): Promise<boolean> {
       return Promise.resolve(true);
     }
+
+    getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+      throw new Error('not used by this test');
+    }
+    getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+      throw new Error('not used by this test');
+    }
   }
 
   /**
@@ -1411,6 +1420,8 @@ describe('issue security levels', () => {
       getWorklogs: () => Promise.resolve({ worklogs: [], total: 0 }),
       getStatuses: () => Promise.resolve([]),
       listProjects: () => Promise.resolve([]),
+      getIssueTypes: () => Promise.resolve([]),
+      getAssignableUsers: () => Promise.resolve([]),
     };
     const d = {
       api,
@@ -1437,6 +1448,8 @@ describe('issue security levels', () => {
       getWorklogs: () => Promise.resolve({ worklogs: [], total: 0 }),
       getStatuses: () => Promise.resolve([]),
       listProjects: () => Promise.resolve([]),
+      getIssueTypes: () => Promise.resolve([]),
+      getAssignableUsers: () => Promise.resolve([]),
     };
     const d = {
       api,

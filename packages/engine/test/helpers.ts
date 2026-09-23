@@ -2,11 +2,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { reconstructTimeline } from '../src/changelog/reconstruct.js';
 import type {
+  IssueTypeRef,
   JiraChangelogEntry,
   JiraChangelogPage,
   JiraIssue,
   JiraProjectRef,
   JiraSearchPage,
+  JiraUserRef,
   JiraWorklogPage,
 } from '../src/jira/types.js';
 import type { JiraApi, PageParams, SearchParams, Sleeper } from '../src/ingest/ports.js';
@@ -73,6 +75,8 @@ export class RecordingSleeper implements Sleeper {
 }
 
 export interface FakeJiraOptions {
+  readonly issueTypes?: readonly IssueTypeRef[];
+  readonly assignableUsers?: readonly JiraUserRef[];
   readonly pages?: readonly JiraSearchPage[];
   readonly changelogs?: Readonly<Record<string, readonly JiraChangelogEntry[]>>;
   readonly worklogs?: Readonly<Record<string, JiraWorklogPage>>;
@@ -160,6 +164,14 @@ export class FakeJiraApi implements JiraApi {
       });
     }
     return Promise.resolve(fixture);
+  }
+
+  getIssueTypes(): Promise<readonly IssueTypeRef[]> {
+    return Promise.resolve(this.options.issueTypes ?? []);
+  }
+
+  getAssignableUsers(): Promise<readonly JiraUserRef[]> {
+    return Promise.resolve(this.options.assignableUsers ?? []);
   }
 
   getStatuses(): Promise<readonly StatusMeta[]> {
