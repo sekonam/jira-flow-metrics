@@ -59,10 +59,10 @@ human more than a field left out.
 | **Remote hostnames**              | ✅ None. "Atlassian reports the build eligible for Runs on Atlassian — the app makes no external egress" — `apps/time-in-status/manifest.yml:8-11`. Answer the submission question "none".                                                                                               | manifests                                                                          |
 | **Privacy statement text**        | ✅ Written, five per-listing variants, each ~5 bullets incl. the stated residual                                                                                                                                                                                                         | `docs/LISTING-COPY.md:99-120` and the equivalent section in each of the other four |
 | **Security statement text**       | ✅ Same block as above. Source of record for the residual is `TECHNICAL-SPEC.md` § 11 item 6                                                                                                                                                                                             | as above                                                                           |
-| **Privacy policy URL**            | ❌ **Does not exist.** No URL anywhere in the repo. `START-HERE.md:52` budgets "~$12/yr, a domain for the docs site" and it has not been bought                                                                                                                                          | —                                                                                  |
+| **Privacy policy URL**            | ⚠️ **Content drafted, URL still missing.** The page text now exists at `docs/public-site/privacy-policy.md` (placeholders `[VENDOR NAME]`, `[CONTACT EMAIL]`, `[EFFECTIVE DATE]` unfilled); it must be hosted — see § 6 — before there is a URL to paste                                | `docs/public-site/privacy-policy.md`                                               |
 | **EULA / End User Terms**         | ❌ **Not decided.** No terms document, and no recorded decision to use Atlassian's standard end-user agreement                                                                                                                                                                           | —                                                                                  |
 | **Documentation URL**             | ❌ **Does not exist.** The source repo is private (`package.json:7` — `"license": "UNLICENSED"`); only `github.com/sekonam/jira-flow-metrics-assets` is public, and it holds five PNG icons                                                                                              | —                                                                                  |
-| **Support contact / URL**         | ❌ **Not written.** `PROMOTION.md:228` requires "support contact, stated response time you can actually keep"; no address, no response-time commitment exists                                                                                                                            | —                                                                                  |
+| **Support contact / URL**         | ⚠️ **Page drafted, contact still missing.** `docs/public-site/support.md` exists with a two-business-day first-reply commitment for the human to confirm; `[SUPPORT EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]`, `[DOCS URL]` unfilled, and the page is not hosted — see § 6                 | `docs/public-site/support.md`                                                      |
 | **Vendor profile (name, logo)**   | ⚠️ Partial. Developer Space "AskMe Solutions" exists (`START-HERE.md:77`); the Marketplace **vendor account does not** (`START-HERE.md:79`, `ROADMAP.md:196`). No vendor logo in the repo                                                                                                | `assets/thumbnails/` holds app icons only                                          |
 | **Highlights**                    | ❌ **No copy written for any listing.** The field is structured (title + caption + image). `PROMOTION.md:225` lists it — "the console's short bullets; nouns, not adjectives" — and nothing was drafted                                                                                  | —                                                                                  |
 | **YouTube / demo video**          | ❌ None, and optional. Ship without it                                                                                                                                                                                                                                                   | —                                                                                  |
@@ -180,8 +180,9 @@ human more than a field left out.
 
 1. **No Marketplace vendor account.** `START-HERE.md:79` and `ROADMAP.md:196` both still have it
    unticked. Nothing else in this document can happen first. 🧑
-2. **No privacy policy URL.** Confirmed mandatory for all partners. Needs a domain
-   (`START-HERE.md:52`, ~$12/yr), a host, and a page. 🧑
+2. **No privacy policy URL.** Confirmed mandatory for all partners. The page itself is now
+   drafted (`docs/public-site/privacy-policy.md`); what remains is a host — § 6 gives the two
+   cheapest routes — and the human filling the placeholders. 🧑
 3. **No End User Terms / EULA.** Required to transact in cloud. Cheapest path is Atlassian's
    customisable standard end-user agreement — a decision, not a drafting job. 🧑
 4. **`app.licensing.enabled: true` is missing from all five manifests.** These are paid listings
@@ -202,7 +203,9 @@ human more than a field left out.
    inside a single description; ① claims filters it does not have. A reviewer who opens the app
    and reads the copy sees the mismatch. Full text in § 4.
 9. **No support contact and no stated response time.** `PROMOTION.md:228` calls for a response
-   time "you can actually keep". An unanswerable support address is worse than a slow one. 🧑
+   time "you can actually keep". An unanswerable support address is worse than a slow one. The
+   support page is now drafted (`docs/public-site/support.md`) with a two-business-day first-reply
+   commitment; the human must confirm that number, create the address, and host the page (§ 6). 🧑
 10. **No documentation URL.** `PROMOTION.md:229`: "live before submission; reviewers open it".
 11. **No Highlights copy for any listing** — a visible, empty section on the listing page.
 12. **The issue-history gadget description over-claims "Filterable"** in a shipped manifest string
@@ -477,18 +480,20 @@ answer pre-filled from the files.
    Developer Space (`START-HERE.md:77`). Tick `START-HERE.md:79`.
 2. 🧑 **Submit tax and bank details.** Paperwork, not a decision (`START-HERE.md:51`). Do it now;
    payouts release 30 days after a month accruing $500+ (`RUNBOOK.md:137-138`).
-3. 🧑 **Buy a domain and stand up three pages.** ~$12/yr (`START-HERE.md:52`). The three pages are
-   the three missing URLs in § 1.0, and they are the cheapest blocker on this list to clear:
-   - `/privacy` — **required**. Content: paste the privacy bullets from
-     `docs/LISTING-COPY.md:105-120`, plus the controller/processor statement you will also need
-     for the Privacy & Security tab.
+3. 🧑 **Host the pages** — a bought domain (~$12/yr, `START-HERE.md:52`) or GitHub Pages on the
+   existing public assets repo; § 6 weighs the two. The pages are the three missing URLs in
+   § 1.0, and they are the cheapest blocker on this list to clear:
+   - `/privacy` — **required**. Content is drafted: `docs/public-site/privacy-policy.md`. Fill
+     the placeholders, verify the claims against the HTML comments in the file, and publish.
    - `/terms` — **required**. Decide: Atlassian's customisable standard end-user agreement
      (fastest) or your own. Record the decision.
    - `/docs` — one page per listing is enough at v1. Source material already exists: each
      listing's "What you get" and "What it does not do" sections.
 4. 🧑 **Decide the support contact and the response time you can keep.** `PROMOTION.md:228`. A
    `support@` address on the same domain and "two business days" is a commitment a solo developer
-   can actually honour; "same day" is not.
+   can actually honour; "same day" is not. The support page is drafted at
+   `docs/public-site/support.md` with exactly that commitment — confirm it, fill `[SUPPORT
+   EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]` and `[DOCS URL]`, and publish it alongside `/privacy`.
 
 ### Phase B — make the app sellable (blocking, needs a manifest change)
 
@@ -591,7 +596,44 @@ answer pre-filled from the files.
 
 ---
 
-## Summary
+## 6. Hosting the public pages — the two cheapest honest routes
+
+The privacy policy and support page are drafted in `docs/public-site/`. **Publishing them is the
+human's action** — the placeholders (`[VENDOR NAME]`, `[CONTACT EMAIL]`, `[SUPPORT EMAIL]`,
+`[SUPPORT URL]`, `[EFFECTIVE DATE]`, `[TIMEZONE]`, `[DOCS URL]`, `[PRIVACY POLICY URL]`) name the
+identity and the commitments only the human can own, and each file carries its claims' sources as
+HTML comments for verification before anything goes live.
+
+### Route (a) — GitHub Pages on the existing public repo, $0
+
+`github.com/sekonam/jira-flow-metrics-assets` is already public (it holds the five listing
+thumbnails), so it can serve these pages without buying anything:
+
+1. Fill every placeholder in both files; delete the draft-warning comment blocks.
+2. Copy `privacy-policy.md` and `support.md` into the assets repo (root, or a `docs/` folder).
+   GitHub Pages renders Markdown via Jekyll by default; commit an `index.md` linking both pages
+   so the site root is not a 404.
+3. In that repo: **Settings → Pages → Build and deployment → Deploy from a branch**, pick `main`
+   and the folder chosen in step 2, save.
+4. Wait for the Pages build (a minute or two), then open
+   `https://sekonam.github.io/jira-flow-metrics-assets/privacy-policy` and `…/support` and read
+   both pages as a stranger would.
+5. Paste those URLs into the listing form fields (§ 5 step 21).
+
+Trade-off: the URL says `github.io` and carries the repo name. Atlassian requires a privacy
+policy URL, and nothing read for § 0 requires it to be on an owned domain — but re-check the live
+form's field validation before relying on that.
+
+### Route (b) — a bought domain, ~$12/yr
+
+The route `START-HERE.md:52` already budgets. Buy the domain, point it at any static host
+(GitHub Pages accepts a custom domain on the same setup as route (a); registrars' own static
+hosting also works), publish the same two files at `/privacy` and `/support`. Costs money and a
+DNS wait, reads as a vendor site, and gives the `/docs` and `/terms` pages from Phase A step 3 a
+home with a stable identity. Route (a) can ship first and route (b) can take over later — a
+listing's URLs can be edited after approval.
+
+
 
 **This is roughly two weeks of human work away from a submittable listing ①, and the single
 biggest blocker is that no Marketplace vendor account exists** — every other blocking item either
