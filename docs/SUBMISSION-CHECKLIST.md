@@ -190,10 +190,13 @@ human more than a field left out.
    scope for this document, and it forces a fresh `forge deploy -e production`.
 5. **No production deploy of any app.** Only `time-in-status` has been deployed at all, and only
    to `development` (`apps/time-in-status/manifest.yml:7-8`). The other four say "NOT DEPLOYED".
-6. **Zero shippable screenshots for listings ②–⑤,** and listing ①'s six are self-declared stale.
-   Atlassian will not review a listing with no media, and `ROADMAP.md:190-207` names this as the
-   reason stage 6 exists: the Forge iframe cannot be screenshotted by automation, so this is
-   human-only work. 🧑
+6. **Zero shippable screenshots for listings ②–⑤.** Listing ①'s are no longer the blocker:
+   six cropped, captioned candidates from real Jira at HEAD landed 2026-09-23 in
+   `docs/listing-assets/candidates-2026-09-23/` (with `CAPTIONS.md`), shot _by automation_ — the
+   "Forge iframes cannot be screenshotted" premise this item rested on was a limit of the old
+   toolchain, not of Forge (`docs/SHOT-LIST.md`, status update). Listings ②–⑤ remain unshot;
+   same technique applies once a browser session is available. The human's remaining share is
+   approval of the candidates, not capture. 🧑⚠️
 7. **Tax and bank details** — required before payout, and the vendor account flow asks for them.
    🧑 (`ROADMAP.md:196`)
 
@@ -508,7 +511,9 @@ EMAIL]`, `[SUPPORT URL]`, `[TIMEZONE]` and `[DOCS URL]`, and publish it alongsid
 
 ### Phase C — capture the media (🧑 only, the real time sink)
 
-8. 🧑 **Re-shoot listing ①'s six screenshots.** They are stale as of the v1.1 charts
+8. ⚠️ **Listing ①'s screenshots: candidates exist — review, don't re-shoot.** See
+   `docs/listing-assets/candidates-2026-09-23/`; the stale-six note below is retained for
+   what each frame must contain. They were stale as of the v1.1 charts
    (`docs/LISTING-COPY.md:126-132`, `ROADMAP.md:197`). The capture table at
    `docs/LISTING-COPY.md:139-146` tells you what each frame must contain. Add a seventh candidate:
    the `jira:issueActivity` timeline tab, which `:129-131` argues is a stronger #2 than the
