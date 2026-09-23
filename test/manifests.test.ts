@@ -71,6 +71,17 @@ describe.each(APP_KEYS)('manifest: %s', (key) => {
     expect(Object.keys(manifest).sort()).toEqual(['app', 'modules', 'permissions', 'resources']);
   });
 
+  it('★ has licensing enabled, without which the listing cannot carry a price', () => {
+    // Absent, the Marketplace form refuses a paid listing outright — and
+    // adding it after submission forces a fresh production deploy plus a
+    // listing re-approval. Every revenue figure in PRODUCT-SPEC assumes a
+    // paid listing, so a manifest without this line is a manifest that can
+    // only ship the wrong product. Licensing applies to production installs
+    // only; the development installs this repo deploys are unaffected.
+    const app = manifest.app as { licensing?: { enabled?: boolean } } | undefined;
+    expect(app?.licensing?.enabled).toBe(true);
+  });
+
   it('declares no scheduled trigger — ingestion is incremental only', () => {
     expect(manifest.modules?.['scheduledTrigger']).toBeUndefined();
     const raw = readFileSync(`${APPS_DIR}/${key}/manifest.yml`, 'utf8');

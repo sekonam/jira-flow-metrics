@@ -160,6 +160,21 @@ resources:
 app:
   runtime:
     name: nodejs22.x
+  # ★ Required before this app can be listed as paid-via-Atlassian.
+  #
+  # Without it the Marketplace listing cannot carry a price at all, and
+  # adding it later forces a fresh production deploy plus a listing
+  # re-approval — the expensive time to discover it is after submission.
+  # Licensing is enforced for production installations only; development
+  # installs (everything this repository has ever deployed) are unaffected.
+  #
+  # ⚠️ UNVERIFIED on a production install, like everything licensing-shaped
+  # in a repo that has never shipped one: whether the platform blocks an
+  # unlicensed production install by itself or expects the app to check
+  # `context.license.isActive` is exactly the kind of claim this project
+  # does not assert without observing it. On the RUNBOOK submission path.
+  licensing:
+    enabled: true
   id: ari:cloud:ecosystem::app/05b589b7-c96b-40eb-8ded-0cc100ef851b
 
 permissions:
