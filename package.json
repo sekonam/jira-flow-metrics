@@ -23,6 +23,7 @@
     "verify": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run preflight && pnpm run coverage && pnpm run build",
     "seed:dev-site": "node tools/seed-dev-site.mjs",
     "seed:bulk": "node tools/seed-bulk.mjs",
+    "seed:worklog-authors": "node tools/seed-worklog-authors.mjs",
     "e2e:live": "tsc --build && node packages/ui-harness/scripts/live-e2e.mjs",
     "e2e:ui": "tsc --build && node packages/ui-harness/scripts/build-scenarios.mjs && node packages/ui-harness/scripts/e2e-ui.mjs",
     "preflight": "node tools/preflight.mjs",

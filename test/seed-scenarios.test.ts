@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseArgs, reset } from '../tools/seed-dev-site.mjs';
+import {
+  extraAccounts,
+  parseArgs as parseWorklogAuthorArgs,
+  planFor,
+} from '../tools/seed-worklog-authors.mjs';
 import { deletionMeansGone, isoDaysFromNow } from '../tools/jira-seed-lib.mjs';
 import {
   SCENARIOS,
@@ -416,6 +421,53 @@ describe('parseArgs — rejecting a malformed command line', () => {
       reset: false,
       help: false,
     });
+  });
+});
+
+describe('seed-worklog-authors: the parts that decide what gets written', () => {
+  it('reads consecutive numbered accounts and stops at the first gap', () => {
+    expect(
+      extraAccounts({
+        JIRA_EMAIL_2: 'b@x.test',
+        JIRA_API_TOKEN_2: 't2',
+        JIRA_EMAIL_3: 'c@x.test',
+        JIRA_API_TOKEN_3: 't3',
+        // A gap: _5 without _4 must not be reached — silently skipping a
+        // hole would make "why is Dana not an author?" a mystery.
+        JIRA_EMAIL_5: 'e@x.test',
+        JIRA_API_TOKEN_5: 't5',
+      }),
+    ).toEqual([
+      { email: 'b@x.test', token: 't2', n: 2 },
+      { email: 'c@x.test', token: 't3', n: 3 },
+    ]);
+    expect(extraAccounts({})).toEqual([]);
+    // A token without its email (or vice versa) is a gap, not an account.
+    expect(extraAccounts({ JIRA_EMAIL_2: 'b@x.test' })).toEqual([]);
+  });
+
+  it('plans a bounded, deterministic spread per author', () => {
+    const keys = Array.from({ length: 40 }, (_u, i) => `JFMB-${String(i + 1)}`);
+    const first = planFor(0, keys, 8);
+    expect(first).toHaveLength(8);
+    // Deterministic: the same inputs plan the same worklogs, so a dry run
+    // prints exactly what a real run would do.
+    expect(planFor(0, keys, 8)).toEqual(first);
+    for (const entry of first) {
+      expect(entry.hours).toBeGreaterThanOrEqual(1);
+      expect(entry.hours).toBeLessThanOrEqual(6);
+      expect(keys).toContain(entry.issueKey);
+    }
+    // Fewer issues than the quota: the plan covers what exists, no more.
+    expect(planFor(0, keys.slice(0, 3), 8).length).toBeLessThanOrEqual(3);
+  });
+
+  it('refuses a nonsense --per-author before touching anything', () => {
+    expect(() => parseWorklogAuthorArgs(['--per-author', '0'])).toThrow(/between 1 and 100/);
+    expect(() => parseWorklogAuthorArgs(['--per-author', '101'])).toThrow(/between 1 and 100/);
+    expect(() => parseWorklogAuthorArgs(['--bogus'])).toThrow(/Unknown argument/);
+    expect(parseWorklogAuthorArgs(['--per-author=12']).perAuthor).toBe(12);
+    expect(parseWorklogAuthorArgs(['--dry-run']).dryRun).toBe(true);
   });
 });
 
