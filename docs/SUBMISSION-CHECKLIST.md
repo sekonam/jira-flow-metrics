@@ -211,6 +211,12 @@ human more than a field left out.
    support page is now drafted (`docs/public-site/support.md`) with a two-business-day first-reply
    commitment; the human must confirm that number, create the address, and host the page (§ 6). 🧑
 10. **No documentation URL.** `PROMOTION.md:229`: "live before submission; reviewers open it".
+    **The page is now drafted** (`docs/public-site/documentation.md`, 2026-09-24): install and
+    first-run, the shared measurement model, a section per app, the cap table with every limit read
+    out of the code, CSV, gadgets, the admin page, troubleshooting, and what the apps do not do.
+    What remains is a host (§ 6) and the human filling the `[BRACKETS]`. 🧑
+    Every figure in it carries an HTML comment naming the file and line it came from, so a number
+    that changes in the code is a documented edit rather than silent drift.
 11. ~~**No Highlights copy for any listing**~~ **Done 2026-09-24.** Each `LISTING-COPY-*` now has a
     `## Highlights` section: three headings, three summaries, and the screenshot each one is paired
     with. Writing them surfaced three real holes in the screenshot plans — listing ④ has no
