@@ -175,6 +175,29 @@ is backed by a manifest test or a stated design decision — see `PRODUCT-SPEC.m
 
 ---
 
+## Highlights (3, each paired with one screenshot)
+
+Marketplace renders these above the description, each beside its image; three is the maximum and an
+empty Highlights section is visible on the listing page, so all three are filled. Nothing new is
+claimed here — every line restates something "What you get" already says and the code already does,
+because a highlight is often the only copy a buyer reads before deciding whether to scroll.
+
+The **Shot** column points into the numbered list in "Screenshots" below. Writing these is what
+surfaced the gaps noted under each table: a highlight with no image beside it is a worse listing
+than one fewer highlight.
+
+| #   | Heading (≤60 chars)                             | Summary (≤180 chars)                                                                                                              | Shot |
+| --- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 1   | Every field change in the project, in one table | Jira's History tab answers for one issue at a time. This answers for the whole project, and exports exactly what it shows.        | 1    |
+| 2   | Which fields actually churn, busiest first      | Status, estimates, time spent, resolution — ranked, so the noisy field is obvious before anyone reads a single row.               | 2    |
+| 3   | Honest about its own limits                     | When the report reaches its page size it says so, in the banner and in the tile, rather than presenting a lower bound as a total. | 5    |
+
+**Two gaps this surfaced.** The list below has no shot of the **`Changes by field` chart** that
+highlight 2 is entirely about, and its shot 5 is the _indexing_ banner, not the **report cap**
+banner that highlight 3 is about — different sentences, different meaning. Both frames are already
+captured (`listing-assets-issue-history/candidates-2026-09-24/02-changes-by-field.png` and
+`01-cap-banner-and-tiles.png`); add them to the list below before pasting these highlights.
+
 ## Screenshots — 6, in this order · ALL PENDING CAPTURE
 
 None captured yet. Capture against the seeded dev site (`sergiip180.atlassian.net`), the same way

@@ -188,6 +188,29 @@ is backed by a manifest test or a stated design decision — see `PRODUCT-SPEC.m
 
 ---
 
+## Highlights (3, each paired with one screenshot)
+
+Marketplace renders these above the description, each beside its image; three is the maximum and an
+empty Highlights section is visible on the listing page, so all three are filled. Nothing new is
+claimed here — every line restates something "What you get" already says and the code already does,
+because a highlight is often the only copy a buyer reads before deciding whether to scroll.
+
+The **Shot** column points into the numbered list in "Screenshots" below. Writing these is what
+surfaced the gaps noted under each table: a highlight with no image beside it is a worse listing
+than one fewer highlight.
+
+| #   | Heading (≤60 chars)                      | Summary (≤180 chars)                                                                                                                            | Shot |
+| --- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 1   | Every unfinished issue, oldest first     | With the moment it entered the status it is in, so any row can be checked against that issue's own History tab in one click.                    | 1    |
+| 2   | Six age buckets, and always all six      | An empty bucket is a fact the chart states rather than a gap it hides — the shape of the board is readable at a glance, zeros included.         | 2    |
+| 3   | How stale the board is, in three numbers | In flight, the oldest item with the status it is stuck in, and how many have not moved in a fortnight. Three numbers, no dashboard to assemble. | 3    |
+
+**Why the cumulative flow diagram is not a highlight, despite being the differentiator.** It has no
+shippable image. `CAPTURE-PLAN-2026-09-24.md` cuts the CFD shot: on the seeded tenant the chart is
+flat from 25 Aug to 10 Sep, steps once, then flat again — thirty day-ticks over one day of movement.
+A highlight with no honest image beside it is worse than a third highlight about the tiles. **Swap
+highlight 3 for the CFD the moment a re-seed with real cross-day dwell makes that chart true.**
+
 ## Screenshots — 6 planned, in this order · all **pending capture**
 
 Capture against the seeded dev site (`sergiip180.atlassian.net`) exactly as listing 1's were: the

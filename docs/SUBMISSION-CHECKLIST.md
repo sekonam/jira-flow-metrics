@@ -185,9 +185,10 @@ human more than a field left out.
    cheapest routes — and the human filling the placeholders. 🧑
 3. **No End User Terms / EULA.** Required to transact in cloud. Cheapest path is Atlassian's
    customisable standard end-user agreement — a decision, not a drafting job. 🧑
-4. **`app.licensing.enabled: true` is missing from all five manifests.** These are paid listings
-   above 10 seats; without it the app cannot be sold. This is a manifest change, so it is out of
-   scope for this document, and it forces a fresh `forge deploy -e production`.
+4. ~~**`app.licensing.enabled: true` is missing from all five manifests.**~~ **Done.** All five
+   manifests now carry `licensing: enabled: true`, each under a comment saying the behaviour is
+   unverified on a production install because this repo has never shipped one. It still forces a
+   fresh `forge deploy -e production` when item 5 happens.
 5. **No production deploy of any app.** Only `time-in-status` has been deployed at all, and only
    to `development` (`apps/time-in-status/manifest.yml:7-8`). The other four say "NOT DEPLOYED".
 6. **Zero shippable screenshots for listings ②–⑤.** Listing ①'s are no longer the blocker:
@@ -210,9 +211,15 @@ human more than a field left out.
    support page is now drafted (`docs/public-site/support.md`) with a two-business-day first-reply
    commitment; the human must confirm that number, create the address, and host the page (§ 6). 🧑
 10. **No documentation URL.** `PROMOTION.md:229`: "live before submission; reviewers open it".
-11. **No Highlights copy for any listing** — a visible, empty section on the listing page.
-12. **The issue-history gadget description over-claims "Filterable"** in a shipped manifest string
-    a customer reads in the gadget picker. § 4.4.
+11. ~~**No Highlights copy for any listing**~~ **Done 2026-09-24.** Each `LISTING-COPY-*` now has a
+    `## Highlights` section: three headings, three summaries, and the screenshot each one is paired
+    with. Writing them surfaced three real holes in the screenshot plans — listing ④ has no
+    goal-editor shot, listing ⑤ has neither a `Changes by field` shot nor a _report-cap_ banner shot
+    (its shot 5 is the _indexing_ banner, a different sentence), and listing ③'s strongest claim has
+    no shippable image at all. Each hole is written up under its own Highlights table.
+12. ~~**The issue-history gadget description over-claims "Filterable"**~~ **Done 2026-09-24.**
+    `apps/issue-history/manifest.yml` now reads "Every field change across the whole project in one
+    exportable table" — the page subtitle, word for word. Deployed to `development` as 2.23.0.
 
 ### 2C — Can ship and improve later
 
@@ -225,9 +232,13 @@ human more than a field left out.
 17. **Per-listing pre-submission market re-checks** were run 2026-09-21 and each carries a "re-run
     on the actual submission day" caveat (e.g. `LISTING-COPY-issue-history.md:44-46`,
     `LISTING-COPY-wip-aging.md:55-57`).
-18. **`docs/listing-assets/` naming.** The four newer listings plan prefixes (`worklog-`, `wip-`,
-    `ih-`) into the _same_ folder as listing ①'s, while empty per-listing folders already exist.
-    Pick one convention before 20+ files land.
+18. ~~**`docs/listing-assets/` naming.**~~ **Settled 2026-09-24, by use.** One folder per listing,
+    `docs/listing-assets-<app>/`, and inside it `raw-<YYYY-MM-DD>/` for untouched frames and
+    `candidates-<YYYY-MM-DD>/` for the cropped set plus its `CAPTIONS.md`. Keeping the raws is what
+    lets a bad crop be redone without re-driving a browser, and dating both folders is what lets a
+    re-shoot sit beside the frames it replaces instead of overwriting them. Listing ① stays at the
+    unsuffixed `docs/listing-assets/` — it is the odd one out, and renaming it would break the
+    `CAPTIONS.md` and checklist references already committed against it for no gain.
 
 ---
 

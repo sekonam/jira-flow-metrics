@@ -200,6 +200,29 @@ is backed by a manifest test or a stated design decision — see `PRODUCT-SPEC.m
 
 ---
 
+## Highlights (3, each paired with one screenshot)
+
+Marketplace renders these above the description, each beside its image; three is the maximum and an
+empty Highlights section is visible on the listing page, so all three are filled. Nothing new is
+claimed here — every line restates something "What you get" already says and the code already does,
+because a highlight is often the only copy a buyer reads before deciding whether to scroll.
+
+The **Shot** column points into the numbered list in "Screenshots" below. Writing these is what
+surfaced the gaps noted under each table: a highlight with no image beside it is a worse listing
+than one fewer highlight.
+
+| #   | Heading (≤60 chars)                         | Summary (≤180 chars)                                                                                                                                     | Shot |
+| --- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 1   | The measurement model is on the page        | Working time in the statuses you choose to count, against a target you can see and change without leaving the report. No hidden timer, nothing to infer. | 1    |
+| 2   | Save a goal and name it, twenty per project | Everyone on the project then opens the same report measured the same way, instead of each person rebuilding it from chips every time.                    | 3    |
+| 3   | Working-time target and due date, together  | An issue can sit inside its target and still be weeks late against its due date. The table answers both questions on the same row.                       | 4    |
+
+**Gap this surfaced.** The screenshot list below predates the goal editor and has **no shot of it**,
+even though the editor is what highlight 2 is about; shot 3 only carries the goal's _name_, in the
+Attainment tile's hint. A goal-editor frame is already captured —
+`listing-assets-sla-breach/candidates-2026-09-24/01-goal-editor.png` — and should be added to the
+list below as its own shot before this highlight is pasted.
+
 ## Screenshots — 6 planned, in this order — **all pending capture**
 
 Nothing here is finalized. Capture against the deployed development install on the seeded dev site

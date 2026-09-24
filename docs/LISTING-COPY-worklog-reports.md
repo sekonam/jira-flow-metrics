@@ -208,6 +208,29 @@ today, does not deliver them to a user.
 
 ---
 
+## Highlights (3, each paired with one screenshot)
+
+Marketplace renders these above the description, each beside its image; three is the maximum and an
+empty Highlights section is visible on the listing page, so all three are filled. Nothing new is
+claimed here — every line restates something "What you get" already says and the code already does,
+because a highlight is often the only copy a buyer reads before deciding whether to scroll.
+
+The **Shot** column points into the numbered list in "Screenshots" below. Writing these is what
+surfaced the gaps noted under each table: a highlight with no image beside it is a worse listing
+than one fewer highlight.
+
+| #   | Heading (≤60 chars)                            | Summary (≤180 chars)                                                                                                                                          | Shot |
+| --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 1   | Totals are what people typed, never re-derived | A worklog is a stated duration at a stated instant. This report adds those durations up; it never infers time from timestamps and never fills a gap.          | 3    |
+| 2   | Hours per person, largest first                | The chart gives the shape before the rows are read, and the table below lists every person — nobody is folded into an "other" bucket.                         | 1    |
+| 3   | Copy the whole table out in one click          | The export is a modal of selectable CSV, not a download: a Jira app renders in a sandbox that cannot hand a file to the browser, and the app says so plainly. | 6    |
+
+**Gap this surfaced.** Highlight 1 leans on shot 3 — the issue's own work log beside the matching
+report row — which is the strongest thing this listing has and is the only shot that proves the
+tagline. It is currently listed third. Consider promoting it, and note that shots 1, 2, 4 and 5 are
+all blocked on the single-author problem (`CAPTURE-PLAN-2026-09-24.md` § listing 2), while shot 3
+is capturable today.
+
 ## Screenshots — 5 planned (6 if the CSV fix lands), all **pending capture**
 
 Capture against the seeded dev site (`sergiip180.atlassian.net`) with the worklog-reports app

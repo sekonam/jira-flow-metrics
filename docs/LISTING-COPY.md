@@ -122,6 +122,27 @@ line is backed by a manifest test or a stated design decision — see `PRODUCT-S
 
 ---
 
+## Highlights (3, each paired with one screenshot)
+
+Marketplace renders these above the description, each beside its image; three is the maximum and an
+empty Highlights section is visible on the listing page, so all three are filled. Nothing new is
+claimed here — every line restates something "What you get" already says and the code already does,
+because a highlight is often the only copy a buyer reads before deciding whether to scroll.
+
+The **Shot** column points into the numbered list in "Screenshots" below. Writing these is what
+surfaced the gaps noted under each table: a highlight with no image beside it is a worse listing
+than one fewer highlight.
+
+| #   | Heading (≤60 chars)                               | Summary (≤180 chars)                                                                                                                                      | Shot |
+| --- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 1   | Every visit counted, not just the last one        | Jira's control chart shows the most recent stay in a status. This shows the total across every re-entry, with a badge saying how many visits it added up. | 1    |
+| 2   | Elapsed or working hours, switched on the page    | One toggle, and every tile, chart and row recomputes against a real project calendar — timezone, weekly pattern, holidays, split shifts.                  | 3    |
+| 3   | Checkable on the issue you are already looking at | A Time in Status tab sits beside Jira's own History: every visit in order with its own duration, and the cumulative totals underneath.                    | 2    |
+
+All three already exist as cropped candidates in `listing-assets/candidates-2026-09-23/`
+(`01-reentry-report.png`, `03-working-hours-toggle.png`, `02-issue-timeline-tab.png`). This is the
+only one of the five listings whose highlights are fully illustrated today.
+
 ## Screenshots — 6, in this order
 
 > ⚠️ **Stale as of 2026-09-22 — re-shoot before submitting.** Every report page gained a chart in
