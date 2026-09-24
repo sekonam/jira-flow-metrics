@@ -52,6 +52,30 @@ https://sergiip180.atlassian.net/jira/software/projects/<KEY>/apps/<appId>/<modu
 | 5       | `issue-history`   | `b7a70548-f901-43a4-be30-55e632b70468`           | Issue History   | Field changes  |
 | (1)     | `time-in-status`  | `05b589b7-c96b-40eb-8ded-0cc100ef851b`           | Time in Status  | Time in Status |
 
+### The JFMB module instance ids, collected 2026-09-24
+
+Read straight out of the **More** menu's anchors, so they are the ids Jira actually routes on. The
+`Dev` row is the `development` deployment — the one this work installs to — and the plain row is the
+same module from an earlier install; they are different instances of the same app and they do not
+share data. **Shoot the `Dev` row.**
+
+| App               | `Dev` instance                         | other instance                         |
+| ----------------- | -------------------------------------- | -------------------------------------- |
+| `time-in-status`  | `fde3c0c8-379b-499a-961c-f9fd7f3c2f7f` | `239eaf4e-5adb-47fa-9eb9-95c06d11f03b` |
+| `worklog-reports` | `feae5eaa-b3ac-4b5c-bb8d-07d4d8b7aaa2` | `ff19d429-6269-4460-85d7-b524a703f717` |
+| `wip-aging`       | `47f79ea7-77c2-44ee-9d83-91a58f3924db` | `cf14724d-db7a-4659-bb88-b92db0facebd` |
+| `sla-breach`      | `a353ce2c-8607-4496-b594-3e5af38c01a3` | (none in the menu)                     |
+| `issue-history`   | `553260fe-526a-4f8c-878e-af7ea6f44335` | `1e92b446-f773-4b39-a528-17b735f142f8` |
+
+Collecting them by hand is no longer necessary, and the **More** menu is awkward to drive: its items
+are not in the DOM until it opens. Reading them back out afterwards is one line in the page console —
+
+```js
+Array.from(document.querySelectorAll('a[href*="/apps/"]')).map(
+  (a) => a.textContent.trim() + ' | ' + a.getAttribute('href').split('?')[0],
+);
+```
+
 **`<moduleInstanceId>` is not in this repository.** Jira mints it per installed module instance.
 Get it by clicking the tab (**More 9** → the title above) once per app and copying the URL from the
 address bar; it is stable for the life of the install. Collect all four at the start, then navigate
