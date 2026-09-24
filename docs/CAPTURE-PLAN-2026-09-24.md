@@ -27,6 +27,27 @@ written against what the site rendered this morning, not against what the seeds 
 - **One worklog author site-wide.** `tools/seed-worklog-authors.mjs` is the fix and needs
   credentials that do not exist yet.
 
+### Update, 10:40 — what changed since the morning notes above
+
+- **JFMB indexes cleanly now, on every app.** The key-ordered reseek shipped to all five and has
+  been watched through a full walk on `issue-history`, `sla-breach` and `worklog-reports`
+  (`forge logs -e development` shows `switching to a key-ordered walk` stepping
+  `JFMB-50 → 100 → 150 → 200 → 250 → 300`, and no `Backfill stuck` after it). A page that still
+  shows **Indexing failed** is showing a _stale_ failure: click **Retry indexing** once and the
+  banner clears. Do that before shooting anything on JFMB.
+- **Issue History is the strongest of the four.** 2,985 changes with a real cap banner over them,
+  and **five** bars in _Changes by field_ — `status · timeestimate · timespent · WorklogId ·
+resolution` — because of the priority and label edits. Frames banked and cropped.
+- **SLA & Due Dates rendered live for the first time**, and its distribution chart turns out to be
+  unusable for the same reason listing 3's cumulative-flow chart is. See
+  `docs/listing-assets-sla-breach/candidates-2026-09-24/CAPTIONS.md`; the short version is that
+  all 300 JFMB issues carry 66h50m-66h53m of working time, three minutes apart, so the chart is
+  one bar at **every** target and no target value splits it. Shoot the goal editor, the tiles and
+  the table; do not shoot the chart.
+- **The WIP Aging frames in `docs/listing-assets-wip-aging/raw-2026-09-24/` predate action 2** —
+  single bar in `7-14d`, _Older than 14 days_ at `0`. They are the record of the blocked state, not
+  candidates. Re-shoot that page now that a dozen issues have moved.
+
 ### Two site-level actions that pay for themselves before you shoot
 
 1. **Rename the Atlassian account display name** to something neutral and plausible. One edit,
