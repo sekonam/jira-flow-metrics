@@ -201,9 +201,6 @@ today, does not deliver them to a user.
    exposes the choice. The claim returns when a picker ships. Same for the **date-range window**
    (`from`/`to` accepted by the resolver, no UI) and the **author filter** (`authorAccountIds`
    exists on `WorklogReportRequest` but the resolver handler never reads it from the payload).
-   Note: the gadget's manifest `description` and the page subtitle both currently say "grouped by
-   person, issue or period, over any date range" — bring those in line too, whichever way this
-   goes.
 3. **"Dropped and counted" — half withheld.** Unattributable and restricted worklogs are dropped
    (verified, tested), but no counter of dropped entries is stored or surfaced anywhere in the UI.
    The copy above says dropped entries are "dropped rather than counted as zero" — true — and does

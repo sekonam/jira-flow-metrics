@@ -47,8 +47,13 @@ modules:
         resource: gadget
         render: native
       title: Field changes
-      description: Filterable, exportable field-change history across every issue in a
-        project.
+      # "Filterable" was here until 2026-09-24 and was never true on this
+      # listing: no filter control ships in `src/frontend/index.tsx`. The
+      # listing copy had already been corrected (LISTING-COPY-issue-history.md
+      # § "What it does not do"); this string is what a customer reads in
+      # Jira's gadget picker and it was missed in that pass. It now matches the
+      # page subtitle word for word.
+      description: Every field change across the whole project in one exportable table.
       # Required by the gadget schema, and must be a real, absolute, publicly
       # reachable HTTPS URL, confirmed to 255 characters max — both facts came
       # from testing against the live account, not the docs (which only say

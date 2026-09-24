@@ -276,6 +276,11 @@ happens in this niche."
 
 ## 4. Listing copy that is now factually wrong about the product
 
+**Closed 2026-09-24. All four are fixed; the diagnoses below are kept as the record of what was
+wrong and how it was decided.** Two were fixed by editing the copy, one by shipping the feature the
+copy already promised, and one by editing a manifest string. Each subsection now opens with what
+actually happened.
+
 The product gained six things on 2026-09-22 (`ROADMAP.md` stage 5): charts on every report page, a
 cumulative flow diagram, stored SLA goals with an editor, the `jira:issueActivity` timeline tab,
 "extend history", and an admin storage page. Four of the five copy files were partly updated for
@@ -287,7 +292,17 @@ Verified against the shipped frontends under `apps/*/src/frontend/` and the shar
 
 ---
 
-### 4.1 ① Time in Status — claims three filters that do not exist ❗
+### 4.1 ① Time in Status — claims three filters that do not exist ❗ → **resolved by building them**
+
+> **Outcome (2026-09-24): the copy was left alone and the product caught up.** `ReportFilters`
+> (`packages/ui/src/components.tsx`) ships an **Assignee** select, an **Issue type** select and a
+> bounded **Created from** / **Created to** pair with a _Clear filters_ button, rendered at
+> `apps/time-in-status/src/frontend/index.tsx:205`; `filtersToRequest` puts them on both the
+> `getReport` payload (`:117`) and the `exportCsv` payload (`:115-117`), so the sentence "both the
+> table and the export narrow to exactly that" is now literally true, not nearly true. **Do not
+> apply the deletion prescribed below** — it would remove a claim the app can now back. The
+> analysis is kept because the reasoning ("a filter naming a value the table is not filtered by is
+> the same lie one listing over") is the reason the controls are controlled.
 
 `docs/LISTING-COPY.md:64` currently reads:
 
@@ -322,7 +337,12 @@ but note that the six screenshots are stale — the real blocker is § 2A item 6
 
 ---
 
-### 4.2 ③ WIP Aging — promises a cumulative flow diagram and denies one, 25 lines apart ❗❗
+### 4.2 ③ WIP Aging — promises a cumulative flow diagram and denies one, 25 lines apart ❗❗ → **fixed**
+
+> **Outcome: applied.** The denial at "What it does not do" now reads "No run charts" and carries a
+> parenthesis saying the CFD _is_ rendered and that the contradiction was the point. The title
+> rationale no longer calls the CFD a v1.1 item in the present tense, and `cumulative flow` has
+> been added to the keyword list, where its absence was the last trace of the stale denial.
 
 `docs/LISTING-COPY-wip-aging.md:107-112` claims:
 
@@ -368,7 +388,11 @@ Two consequential edits follow from the same fact:
 
 ---
 
-### 4.3 ④ SLA Breach — promises saved goals and denies them, and the document header denies them too ❗❗
+### 4.3 ④ SLA Breach — promises saved goals and denies them, and the document header denies them too ❗❗ → **fixed**
+
+> **Outcome: applied.** The header note now says stored, named goals shipped in v1.1 and are
+> claimed; the false first sentence of "What it does not do" is gone, and the paragraph begins at
+> the notifications/escalation/calendars sentence, which was always true.
 
 `docs/LISTING-COPY-sla-breach.md:118-122` claims:
 
@@ -416,7 +440,15 @@ deliberately omits rather than going silent on it:
 
 ---
 
-### 4.4 ⑤ Issue History — a shipped manifest string says "Filterable" and nothing is ⚠️
+### 4.4 ⑤ Issue History — a shipped manifest string says "Filterable" and nothing is ⚠️ → **fixed**
+
+> **Outcome: applied 2026-09-24, and the scope call below was overruled.** This document deferred
+> it as "a manifest change and therefore out of scope", which would have left a false sentence in
+> front of every customer who opens Jira's gadget picker for the sake of a filing boundary.
+> `apps/issue-history/manifest.yml` now carries the suggested text verbatim — word for word the
+> page subtitle — with a comment saying what was there before and why it went. The stale note in
+> `docs/LISTING-COPY-worklog-reports.md` asking a future editor to reword the worklog gadget
+> description is deleted too; both strings it named were already correct.
 
 `apps/issue-history/manifest.yml:50-51`:
 

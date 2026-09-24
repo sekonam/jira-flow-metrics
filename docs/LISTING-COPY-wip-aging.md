@@ -67,9 +67,9 @@ WIP Aging Reports & Charts for Jira
 Under the Marketplace's list-view truncation length. Carries `WIP Aging`, `Reports` and `Charts` —
 each one a searched term. **Deliberately not** "WIP Aging & Run Charts" (the name in
 `packages/engine/src/config/pricing.ts` and `PRODUCT-SPEC.md` § 6): `computeRunChart` exists in the
-engine and is unit-tested, but **no page or resolver renders it** — a run chart is a v1.1 item
-(`ROADMAP.md` stage 5 lists the CFD there too), and a title keyword the buyer cannot find in the
-app is a refund, not an install.
+engine and is unit-tested, but **no page or resolver renders it** — the cumulative flow diagram
+shipped in v1.1 and the run chart did not, and a title keyword the buyer cannot find in the app is
+a refund, not an install.
 
 ## Tagline (search results, one line)
 
@@ -213,7 +213,7 @@ than "A table."
 ## Keyword placement checklist
 
 `wip aging` · `aging chart` · `aging work items` · `work in progress report` · `kanban aging` ·
-`age in status` · `stale issues` · `flow metrics`
+`age in status` · `stale issues` · `flow metrics` · `cumulative flow`
 
 - [ ] Title carries `WIP Aging` and `Charts`
 - [ ] Tagline carries the core claim without keyword stuffing
