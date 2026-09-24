@@ -45,8 +45,14 @@ error-reporting service and no CDN fetch.
 
 <!-- apps/*/manifest.yml permissions.scopes, e.g. time-in-status:180-188. -->
 
-**Does the app write to Jira?** **No.** No write scope is requested by any of the five, and a test
-asserts the manifests contain none. The apps read Jira and write only to their own storage.
+**Does the app write to Jira?** **No.** No write scope is requested by any of the five, and
+`pnpm run preflight` — which `verify` runs on every commit — **fails the build** if any manifest
+declares a scope beginning `write:`, `delete:`, `manage:` or `admin:`. The apps read Jira and write
+only to their own storage.
+
+<!-- tools/preflight.mjs § 6. Matching the verb prefix rather than a list of scope names is what
+     makes the check survive Atlassian adding scopes nobody here has heard of. Added 2026-09-24:
+     until then this answer rested on five manifests staying right by hand. -->
 
 **Whose permissions are enforced?** The **caller's**. A Forge app's own Jira reads are made as the
 app, which would otherwise ignore who is looking — so every report checks `BROWSE_PROJECTS` for the

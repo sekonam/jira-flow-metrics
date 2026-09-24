@@ -284,7 +284,9 @@ leader's price.
 ### Data and privacy
 
 - **No customer data leaves the Atlassian tenant.** Everything is Forge SQL inside the installation.
-- **Read-only.** No Jira write scope is requested by any listing; a manifest test asserts it.
+- **Read-only.** No Jira write scope is requested by any listing, and `tools/preflight.mjs` fails
+  the build on any scope beginning `write:`, `delete:`, `manage:` or `admin:` — so this is an
+  enforced invariant, not a convention.
 - **The caller's Jira permissions are honoured.** Every report checks `BROWSE_PROJECTS` for the
   person asking, as that person, before returning anything — the app's own Jira reads are made as
   the app and would otherwise ignore who is looking.

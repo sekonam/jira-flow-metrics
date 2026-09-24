@@ -267,6 +267,30 @@ for (const app of apps) {
     }
   }
 
+  // 6. Read-only, enforced rather than asserted in prose.
+  //
+  //    PRODUCT-SPEC § 9 and every listing's Privacy section promise the apps
+  //    never write to Jira, and docs/PRIVACY-SECURITY-ANSWERS.md repeats it on
+  //    a security questionnaire. Until 2026-09-24 nothing checked it: the
+  //    claim rested on five manifests staying right by hand. A write scope
+  //    added for one convenient mutation would have shipped with the promise
+  //    still in the copy, which is the exact shape of the § 4 errors the
+  //    submission audit found in the listing text.
+  //
+  //    Matching on the verb prefix rather than a list of scope names is what
+  //    makes this survive Atlassian adding scopes we have never heard of.
+  const mutating = manifest.scopes.filter((scope) =>
+    /^(write|delete|manage|admin):/.test(scope.replace(/^-\s*/, '')),
+  );
+  for (const scope of mutating) {
+    fail(
+      app,
+      `requests the ${scope} scope, but the listing copy, PRODUCT-SPEC § 9 and ` +
+        'the security answers all promise these apps never write to Jira — ' +
+        'change the promise or drop the scope, but they cannot both stand',
+    );
+  }
+
   const counts = Object.entries(manifest.modules)
     .map(([type, entries]) => `${type}×${entries.length}`)
     .join(' ');
