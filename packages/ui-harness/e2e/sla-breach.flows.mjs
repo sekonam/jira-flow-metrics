@@ -693,4 +693,72 @@ export const flows = [
       );
     },
   },
+  {
+    /**
+     * Counting only some statuses changes the numbers, and the caption says
+     * which ones it counted.
+     *
+     * The chips are the other half of the goal — the target is the divisor and
+     * the counted set is what goes into the numerator — and only the target is
+     * covered elsewhere. A chip that changes the caption and not the numbers is
+     * a page describing a measurement it did not perform; a chip that changes
+     * the numbers and not the caption is the same lie read the other way. Both
+     * are asserted, in that order, against the same click.
+     *
+     * Nothing here is saved, so this flow mutates no shared state.
+     */
+    name: 'sla: counting only some statuses changes the numbers and the caption names them',
+    app: 'sla-breach',
+    screen: 'sla-breach-page',
+    async run({ page, expect }) {
+      await page.getByText('Counting time in every status.').first().waitFor({
+        state: 'visible',
+        timeout: 30_000,
+      });
+      const before = await tableCells(page);
+      expect.ok(before.length > 0, 'the report has rows to compare against');
+
+      const chip = page.getByRole('button', { name: 'In Progress', exact: true }).first();
+      await chip.waitFor({ state: 'visible', timeout: 30_000 });
+      await chip.click();
+
+      await page.waitForFunction(
+        () => /Counting time only in:/.test(document.body.innerText),
+        undefined,
+        { timeout: 30_000 },
+      );
+      const caption = await page
+        .getByText(/Counting time only in:/)
+        .first()
+        .innerText();
+      expect.contains(
+        caption,
+        'In Progress',
+        'the caption names the status that is now the whole of the measurement',
+      );
+      expect.absent(
+        /Counting time in every status/.test(await page.innerText('body')),
+        'the "every status" caption is replaced, not left standing beside its contradiction',
+      );
+
+      await page.waitForFunction(
+        (previous) => {
+          const now = [...document.querySelectorAll('table tbody tr')].map((row) =>
+            [...row.cells].map((cell) => cell.innerText.trim()).join('|'),
+          );
+          return now.length > 0 && now.join('//') !== previous;
+        },
+        before.map((row) => row.join('|')).join('//'),
+        { timeout: 30_000 },
+      );
+
+      const after = await tableCells(page);
+      expect.absent(
+        JSON.stringify(after) === JSON.stringify(before),
+        'counting one status instead of all of them changed the working time on the rows — ' +
+          'a caption that moved while the numbers did not would describe a measurement the ' +
+          'page never performed',
+      );
+    },
+  },
 ];

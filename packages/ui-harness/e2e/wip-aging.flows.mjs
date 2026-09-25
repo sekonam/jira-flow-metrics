@@ -610,4 +610,49 @@ export const flows = [
       );
     },
   },
+  {
+    /**
+     * The six buckets add up to the number the tile claims is in flight.
+     *
+     * "Every bucket is rendered, including the empty ones" is already covered;
+     * what is not is whether the bars *account for* the population. A bucket
+     * boundary that overlaps double-counts an issue, and one that leaves a gap
+     * drops it — and both render as a perfectly plausible histogram. The tile
+     * is the independent count, taken from the table rather than the chart, so
+     * the two disagreeing means one of them is lying about the same project.
+     *
+     * This is the arithmetic a reader does by eye and trusts without checking,
+     * which is exactly why nothing else checks it.
+     */
+    name: 'wip-aging: the age buckets account for every issue the tile counts',
+    app: 'wip-aging',
+    screen: 'wip-aging-page',
+    async run({ page, expect }) {
+      const bars = await readBars(page, 'Age distribution');
+      expect.ok(bars !== null, 'the age distribution chart is on the page');
+      expect.equal(bars.length, 6, 'all six buckets are drawn, empty ones included');
+
+      const counted = bars.reduce((total, bar) => total + Number(bar.value ?? 0), 0);
+      const inFlight = Number(
+        (
+          await page
+            .getByText('In flight', { exact: true })
+            .first()
+            .locator('xpath=ancestor::div[1]')
+            .innerText()
+        )
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)[1],
+      );
+
+      expect.ok(Number.isFinite(inFlight), 'the "In flight" tile reports a number');
+      expect.equal(
+        counted,
+        inFlight,
+        'the buckets sum to the issues in flight — an overlapping boundary would count one ' +
+          'issue twice and a gap would drop one, and either draws a histogram that looks right',
+      );
+    },
+  },
 ];
