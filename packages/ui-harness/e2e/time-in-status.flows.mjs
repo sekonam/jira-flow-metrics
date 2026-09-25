@@ -55,6 +55,37 @@ async function openSelect(page, inputId) {
   return await options.allInnerTexts();
 }
 
+/**
+ * Type a date into one of the window pickers and commit it.
+ *
+ * ⚠️ `M/D/YYYY`, not ISO, and the difference is not cosmetic. The picker's
+ * `value` prop speaks ISO — so does the filter state, and so does the
+ * request — but the *typed* field is ADS's, and it parses in the display
+ * locale. Typing `2026-03-02` does not fail: it parses into some other date
+ * and the table narrows to the wrong rows, which reads exactly like a broken
+ * filter. That cost a round of investigation into product code that turned
+ * out to be correct, so the format is stated here rather than left to the
+ * next reader.
+ *
+ * `fill()` does not work at all — it sets the DOM value under a controlled
+ * React input and fires none of the events the widget commits on, so the
+ * value is silently dropped. Hence `pressSequentially` and Enter.
+ */
+async function setDate(page, inputId, displayDate) {
+  const input = page.locator(`#${inputId}`);
+  await input.click();
+  await input.pressSequentially(displayDate, { delay: 30 });
+  await input.press('Enter');
+}
+
+/** Choose one option from an `@atlaskit/select` by its visible label. */
+async function chooseOption(page, inputId, label) {
+  await page.locator(`#${inputId}`).press('ArrowDown');
+  const option = page.getByRole('option', { name: label, exact: true });
+  await option.waitFor({ state: 'visible', timeout: 15_000 });
+  await option.click();
+}
+
 export const flows = [
   {
     /**
@@ -534,6 +565,188 @@ export const flows = [
         await page.getByRole('button', { name: 'Export CSV' }).count(),
         0,
         'the page-level actions are not repeated in the gadget',
+      );
+    },
+  },
+  {
+    /**
+     * `Created to` means the end of the day it names, not the start of it.
+     *
+     * `filtersToRequest` adds a day to the picked date for exactly this
+     * reason, and a comment says so — but a comment is not a guard, and the
+     * half-open `[from, to)` window it corrects for is the natural thing to
+     * write. Get it wrong and every "to" filter silently drops its last day,
+     * which no one notices until a month-end report is short.
+     *
+     * FLOW-3 is the probe: created 2026-03-02 **08:00**, so a bound at UTC
+     * midnight of the 2nd excludes it and a bound at the end of the 2nd keeps
+     * it. FLOW-1 (02-23) must stay either way, and FLOW-2 (03-03) and FLOW-4
+     * (03-05) must go either way — so the flow fails loudly if the filter
+     * stopped working altogether rather than passing on a technicality.
+     */
+    name: 'time-in-status: "Created to" includes the whole of the day it names',
+    app: 'time-in-status',
+    screen: 'time-in-status-page',
+    async run({ page, expect }) {
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+
+      await setDate(page, 'filter-created-to', '3/2/2026');
+      await page
+        .getByText('FLOW-2')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => undefined);
+
+      expect.ok(
+        await page.getByText('FLOW-3').count(),
+        'FLOW-3 was created at 08:00 on the day the bound names, so the bound keeps it — ' +
+          'a window ending at that day’s midnight would drop it',
+      );
+      expect.ok(await page.getByText('FLOW-1').count(), 'FLOW-1 (23 Feb) is inside the window');
+      expect.equal(await page.getByText('FLOW-2').count(), 0, 'FLOW-2 (3 Mar) is outside it');
+      expect.equal(await page.getByText('FLOW-4').count(), 0, 'FLOW-4 (5 Mar) is outside it');
+    },
+  },
+  {
+    /**
+     * Filters compose. Choosing a second one narrows what the first left.
+     *
+     * The failure this catches is a filter that *replaces* rather than
+     * intersects — easy to write, since each control owns one field of one
+     * request, and invisible whenever the two happen to agree. Anna has only
+     * Bugs and the only Task is unassigned, so "Anna" and "Task" together can
+     * have no answer: under an AND the table empties, and under a replace it
+     * shows one issue or the other. One assertion tells them apart.
+     *
+     * The empty result is worth driving for its own sake too. It is the one
+     * state a user reaches by ordinary clicking rather than by a broken
+     * backend, and a page that renders a blank table there says nothing at
+     * all — `screen-contract.tsx` proves the empty screen exists, and this
+     * proves a person can actually arrive at it.
+     */
+    name: 'time-in-status: a second filter narrows the first instead of replacing it',
+    app: 'time-in-status',
+    screen: 'time-in-status-page',
+    async run({ page, expect }) {
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+
+      await chooseOption(page, 'filter-issue-type', 'Task');
+      await page
+        .getByText('FLOW-3')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => undefined);
+      expect.ok(await page.getByText('FLOW-4').count(), 'the only Task survives the type filter');
+      expect.equal(await page.getByText('FLOW-3').count(), 0, 'a Bug does not');
+
+      await chooseOption(page, 'filter-assignee', 'Anna Weber');
+      await page
+        .getByText('FLOW-4')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => undefined);
+
+      expect.equal(
+        await page.getByText('FLOW-').count(),
+        0,
+        'Anna has no Tasks, so the two filters together have no answer — a table still ' +
+          'showing FLOW-4 means the assignee filter replaced the type filter rather than ' +
+          'narrowing it',
+      );
+
+      // ★ The defect this flow found, now its regression guard.
+      //
+      // A fully indexed project answered "No indexed issues yet" here, under
+      // a **Start indexing** button — a false statement above an action that
+      // re-walks the whole project from Jira to fix something *Clear filters*
+      // fixes. Both strings are asserted, because either one alone could come
+      // back on its own.
+      const body = await page.innerText('body');
+      expect.contains(
+        body,
+        'No issues match these filters',
+        'an empty result caused by filtering says that, rather than blaming the index',
+      );
+      expect.absent(
+        body.includes('No indexed issues yet'),
+        'this project is fully indexed, so the page must not say otherwise',
+      );
+      expect.equal(
+        await page.getByRole('button', { name: 'Start indexing' }).count(),
+        0,
+        're-indexing would not change this result, so it is not the action offered',
+      );
+
+      // The offered action is the one that actually helps, and it works:
+      // `EmptySurface`'s button clears the filters and the report comes back.
+      await page.getByRole('button', { name: 'Clear filters' }).first().click();
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+      expect.ok(await page.getByText('FLOW-4').count(), 'the whole project is listed again');
+    },
+  },
+  {
+    /**
+     * The basis toggle re-fetches. The filters have to survive that.
+     *
+     * Two pieces of state feed one request, and the toggle's handler builds
+     * its own payload — so "switch to working hours" is the obvious place to
+     * drop the filters and quietly widen the report under a reader who is
+     * watching the caption change and not the row count. The caption is
+     * asserted alongside for the same reason: a toggle that keeps the filters
+     * and forgets to re-label is the other half of the same bug.
+     */
+    name: 'time-in-status: switching to working hours keeps the filters it was read under',
+    app: 'time-in-status',
+    screen: 'time-in-status-page',
+    async run({ page, expect }) {
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+
+      await chooseOption(page, 'filter-assignee', 'Anna Weber');
+      await page
+        .getByText('FLOW-1')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => undefined);
+      expect.equal(await page.getByText('FLOW-1').count(), 0, 'Ben’s issue is filtered out');
+
+      await page.getByRole('button', { name: 'Working hours' }).click();
+      await page.waitForFunction(() => /working hours/i.test(document.body.innerText), undefined, {
+        timeout: 15_000,
+      });
+
+      expect.ok(await page.getByText('FLOW-3').count(), 'Anna’s issues are still listed');
+      expect.equal(
+        await page.getByText('FLOW-1').count(),
+        0,
+        'the re-fetch carried the assignee filter with it — otherwise the toggle silently ' +
+          'widens the report while the reader is watching the caption',
+      );
+    },
+  },
+  {
+    /**
+     * A status the issue was never in reads an em dash, never `0m`.
+     *
+     * PRODUCT-SPEC § 9 honesty requirement 4, and the one on that list with
+     * no test anywhere: "never entered" and "entered and left within the same
+     * minute" are different facts, and `0m` says the second about the first.
+     * The formatter is the only thing standing between them, and a change
+     * that made empty cells render a zero would look tidier and be a lie.
+     *
+     * FLOW-4 is still in To Do, so it has never been in In Progress.
+     */
+    name: 'time-in-status: a status the issue was never in reads an em dash, not 0m',
+    app: 'time-in-status',
+    screen: 'time-in-status-page',
+    async run({ page, expect }) {
+      await page.getByText('FLOW-4').first().waitFor({ state: 'visible', timeout: 15_000 });
+
+      const cell = await reportCell(page, 'FLOW-4', 'In Progress');
+      expect.equal(
+        cell,
+        '—',
+        'FLOW-4 has never left To Do, so its In Progress cell states "no such visit" with an ' +
+          'em dash; "0m" would claim it went there and came straight back',
       );
     },
   },

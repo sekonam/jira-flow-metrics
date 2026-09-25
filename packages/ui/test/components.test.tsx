@@ -36,6 +36,7 @@ const {
   AgingHistogram,
   CsvExport,
   DEFAULT_SLA_GOAL,
+  EMPTY_FILTERS,
   EmptySurface,
   ErrorSurface,
   ExtendHistoryControl,
@@ -44,11 +45,14 @@ const {
   LoadingSurface,
   PageHeader,
   ReportBarChart,
+  ReportFilters,
   ReportLineChart,
   ReportTable,
   SimpleReportTable,
   SlaGoalForm,
   SummaryTiles,
+  filtersToRequest,
+  hasActiveFilters,
   toCapBanner,
   toProgressBanner,
   toReportTable,
@@ -1001,6 +1005,125 @@ describe('CsvExport', () => {
     render(<CsvExport onRequestCsv={vi.fn().mockResolvedValue({ filename: 'a.csv', csv: CSV })} />);
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     await screen.findByRole('dialog');
+    await expectNoA11yViolations();
+  });
+});
+
+/**
+ * The report filters, and the arithmetic under them.
+ *
+ * These had **no test of any kind** until 2026-09-25 — neither the component
+ * nor `filtersToRequest` — which is how the one genuinely dangerous line in
+ * the file came to be guarded by a comment and nothing else.
+ *
+ * That line is the `+ 86_400_000` on `createdTo`. A person who picks
+ * "to 12 March" means the 12th included; a half-open `[from, to)` window
+ * ending at 00:00 on the 12th silently drops a whole day off every report,
+ * and the drop is invisible unless something was created that day. It is the
+ * kind of defect that surfaces as "the month-end numbers look a bit low".
+ */
+describe('report filters', () => {
+  const on = (partial: Record<string, unknown>) => ({ ...EMPTY_FILTERS, ...partial });
+  const iso = (ms: unknown) => new Date(ms as number).toISOString();
+
+  it('makes "created to" the end of the day it names, not the start', () => {
+    const request = filtersToRequest(on({ createdTo: '2026-03-12' }));
+
+    // The store excludes `createdAt >= createdTo`, so the bound is the first
+    // instant of the *next* day and everything on the 12th is inside it.
+    expect(iso(request['createdTo'])).toBe('2026-03-13T00:00:00.000Z');
+  });
+
+  it('makes "created from" the first instant of the day it names', () => {
+    const request = filtersToRequest(on({ createdFrom: '2026-03-12' }));
+    expect(iso(request['createdFrom'])).toBe('2026-03-12T00:00:00.000Z');
+  });
+
+  it('spans a single-day window rather than collapsing it to nothing', () => {
+    // From and to on the same day is a real thing to ask for, and the naive
+    // reading of it — from 00:00 to 00:00 — can match nothing at all.
+    const request = filtersToRequest(on({ createdFrom: '2026-03-12', createdTo: '2026-03-12' }));
+    expect((request['createdTo'] as number) - (request['createdFrom'] as number)).toBe(86_400_000);
+  });
+
+  it('sends the single-value pickers as the arrays the resolver parses', () => {
+    const request = filtersToRequest(on({ assigneeAccountId: 'acc-anna', issueTypeId: '10004' }));
+    expect(request['assigneeAccountIds']).toEqual(['acc-anna']);
+    expect(request['issueTypeIds']).toEqual(['10004']);
+  });
+
+  it('omits every field it has no value for, rather than sending nulls', () => {
+    // A null on the payload is not the same as an absent key: the handler
+    // parses by type, and a null would be dropped there instead — silently,
+    // and one layer further from the person who could see it.
+    expect(filtersToRequest(EMPTY_FILTERS)).toEqual({});
+  });
+
+  it('drops a date it cannot parse instead of sending NaN', () => {
+    const request = filtersToRequest(on({ createdFrom: 'not-a-date' }));
+    expect('createdFrom' in request).toBe(false);
+  });
+
+  it('knows whether anything is filtered, one field at a time', () => {
+    expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false);
+    for (const field of ['assigneeAccountId', 'issueTypeId', 'createdFrom', 'createdTo']) {
+      expect(hasActiveFilters(on({ [field]: 'x' }))).toBe(true);
+    }
+  });
+
+  it('offers Clear filters only once there is something to clear', () => {
+    const { rerender } = render(
+      <ReportFilters
+        assignees={[{ id: 'acc-anna', name: 'Anna Weber' }]}
+        issueTypes={[{ id: '10004', name: 'Bug' }]}
+        filters={EMPTY_FILTERS}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+
+    rerender(
+      <ReportFilters
+        assignees={[{ id: 'acc-anna', name: 'Anna Weber' }]}
+        issueTypes={[{ id: '10004', name: 'Bug' }]}
+        filters={on({ assigneeAccountId: 'acc-anna' })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
+  });
+
+  it('labels both window pickers, so each is addressable by name', () => {
+    render(
+      <ReportFilters
+        assignees={[]}
+        issueTypes={[]}
+        filters={on({ createdFrom: '2026-03-12', createdTo: '2026-03-20' })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Created from')).toBeTruthy();
+    expect(screen.getByLabelText('Created to')).toBeTruthy();
+
+    // ⚠️ Deliberately *not* asserted here: that the two bound each other via
+    // `minDate`/`maxDate`. Those are props, invisible in the DOM, and a test
+    // that renders the component and checks two labels exist would be passing
+    // under the name of a claim it never touches — which is the failure this
+    // suite's own mutation runs exist to catch. The guard that does cover it
+    // is the stand-in's prop scanner: `forge-host.tsx` declares `minDate` and
+    // `maxDate` precisely so a host that accepted and ignored them fails,
+    // and `forge-host.contract.test.ts` pins the stand-in to the real module.
+  });
+
+  it('passes an axe audit', async () => {
+    render(
+      <ReportFilters
+        assignees={[{ id: 'acc-anna', name: 'Anna Weber' }]}
+        issueTypes={[{ id: '10004', name: 'Bug' }]}
+        filters={on({ assigneeAccountId: 'acc-anna' })}
+        onChange={vi.fn()}
+      />,
+    );
     await expectNoA11yViolations();
   });
 });

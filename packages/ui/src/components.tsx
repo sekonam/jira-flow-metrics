@@ -933,6 +933,25 @@ export const EMPTY_FILTERS: ReportFilterState = {
 };
 
 /**
+ * Whether the reader has narrowed the report at all.
+ *
+ * Two callers, and keeping them on one predicate is the point: the *Clear
+ * filters* button uses it to decide whether there is anything to clear, and
+ * the page uses it to decide whether an empty result is the filters' doing.
+ * Written twice, the two drift — and the shape they drift into is a page
+ * saying "nothing is indexed" beside a *Clear filters* button that would fix
+ * it, which is worse than either message alone.
+ */
+export function hasActiveFilters(filters: ReportFilterState): boolean {
+  return (
+    filters.assigneeAccountId !== null ||
+    filters.issueTypeId !== null ||
+    filters.createdFrom !== null ||
+    filters.createdTo !== null
+  );
+}
+
+/**
  * The report filters — assignee, issue type, creation window.
  *
  * PRODUCT-SPEC scopes these into v1 as "the minimum a report needs to be
@@ -1034,11 +1053,7 @@ export const ReportFilters = ({
           }}
         />
       </Stack>
-      {filters === EMPTY_FILTERS ||
-      (filters.assigneeAccountId === null &&
-        filters.issueTypeId === null &&
-        filters.createdFrom === null &&
-        filters.createdTo === null) ? null : (
+      {hasActiveFilters(filters) ? (
         <Button
           onClick={() => {
             onChange(EMPTY_FILTERS);
@@ -1046,7 +1061,7 @@ export const ReportFilters = ({
         >
           Clear filters
         </Button>
-      )}
+      ) : null}
     </Inline>
   );
 };

@@ -12,6 +12,7 @@ import {
   LoadingSurface,
   PageHeader,
   ReportBarChart,
+  hasActiveFilters,
   ReportFilters,
   ReportTable,
   SummaryTiles,
@@ -235,15 +236,41 @@ export const App = (): React.JSX.Element => {
           }}
         />
       ) : null}
+      {/*
+        ★ Two different empty results, and only one of them is about indexing.
+        An e2e flow drove a reader into the other one — assignee "Anna" plus
+        issue type "Task", a combination this project has no answer for — and
+        a fully indexed project answered "No indexed issues yet" with a
+        **Start indexing** button under it. Both halves are wrong: the
+        statement is false, and the action re-walks the whole project from
+        Jira to fix a problem a click on *Clear filters* fixes. It is the same
+        confusion `gadgetEmptyMessage` was written for ("nothing to show" and
+        "nobody has indexed this" are different answers), one surface over.
+
+        This page is the only one of the five that can reach an empty report
+        by filtering, which is why the distinction lives here rather than in
+        `EmptySurface`.
+      */}
       {state === 'empty' ? (
-        <EmptySurface
-          title="No indexed issues yet"
-          body="Once indexing finishes, every issue in this project appears here with its cumulative time per status."
-          actionLabel="Start indexing"
-          onAction={() => {
-            void startIndexing();
-          }}
-        />
+        hasActiveFilters(filters) ? (
+          <EmptySurface
+            title="No issues match these filters"
+            body="This project is indexed — nothing in it matches the assignee, issue type or creation window you picked. Widen the window or clear the filters."
+            actionLabel="Clear filters"
+            onAction={() => {
+              setFilters(EMPTY_FILTERS);
+            }}
+          />
+        ) : (
+          <EmptySurface
+            title="No indexed issues yet"
+            body="Once indexing finishes, every issue in this project appears here with its cumulative time per status."
+            actionLabel="Start indexing"
+            onAction={() => {
+              void startIndexing();
+            }}
+          />
+        )
       ) : null}
       {state === 'ready' && envelope !== null ? (
         <Stack space="space.200">
