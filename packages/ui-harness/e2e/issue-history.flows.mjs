@@ -484,4 +484,53 @@ export const flows = [
       );
     },
   },
+  {
+    /**
+     * A field that had no previous value reads an em dash, not an empty cell
+     * and not a zero.
+     *
+     * The same honesty requirement as the time-in-status report, on the
+     * surface where it is easiest to get wrong: this table's whole content is
+     * `From` and `To` pairs, and the first time any field is set there is no
+     * `From`. An empty cell there is ambiguous — it reads as "the report does
+     * not know" rather than "there was nothing before" — and a `0` would be
+     * worse, since several of the fields this table carries are numeric and a
+     * zero is a value someone could have set.
+     *
+     * Asserted over the whole table rather than one row, because the rule is
+     * about the table and a single row passing proves only that one cell.
+     */
+    name: 'history: a field with no previous value reads an em dash, never a blank cell',
+    app: 'issue-history',
+    screen: 'issue-history-page',
+    async run({ page, expect }) {
+      const rows = await tableRows(page);
+      expect.ok(rows.length > 0, 'the report lists changes');
+
+      const headers = await page.evaluate(() =>
+        [...document.querySelectorAll('table thead th')].map((cell) => cell.innerText.trim()),
+      );
+      const from = headers.indexOf('From');
+      const to = headers.indexOf('To');
+      expect.ok(
+        from !== -1 && to !== -1,
+        `the table has From and To columns; it has: ${headers.join(' | ')}`,
+      );
+
+      const blanks = rows.filter((row) => row[from] === '' || row[to] === '');
+      expect.equal(
+        blanks.length,
+        0,
+        `every From and To cell says something; ${String(blanks.length)} were empty, and an empty ` +
+          'cell reads as "the report does not know" rather than "there was nothing before"',
+      );
+
+      expect.ok(
+        rows.some((row) => row[from] === '—'),
+        'at least one change set a field that had no previous value, and it reads as an em dash ' +
+          '— if this stops being true the assertion above is passing over a table that no ' +
+          'longer exercises the rule',
+      );
+    },
+  },
 ];

@@ -94,6 +94,13 @@ The existing flows pair a tile against its table. Added: the chart against its p
   never left To Do. "Never entered" and "entered and left inside a minute" are different facts, and
   `0m` states the second about the first. A change that rendered empty cells as zero would look
   tidier and be a lie.
+- ✓ added — `history: a field with no previous value reads an em dash, never a blank cell`. The same
+  rule on the surface where it is easiest to get wrong: this table is nothing but `From`/`To` pairs,
+  and the first time any field is set there is no `From`. An empty cell reads as "the report does
+  not know" rather than "there was nothing before", and a `0` would be worse — several of the fields
+  carried here are numeric, and zero is a value someone could have set. Asserted over the whole
+  table, plus a guard that the table still contains a case exercising the rule, so the assertion
+  cannot go quietly vacuous.
 
 ### 6. Claims made in the negative — **not covered before this pass**
 
@@ -185,7 +192,7 @@ another flow could have changed. The rules in force: no flow asserts a count of 
 saves under its own `E2E …` name, and the three flows that mutate settings keep every assertion that
 depends on the mutation inside themselves.
 
-At the time of writing: **50 flows, all passing**, plus 10 new unit tests for the report filters.
+At the time of writing: **51 flows, all passing**, plus 10 new unit tests for the report filters.
 
 Every flow added in this pass was mutation-checked — the change that should break it was made, the
 suite went red, and the change was reverted. A flow that stays green with the thing it tests
