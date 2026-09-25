@@ -750,4 +750,64 @@ export const flows = [
       );
     },
   },
+  {
+    /**
+     * The export carries the **filters**, not just the basis.
+     *
+     * `requestCsv` puts both on the payload and a comment says why — "an
+     * export that quietly ignored the filters would hand someone a wider file
+     * than the table they just read". The existing export flow proves the
+     * basis half and says nothing about the other, which is the half more
+     * likely to rot: the basis is one scalar the reader can see in the
+     * caption, while the filters are four fields spread across a separate
+     * component, and a refactor that forgets them produces a file that opens
+     * cleanly, totals correctly, and answers a different question.
+     *
+     * Nobody re-reads a CSV against the screen it came from. That is the
+     * point of asserting it here.
+     */
+    name: 'time-in-status: the CSV export carries the filters, not just the basis',
+    app: 'time-in-status',
+    screen: 'time-in-status-page',
+    async run({ page, expect }) {
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+
+      await chooseOption(page, 'filter-assignee', 'Anna Weber');
+      await page
+        .getByText('FLOW-1')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => undefined);
+      expect.equal(await page.getByText('FLOW-1').count(), 0, 'the table is down to Anna’s issues');
+
+      await page.getByRole('button', { name: 'Export CSV' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor({ state: 'visible', timeout: 15_000 });
+      const csv = await dialog.innerText();
+
+      expect.ok(
+        csv.split(/\r?\n/).some((row) => row.startsWith('FLOW-3,')),
+        'Anna’s issues are in the file',
+      );
+      expect.absent(
+        csv.split(/\r?\n/).some((row) => row.startsWith('FLOW-1,')),
+        'Ben’s issue is filtered out of the table, so it is out of the export too — ' +
+          'otherwise the file is wider than the report it claims to be',
+      );
+      expect.absent(
+        csv.split(/\r?\n/).some((row) => row.startsWith('FLOW-4,')),
+        'and so is the unassigned one',
+      );
+
+      // ★ Keyboard, not just the close button.
+      //
+      // A modal that traps a keyboard user is an accessibility failure axe
+      // cannot see: the markup is correct and the behaviour is not. This is
+      // the only dialog in the product, and Escape is the only way out of it
+      // for someone not using a mouse.
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached', timeout: 15_000 });
+      await page.getByText('FLOW-3').first().waitFor({ state: 'visible', timeout: 15_000 });
+    },
+  },
 ];

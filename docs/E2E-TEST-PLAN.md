@@ -95,7 +95,34 @@ The existing flows pair a tile against its table. Added: the chart against its p
   `0m` states the second about the first. A change that rendered empty cells as zero would look
   tidier and be a lie.
 
-### 6. States a user reaches by clicking — **this is where the defect was**
+### 6. Claims made in the negative — **not covered before this pass**
+
+The listings promise things the product _does not_ do, and an absence is harder to test than a
+presence: nothing fails, no assertion is obviously missing, and the claim quietly stops being true.
+
+- ✓ added — `worklog: an entry with no stated duration is dropped, never counted as a zero`. This
+  listing's central promise in its negative form. Counted as zero, Cara Nowak appears at `0m` and
+  `0%`, joins the share arithmetic, and makes the report state that she logged nothing this period
+  — a claim about a person produced by a rounding decision. `worklogs.json` carries her entry with
+  no `timeSpentSeconds` for this test and no other reason.
+- ✓ added — `time-in-status: the CSV export carries the filters, not just the basis`. The existing
+  export flow proved the basis half only, and the filters are the half more likely to rot: the
+  basis is one scalar visible in the caption, the filters are four fields in a separate component,
+  and a refactor that forgets them produces a file that opens cleanly, totals correctly and answers
+  a different question. Nobody re-reads a CSV against the screen it came from. Mutation-checked by
+  dropping `filtersToRequest` from the export payload.
+- ✓ added — `worklog: every row states a share of the same whole`. A share computed against a
+  different denominator than the total gives every row a plausible percentage and a table that adds
+  to 80%, which nobody notices because nobody adds up percentages by eye.
+
+### 7. Keyboard — **one step, where the trap would be**
+
+- ✓ added, inside the CSV-filter flow — **Escape closes the export modal.** A modal that traps a
+  keyboard user is an accessibility failure axe cannot see: the markup is correct and the behaviour
+  is not. This is the only dialog in the product, and Escape is the only way out of it for someone
+  not using a mouse. A full tab-order pass is still a gap.
+
+### 8. States a user reaches by clicking — **this is where the defect was**
 
 `screen-contract.tsx` proves the empty screen exists. It cannot prove a person can arrive at it, or
 that what it says is true when they do.
@@ -127,7 +154,8 @@ frontend rather than in `EmptySurface`.
   the DOM, so a component test asserting two labels exist would pass under the name of a claim it
   never touches. The guard that does cover it is the stand-in's prop scanner: `forge-host.tsx`
   declares both precisely so a host that accepted and ignored them fails.
-- **Keyboard-only operation.** axe audits the markup; nothing tabs through a page. Worth a pass.
+- **Keyboard-only operation, beyond the modal.** axe audits the markup and one flow now presses
+  Escape; nothing tabs through a whole page in order. Worth a pass of its own.
 
 ---
 
@@ -157,4 +185,9 @@ another flow could have changed. The rules in force: no flow asserts a count of 
 saves under its own `E2E …` name, and the three flows that mutate settings keep every assertion that
 depends on the mutation inside themselves.
 
-At the time of writing: **47 flows, all passing.**
+At the time of writing: **50 flows, all passing**, plus 10 new unit tests for the report filters.
+
+Every flow added in this pass was mutation-checked — the change that should break it was made, the
+suite went red, and the change was reverted. A flow that stays green with the thing it tests
+removed is not a test, and this suite has produced that before (`docs/SUBMISSION-CHECKLIST.md`
+records two).

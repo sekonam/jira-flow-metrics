@@ -489,4 +489,91 @@ export const flows = [
       );
     },
   },
+  {
+    /**
+     * Every row's share adds up to the whole, and no row is left out of the
+     * arithmetic.
+     *
+     * The existing flows check that each row *states* a share and that the
+     * largest leads the table. Neither checks the set. A share computed
+     * against a different denominator than the total tile — a filtered
+     * numerator over an unfiltered sum, say — gives every row a plausible
+     * percentage and a table that quietly adds to 80%, which nobody notices
+     * because nobody adds up percentages by eye.
+     *
+     * Rounding is real and allowed for: each row is rounded independently, so
+     * the sum lands within half a point per row rather than exactly on 100.
+     */
+    name: 'worklog: every row states a share of the same whole',
+    app: 'worklog-reports',
+    screen: 'worklog-reports-page',
+    async run({ page, expect }) {
+      const rows = await tableRows(page);
+      expect.ok(
+        rows.length > 1,
+        'more than one person logged time, or this assertion is 100% against itself and proves ' +
+          'nothing — the fixture has three authors for exactly this reason',
+      );
+
+      const shares = rows
+        .map((row) => row.find((cell) => cell.endsWith('%')))
+        .map((cell) => (cell === undefined ? null : Number(cell.replace('%', ''))));
+
+      expect.absent(
+        shares.some((share) => share === null || !Number.isFinite(share)),
+        `every row states its share as a percentage; read: ${JSON.stringify(rows)}`,
+      );
+
+      const total = shares.reduce((sum, share) => sum + share, 0);
+      const tolerance = Math.max(1, shares.length * 0.5);
+      expect.ok(
+        Math.abs(total - 100) <= tolerance,
+        `the shares account for the whole report: ${String(total)}% across ${String(shares.length)} ` +
+          `rows, which is outside the ±${String(tolerance)} that independent rounding explains ` +
+          '— a share over a denominator other than the reported total looks exactly like this',
+      );
+    },
+  },
+  {
+    /**
+     * An entry with no stated duration is **dropped, not counted as zero**.
+     *
+     * This is the listing's central promise in its negative form. The report
+     * totals what people typed; it never re-derives a duration from
+     * timestamps and never fills a gap. An entry with nothing to add is
+     * therefore not a zero — zero is a thing someone said, and this is the
+     * absence of anyone saying anything.
+     *
+     * The difference is visible exactly once, in the row count: counted as
+     * zero, Cara appears at `0m` and `0%`, joins the share arithmetic and
+     * makes the report claim she logged nothing this period — which is a
+     * statement about a person, made up by a rounding decision. Dropped, she
+     * is simply not in a report about logged time.
+     *
+     * `worklogs.json` carries her entry with no `timeSpentSeconds` for this
+     * test and no other reason.
+     */
+    name: 'worklog: an entry with no stated duration is dropped, never counted as a zero',
+    app: 'worklog-reports',
+    screen: 'worklog-reports-page',
+    async run({ page, expect }) {
+      const rows = await tableRows(page);
+      const named = rows.map((row) => row[0]);
+
+      expect.ok(named.includes('Anna Weber'), 'the people who did state durations are reported');
+      expect.ok(named.includes('Ben Fischer'), 'both of them');
+      expect.absent(
+        named.includes('Cara Nowak'),
+        'the entry with no stated duration contributes no row — a 0m row would be the report ' +
+          'inventing a fact about a person out of a missing field',
+      );
+
+      const body = await page.innerText('body');
+      expect.absent(
+        /\b0m\b/.test(body),
+        `nothing on this page reads 0m; a duration the report has is never zero and a duration ` +
+          `it does not have is not reported at all. page read: ${body.slice(0, 300)}`,
+      );
+    },
+  },
 ];
