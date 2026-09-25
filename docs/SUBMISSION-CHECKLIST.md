@@ -191,21 +191,32 @@ human more than a field left out.
    fresh `forge deploy -e production` when item 5 happens.
 5. **No production deploy of any app.** Only `time-in-status` has been deployed at all, and only
    to `development` (`apps/time-in-status/manifest.yml:7-8`). The other four say "NOT DEPLOYED".
-6. **Zero shippable screenshots for listings ②–⑤.** Listing ①'s are no longer the blocker:
+6. **Partial screenshots for listings ②–⑤** (was "zero").
+   **As of 2026-09-24: ④ and ⑤ have three cropped, captioned candidates each**
+   (`listing-assets-sla-breach/candidates-2026-09-24/`,
+   `listing-assets-issue-history/candidates-2026-09-24/`), shot on a JFMB that indexes cleanly for
+   the first time. ③ has raw frames only, and they predate the transitions that make its histogram
+   honest — re-shoot. ② has nothing: four of its six shots need a second worklog author, and the
+   two that do not need a browser session. The original text follows.
+
+   **Zero shippable screenshots for listings ②–⑤.** Listing ①'s are no longer the blocker:
    six cropped, captioned candidates from real Jira at HEAD landed 2026-09-23 in
    `docs/listing-assets/candidates-2026-09-23/` (with `CAPTIONS.md`), shot _by automation_ — the
    "Forge iframes cannot be screenshotted" premise this item rested on was a limit of the old
    toolchain, not of Forge (`docs/SHOT-LIST.md`, status update). Listings ②–⑤ remain unshot;
    same technique applies once a browser session is available. The human's remaining share is
    approval of the candidates, not capture. 🧑⚠️
+
 7. **Tax and bank details** — required before payout, and the vendor account flow asks for them.
    🧑 (`ROADMAP.md:196`)
 
 ### 2B — Blocks a _good_ submission; fix before pasting, not after
 
-8. **Three listings describe a product that no longer exists.** ③ and ④ contradict themselves
-   inside a single description; ① claims filters it does not have. A reviewer who opens the app
-   and reads the copy sees the mismatch. Full text in § 4.
+8. ~~**Three listings describe a product that no longer exists.**~~ **Closed 2026-09-24.** ③ and
+   ④ no longer contradict themselves, and ① turned out to be the other way round — the filters
+   shipped, so the copy is now true rather than false. § 4 carries the outcome against each
+   diagnosis. A fourth error that document had deferred as out of scope, the `Filterable` gadget
+   string on ⑤, is fixed too (item 12).
 9. **No support contact and no stated response time.** `PROMOTION.md:228` calls for a response
    time "you can actually keep". An unanswerable support address is worse than a slow one. The
    support page is now drafted (`docs/public-site/support.md`) with a two-business-day first-reply
