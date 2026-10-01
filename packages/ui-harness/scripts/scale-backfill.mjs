@@ -189,7 +189,11 @@ async function main() {
   // `getReport` is meant to page, and asserting it returns everything at once
   // would have been asserting against the product's own cost-control design.
 
-  const storedMeta = await store.queryIssueMeta(PIPELINE_PROJECT_ID, ISSUE_COUNT + 10, 0);
+  const storedMeta = await store.queryIssueMeta({
+    projectId: PIPELINE_PROJECT_ID,
+    limit: ISSUE_COUNT + 10,
+    offset: 0,
+  });
   say(`  rows actually persisted in the store: ${storedMeta.length} (expected ${ISSUE_COUNT})`);
   if (storedMeta.length !== ISSUE_COUNT) failed = true;
 
