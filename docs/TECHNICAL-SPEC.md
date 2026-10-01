@@ -735,6 +735,38 @@ the real `invoke`, its payload validation and its rate limiter all run.
       backfill loudly rather than treating it as the end of results, and that remains the right
       call — silently truncating an index is the failure this product exists to avoid.
 
+16. **★★ Replace-path re-inserts raced under concurrent issue events — ER_DUP_ENTRY live, fixed
+    2026-10-01.** Bulk-seeding JFMB from 300 to 600 issues, Time in Status's
+    `avi:jira:updated:issue` handler failed repeatedly with `ER_DUP_ENTRY
+    (issue_status_agg.PRIMARY)` and its report stalled at 481/600 — while WIP Aging, fed the same
+    event stream into its own separate store, held all 600. "Replace, never merge" was DELETE then
+    plain INSERT; the two are not atomic on Forge SQL, so two invocations re-ingesting the same
+    issue can both delete and then both insert, and the losing invocation's whole event is lost.
+    `issue_meta` always carried `ON DUPLICATE KEY UPDATE`; the asymmetry was the bug. All four
+    replace paths (`issue_status_agg`, `issue_status_visit`, `worklog`, `issue_history`) now
+    upsert on the re-insert, with the DELETE still solely responsible for removing stale rows —
+    both racers write rows computed from a full changelog reconstruction, so converging on the
+    later writer loses nothing. Diagnostic signature for the field: two listings disagreeing on
+    the same project's issue count is a lost-event bug, not a report bug, and
+    `forge logs -e development` names it in seconds. Recovery for already-lost issues is Extend
+    history, which replays every issue idempotently — confirmed live: the 2-year re-index walked
+    all 600 issues through seven corrupted-cursor recoveries (item 11's key-ordered walk) and the
+    report converged on 600/600.
+
+17. **The open visit is measured at ingestion time, not read time — visible at scale, not yet
+    decided (2026-10-01).** `processIssue` computes `computeTimeInStatus(timeline, { now })` when
+    an event or backfill slice runs, and that figure — including the still-open visit of the
+    issue's current status — is what the store holds until the next event. An issue parked
+    untouched in a status accrues nothing in the Time in Status report, which is exactly the
+    issue a flow report most wants to surface; before the 2026-10-01 re-index, JFMB's Done median
+    read `<1m`, and after it `19d 21h` — same issues, same timelines, different ingestion
+    moments. WIP Aging is immune because `buildAgingReport` ages from `last_entered_at` at read
+    time. A read-time top-up for current-status rows is feasible (the open visit's row carries
+    `last_entered_at` and a null `last_exited_at`), but it changes the headline figure's
+    semantics and its working-hours variant needs calendar math at read time, so it is a product
+    decision rather than a patch — recorded here so it is decided deliberately, not rediscovered
+    by a customer comparing a stale report against the WIP Aging listing.
+
 ---
 
 ## 12. ⚠️ The unverified surface, exhaustively
