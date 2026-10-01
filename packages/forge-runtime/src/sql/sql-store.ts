@@ -143,10 +143,25 @@ export class SqlMetricsStore implements MetricsStore {
     if (aggregateRows.length > 0) {
       const values = aggregateRows.map(() => `(${placeholders(9)})`).join(', ');
       await this.sql.execute(
+        // ON DUPLICATE KEY UPDATE, with the DELETE above still in charge of
+        // removing stale rows: the delete and this insert are not atomic, so
+        // two invocations re-ingesting the same issue can both delete and
+        // then both insert — seen live as ER_DUP_ENTRY under a bulk seed's
+        // event burst, each failure an issue whose aggregates never landed.
+        // Both racers insert rows computed from a full changelog
+        // reconstruction, so converging on the later writer loses nothing.
         `INSERT INTO issue_status_agg (
            issue_id, status_id, project_id, elapsed_ms, business_ms,
            entries, last_entered_at, last_exited_at, updated_at
-         ) VALUES ${values}`,
+         ) VALUES ${values}
+         ON DUPLICATE KEY UPDATE
+           project_id = VALUES(project_id),
+           elapsed_ms = VALUES(elapsed_ms),
+           business_ms = VALUES(business_ms),
+           entries = VALUES(entries),
+           last_entered_at = VALUES(last_entered_at),
+           last_exited_at = VALUES(last_exited_at),
+           updated_at = VALUES(updated_at)`,
         aggregateRows.flat(),
       );
     }
@@ -238,7 +253,12 @@ export class SqlMetricsStore implements MetricsStore {
     await this.sql.execute(
       `INSERT INTO issue_status_visit (
          issue_id, seq, status_id, project_id, entered_at, exited_at
-       ) VALUES ${values}`,
+       ) VALUES ${values}
+       ON DUPLICATE KEY UPDATE
+         status_id = VALUES(status_id),
+         project_id = VALUES(project_id),
+         entered_at = VALUES(entered_at),
+         exited_at = VALUES(exited_at)`,
       visits.flatMap(statusVisitToParams),
     );
   }
@@ -327,7 +347,17 @@ export class SqlMetricsStore implements MetricsStore {
       `INSERT INTO worklog (
          worklog_id, issue_id, issue_key, project_id, author_account_id,
          author_display_name, started_at, time_spent_ms, created_at, updated_at
-       ) VALUES ${values}`,
+       ) VALUES ${values}
+       ON DUPLICATE KEY UPDATE
+         issue_id = VALUES(issue_id),
+         issue_key = VALUES(issue_key),
+         project_id = VALUES(project_id),
+         author_account_id = VALUES(author_account_id),
+         author_display_name = VALUES(author_display_name),
+         started_at = VALUES(started_at),
+         time_spent_ms = VALUES(time_spent_ms),
+         created_at = VALUES(created_at),
+         updated_at = VALUES(updated_at)`,
       records.flatMap(worklogToParams),
     );
   }
@@ -362,7 +392,19 @@ export class SqlMetricsStore implements MetricsStore {
          change_id, issue_id, issue_key, project_id, changed_at,
          author_account_id, author_display_name, field, field_label,
          from_value, to_value, from_id, to_id
-       ) VALUES ${values}`,
+       ) VALUES ${values}
+       ON DUPLICATE KEY UPDATE
+         issue_key = VALUES(issue_key),
+         project_id = VALUES(project_id),
+         changed_at = VALUES(changed_at),
+         author_account_id = VALUES(author_account_id),
+         author_display_name = VALUES(author_display_name),
+         field = VALUES(field),
+         field_label = VALUES(field_label),
+         from_value = VALUES(from_value),
+         to_value = VALUES(to_value),
+         from_id = VALUES(from_id),
+         to_id = VALUES(to_id)`,
       records.flatMap(historyToParams),
     );
   }

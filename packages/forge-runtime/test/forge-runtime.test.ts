@@ -330,6 +330,114 @@ describe('SqlMetricsStore statement generation', () => {
     expect(sql.statements[2]?.params).toHaveLength(18);
   });
 
+  // Replace-never-merge is DELETE then INSERT, and the two are not atomic:
+  // two Forge invocations re-ingesting the same issue concurrently can both
+  // delete, then both insert, and the loser dies on the primary key — seen
+  // live as `ER_DUP_ENTRY (issue_status_agg.PRIMARY)` on avi:jira:updated:issue
+  // during a 600-issue bulk seed, each failure an issue whose aggregates never
+  // landed. The DELETE still owns removing stale rows; ON DUPLICATE KEY UPDATE
+  // on the re-insert makes the race converge instead of fail. Both racers wrote
+  // rows computed from a full changelog reconstruction, so last-writer-wins
+  // per row loses nothing.
+  it('every replace-path re-insert survives a concurrent replacer of the same issue', async () => {
+    const sql = new RecordingSqlExecutor();
+    const store = new SqlMetricsStore(sql);
+
+    await store.putIssueAggregate(meta({ issueId: '1' }), [agg({ issueId: '1' })]);
+    const aggInsert = sql.sql.find((s) => s.includes('INSERT INTO issue_status_agg'));
+    expect(aggInsert).toContain('ON DUPLICATE KEY UPDATE');
+    // Every non-key column must take the racing writer's value — a partial
+    // update would stitch two timelines into one row.
+    for (const column of [
+      'project_id',
+      'elapsed_ms',
+      'business_ms',
+      'entries',
+      'last_entered_at',
+      'last_exited_at',
+      'updated_at',
+    ]) {
+      expect(aggInsert).toContain(`${column} = VALUES(${column})`);
+    }
+    sql.clear();
+
+    await store.putIssueVisits('1', [
+      { issueId: '1', seq: 0, statusId: '3', projectId: '10000', enteredAt: 1, exitedAt: null },
+    ]);
+    const visitInsert = sql.sql.find((s) => s.includes('INSERT INTO issue_status_visit'));
+    expect(visitInsert).toContain('ON DUPLICATE KEY UPDATE');
+    for (const column of ['status_id', 'project_id', 'entered_at', 'exited_at']) {
+      expect(visitInsert).toContain(`${column} = VALUES(${column})`);
+    }
+    sql.clear();
+
+    await store.putWorklogs('1', [
+      {
+        worklogId: 'w1',
+        issueId: '1',
+        issueKey: 'FLOW-1',
+        projectId: '10000',
+        authorAccountId: 'a',
+        authorDisplayName: 'Anna',
+        startedAt: 1,
+        timeSpentMs: 2,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ]);
+    const worklogInsert = sql.sql.find((s) => s.includes('INSERT INTO worklog'));
+    expect(worklogInsert).toContain('ON DUPLICATE KEY UPDATE');
+    for (const column of [
+      'issue_id',
+      'issue_key',
+      'project_id',
+      'author_account_id',
+      'author_display_name',
+      'started_at',
+      'time_spent_ms',
+      'created_at',
+      'updated_at',
+    ]) {
+      expect(worklogInsert).toContain(`${column} = VALUES(${column})`);
+    }
+    sql.clear();
+
+    await store.putHistory('1', [
+      {
+        changeId: 'c1',
+        issueId: '1',
+        issueKey: 'FLOW-1',
+        projectId: '10000',
+        at: 1,
+        authorAccountId: 'a',
+        authorDisplayName: 'Anna',
+        field: 'status',
+        fieldLabel: 'Status',
+        fromValue: 'To Do',
+        toValue: 'Done',
+        fromId: '1',
+        toId: '2',
+      },
+    ]);
+    const historyInsert = sql.sql.find((s) => s.includes('INSERT INTO issue_history'));
+    expect(historyInsert).toContain('ON DUPLICATE KEY UPDATE');
+    for (const column of [
+      'issue_key',
+      'project_id',
+      'changed_at',
+      'author_account_id',
+      'author_display_name',
+      'field',
+      'field_label',
+      'from_value',
+      'to_value',
+      'from_id',
+      'to_id',
+    ]) {
+      expect(historyInsert).toContain(`${column} = VALUES(${column})`);
+    }
+  });
+
   it('still clears aggregates for an issue that now has none', async () => {
     const sql = new RecordingSqlExecutor();
     await new SqlMetricsStore(sql).putIssueAggregate(meta(), []);
@@ -1217,9 +1325,10 @@ describe('SqlMetricsStore read and write paths not covered above', () => {
       { issueId: '1', seq: 0, statusId: '3', projectId: '10000', enteredAt: 1, exitedAt: 2 },
       { issueId: '1', seq: 1, statusId: '5', projectId: '10000', enteredAt: 2, exitedAt: null },
     ]);
-    // Delete-then-insert, not an upsert keyed on (issue_id, seq): a
-    // re-ingested issue can have fewer visits than before, and an upsert
-    // would leave the surplus rows behind as phantom visits.
+    // Delete-then-insert, never insert alone: a re-ingested issue can have
+    // fewer visits than before, and only the delete removes the surplus rows.
+    // (The insert additionally upserts, but that guards the concurrent-replace
+    // race — it is not a substitute for the delete.)
     expect(sql.sql[0]).toBe('DELETE FROM issue_status_visit WHERE issue_id = ?');
     expect(sql.sql[1]).toContain('INSERT INTO issue_status_visit');
     expect(sql.sql[1]).toContain('VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)');
