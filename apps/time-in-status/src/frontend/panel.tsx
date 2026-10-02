@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ForgeReconciler, { Heading, Stack, Text } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { isRetryableError } from '@jfm/forge-runtime';
 import type { IssueTimelineReport } from '@jfm/forge-runtime';
 import {
   ErrorSurface,
@@ -69,9 +70,15 @@ export const Panel = (): React.JSX.Element => {
       {state === 'error' ? (
         <ErrorSurface
           message={error ?? 'Unknown error'}
-          onRetry={() => {
-            void load();
-          }}
+          // A refusal about who the reader is, or about what this surface is
+          // open on, cannot be retried into a different answer.
+          onRetry={
+            isRetryableError(error ?? '')
+              ? () => {
+                  void load();
+                }
+              : undefined
+          }
         />
       ) : null}
       {/*

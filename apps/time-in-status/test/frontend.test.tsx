@@ -177,6 +177,36 @@ describe('time-in-status: the listing-specific behaviour', () => {
   });
 });
 
+describe('★ time-in-status: a retry is offered exactly when it can help', () => {
+  // The screen contract covers the refusal half (a permission error offers no
+  // button). This is the other half, and without it deleting `onRetry`
+  // altogether, or wiring it to the wrong variable, leaves every suite green.
+
+  it('offers Try again on a transient failure, and re-invokes when pressed', async () => {
+    setBridgeResolvers({
+      ...resolversFor(scenarios.populated.responses),
+      getReport: () => ({
+        ok: false,
+        error: 'Jira is rate-limiting requests right now. Indexing will resume automatically.',
+      }),
+    });
+    render(<App />);
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    let calls = 0;
+    setBridgeResolvers({
+      ...resolversFor(scenarios.populated.responses),
+      getReport: () => {
+        calls += 1;
+        return { ok: false, error: 'Jira is rate-limiting requests right now.' };
+      },
+    });
+    fireEvent.click(retry);
+    await waitFor(() => {
+      expect(calls).toBeGreaterThan(0);
+    });
+  });
+});
+
 describe('★ time-in-status: a capped report says so on both surfaces', () => {
   // The page and the gadget each read `capped` and `aggregatesCapped` and
   // pass them to the banner, and *nothing held that wiring*: replacing both

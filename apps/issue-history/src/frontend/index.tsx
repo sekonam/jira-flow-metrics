@@ -52,7 +52,7 @@ export const App = (): React.JSX.Element => {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     // ★ Only the newest request may write to the screen.
     //
     // Every control on this page re-runs `load`, each `invoke` is a separate
@@ -70,7 +70,15 @@ export const App = (): React.JSX.Element => {
     // kept contradicting the control until they toggled twice.
     const mine = requestId.current + 1;
     requestId.current = mine;
-    setLoading(true);
+    // ★ A background refresh must not blank the screen it is refreshing.
+    //
+    // `useIndexingRefresh` re-reads this page every few seconds while the
+    // index is building. Flipping `loading` on each of those polls makes
+    // `surfaceStateOf` return 'loading', which hides the banner and the
+    // report — so the very banner the polling exists to keep alive blinked
+    // out and back roughly twenty times, and on a project with nothing
+    // indexed yet it was the Start indexing button that flickered.
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const result = (await invoke('getHistoryReport', {})) as Result<HistoryReport>;
@@ -99,7 +107,7 @@ export const App = (): React.JSX.Element => {
     } finally {
       // A superseded request must not clear the spinner the newer one
       // put up, or the page reads as settled while it is still fetching.
-      if (mine === requestId.current) setLoading(false);
+      if (mine === requestId.current && !quiet) setLoading(false);
     }
   }, []);
 
@@ -150,7 +158,7 @@ export const App = (): React.JSX.Element => {
   // Keeps the indexing banner alive without a manual reload; see
   // `useIndexingRefresh`.
   useIndexingRefresh(progress, () => {
-    void load();
+    void load(true);
   });
 
   const rowCount = report === null ? 0 : report.records.length;

@@ -59,6 +59,7 @@ const {
   SimpleReportTable,
   SlaGoalForm,
   SummaryTiles,
+  cellKey,
   useIndexingRefresh,
   filtersToRequest,
   hasActiveFilters,
@@ -778,18 +779,46 @@ describe('useIndexingRefresh', () => {
     expect(reload).toHaveBeenCalledTimes(total);
   });
 
-  it.each(['complete', 'failed', 'paused'] as const)(
-    'does not poll when the index is %s',
-    (state) => {
-      vi.useFakeTimers();
-      const reload = vi.fn();
-      renderHook(() => {
-        useIndexingRefresh(progressOf(state), reload);
-      });
-      vi.advanceTimersByTime(120_000);
-      expect(reload).not.toHaveBeenCalled();
-    },
-  );
+  it('keeps watching while Jira has paused the backfill, because it resumes itself', () => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    renderHook(() => {
+      useIndexingRefresh(progressOf('paused'), reload);
+    });
+    vi.advanceTimersByTime(20_000);
+    expect(reload.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('★ survives one failed progress read instead of giving up for good', () => {
+    // The pages report 'unknown' when getIndexProgress refuses. Treating that
+    // as "not indexing" meant a single transient failure silently restored
+    // the frozen banner for the life of the page.
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    const { rerender } = renderHook(
+      ({ p }: { p: Parameters<typeof useIndexingRefresh>[0] }) => {
+        useIndexingRefresh(p, reload);
+      },
+      { initialProps: { p: progressOf('running') as Parameters<typeof useIndexingRefresh>[0] } },
+    );
+    vi.advanceTimersByTime(10_000);
+    const before = reload.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
+
+    rerender({ p: 'unknown' });
+    vi.advanceTimersByTime(30_000);
+    expect(reload.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it.each(['complete', 'failed'] as const)('does not poll when the index is %s', (state) => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    renderHook(() => {
+      useIndexingRefresh(progressOf(state), reload);
+    });
+    vi.advanceTimersByTime(120_000);
+    expect(reload).not.toHaveBeenCalled();
+  });
 
   it('does not poll a project that has never been indexed, or an unknown one', () => {
     vi.useFakeTimers();
@@ -886,6 +915,28 @@ describe('ReportTable sorting', () => {
     expect(descending[0]).toBe('FLOW-3');
     // `startsWith`: this cell also carries the "partial history" badge.
     expect(descending[descending.length - 1]?.startsWith('FLOW-4')).toBe(true);
+  });
+
+  it('★ gives every cell in a row a distinct key, which the harness cannot check', () => {
+    // On Forge the cell key is also React's key —
+    // `jsx(Cell, { cellKey, ... }, cellKey)` in @forge/react's DynamicTable —
+    // and duplicates among siblings are what React warns "may cause children
+    // to be duplicated and/or omitted". The stand-in host keys cells by index
+    // instead, so rendering proves nothing here: this asserts the model
+    // directly. FLOW-4 is the shape that collides twice over — it was never in
+    // Blocked, and its only duration equals its total.
+    const model = toReportTable(REPORT);
+    for (const row of model.rows) {
+      const keys = [
+        row.issueKey,
+        row.currentStatus,
+        row.createdAt,
+        row.resolvedAt,
+        ...row.cells.map((c) => c.ms),
+        row.totalMs,
+      ].map((value, column) => cellKey(value, column));
+      expect(new Set(keys).size).toBe(keys.length);
+    }
   });
 
   it('sorts dates chronologically, which their rendered form does not', () => {

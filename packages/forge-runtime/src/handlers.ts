@@ -195,7 +195,20 @@ export const NO_PERMISSION =
  * worth one more go.
  */
 export function isRetryableError(message: string): boolean {
-  return message !== NO_PERMISSION && message !== NOT_IN_PROJECT && message !== NOT_AN_ADMIN;
+  // Built inside the function rather than as a module-level array: two of
+  // these constants are declared further down the file, and a `const` array
+  // up here would read them in their temporal dead zone.
+  const settled = [
+    NO_PERMISSION,
+    NOT_IN_PROJECT,
+    NOT_AN_ADMIN,
+    // Same shape, from the two surfaces that are not a project report: the
+    // issue panel opened somewhere that is not an issue, and an SLA page
+    // whose stored goal is gone. A retry re-sends the identical request.
+    NOT_ON_AN_ISSUE,
+    UNKNOWN_SLA_GOAL,
+  ];
+  return !settled.includes(message);
 }
 
 /**

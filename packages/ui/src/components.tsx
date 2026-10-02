@@ -485,7 +485,9 @@ const TILE_STYLE = xcss({
  *   a small project that finishes in seconds is caught almost immediately while
  *   a large one costs a poll every fifteen seconds rather than every three;
  * - it gives up after {@link MAX_POLLS}, around ten minutes, instead of
- *   polling an abandoned tab until the browser closes. The banner stays
+ *   polling an abandoned tab until the browser closes. Note that one poll is
+ *   one page `load()`, which is two resolver calls on most listings and three
+ *   on WIP aging — so the ceiling is nearer 80-120 invocations than 40. The banner stays
  *   truthful when it stops — it still says indexing is in progress, which it
  *   is — so giving up costs the user a manual reload, not a wrong screen.
  */
@@ -505,10 +507,30 @@ export function useIndexingRefresh(progress: MaybeProgress, reload: () => void):
     latest.current = reload;
   });
 
-  const indexing =
+  // `paused` is in here deliberately. It means Jira rate-limited the backfill
+  // and it will resume by itself — which is exactly the long, large-instance
+  // case the backoff above exists for. Excluding it tore the schedule down for
+  // good at the first 429 and left the page reading "Indexing paused" until
+  // someone reloaded.
+  const moving =
     progress !== 'unknown' &&
     progress !== null &&
-    (progress.state === 'running' || progress.state === 'not_started');
+    (progress.state === 'running' ||
+      progress.state === 'not_started' ||
+      progress.state === 'paused');
+
+  // ★ A failed progress read must not end the watch.
+  //
+  // The pages set `'unknown'` when `getIndexProgress` refuses, which is right
+  // for the banner — not knowing is not a claim — but fatal here: one
+  // transient failure of a cheap resolver flipped this false, the effect tore
+  // down, and nothing ever refetched again, silently restoring the frozen
+  // banner this hook exists to fix. So once indexing has been seen, `unknown`
+  // keeps the schedule alive; only a state that is genuinely finished stops it.
+  const seenIndexing = React.useRef(false);
+  if (moving) seenIndexing.current = true;
+  else if (progress !== 'unknown') seenIndexing.current = false;
+  const indexing = moving || (seenIndexing.current && progress === 'unknown');
 
   React.useEffect(() => {
     if (!indexing) return undefined;
@@ -675,24 +697,44 @@ const STATUS_LOZENGE = {
 } as const;
 
 /**
- * ★ How sorting actually works here, because getting it wrong is invisible.
+ * ★ How a table cell's `key` has to satisfy two masters.
  *
- * `DynamicTable` finds the column whose **head** cell `key` matches the active
- * sort key, then sorts on the **row** cell `key` at that index — numbers
- * numerically, strings through an `Intl.Collator`. The cell `key` is not
- * React's key (rows are keyed by index internally), so it is free to be the
- * underlying value.
+ * **Sorting.** `DynamicTable` finds the column whose *head* cell `key` matches
+ * the active sort key, then orders rows by the *row* cell `key` at that index.
+ * So the key has to carry the value. This table used to pass a constant —
+ * `key: 'issue'`, `key: 'c-0'` — for every row, so the one column marked
+ * sortable sorted every row by the same value and did nothing at all: clicking
+ * the header reordered nothing and reported no error.
  *
- * This table used to pass a constant — `key: 'issue'`, `key: 'c-0'` — for
- * every row, so the one column marked sortable sorted every row by the same
- * value and did nothing at all. Clicking the header reordered nothing and
- * reported no error.
+ * **React identity.** `@forge/react` renders each cell as
+ * `jsx(Cell, { cellKey, ... }, cellKey)` — the key is also React's key for the
+ * cell among its siblings. Duplicates within one row are the case React warns
+ * "may cause children to be duplicated and/or omitted", and they are the
+ * common case here, not an edge one: every status an issue never entered
+ * carries the same `NO_DURATION`, and a single-status issue's column equals
+ * its total.
  *
- * Every column is sortable now, and the durations sort on milliseconds rather
- * than on their rendered text: "find the issues that sat longest in Blocked"
- * is the question this product exists to answer, and until now the only way
- * to ask it was to export the CSV and sort it in a spreadsheet.
+ * ⚠️ Nothing in this repository can catch that. The stand-in host renderer
+ * keys cells by index (`@atlaskit/dynamic-table` does), so the whole suite,
+ * the screenshots and the e2e flows are structurally blind to a collision that
+ * only exists on Forge.
+ *
+ * So the key is a **padded value plus its column index**: the padding makes it
+ * order by magnitude under both plain and numeric collation, and the column
+ * index makes it unique within the row without touching the ordering, because
+ * it is constant down any one column. `+ 1` lifts `NO_DURATION` (-1) to zero,
+ * below every real duration including `0m`, and keeps the token free of a
+ * minus sign that collates as punctuation rather than as a negative.
  */
+const SORT_TOKEN_WIDTH = 16;
+
+export function cellKey(value: number | string, column: number): string {
+  const token =
+    typeof value === 'number'
+      ? String(Math.max(0, value + 1)).padStart(SORT_TOKEN_WIDTH, '0')
+      : value;
+  return `${token}#${column}`;
+}
 export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.Element {
   const head = {
     cells: model.headers.map((header, index) => ({
@@ -706,7 +748,7 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
     key: `${row.issueKey}-${rowIndex}`,
     cells: [
       {
-        key: row.issueKey,
+        key: cellKey(row.issueKey, 0),
         content: (
           <Inline space="space.075" alignBlock="center">
             <Strong>{row.issueKey}</Strong>
@@ -715,7 +757,7 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
         ),
       },
       {
-        key: row.currentStatus,
+        key: cellKey(row.currentStatus, 1),
         content:
           row.currentStatusCategory === null ? (
             <Text>{row.currentStatus}</Text>
@@ -725,10 +767,11 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
             </Lozenge>
           ),
       },
-      { key: row.createdAt, content: <Text>{row.created}</Text> },
-      { key: row.resolvedAt, content: <Text>{row.resolved}</Text> },
-      ...row.cells.map((cell) => ({
-        key: cell.ms,
+      { key: cellKey(row.createdAt, 2), content: <Text>{row.created}</Text> },
+      { key: cellKey(row.resolvedAt, 3), content: <Text>{row.resolved}</Text> },
+      ...row.cells.map((cell, index) => ({
+        // +4: the four fixed columns above.
+        key: cellKey(cell.ms, index + 4),
         content: (
           <Inline space="space.075" alignBlock="center">
             <Text>{cell.text}</Text>
@@ -738,7 +781,10 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
           </Inline>
         ),
       })),
-      { key: row.totalMs, content: <Strong>{row.total}</Strong> },
+      {
+        key: cellKey(row.totalMs, row.cells.length + 4),
+        content: <Strong>{row.total}</Strong>,
+      },
     ],
   }));
 
@@ -801,9 +847,11 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
   const rows = model.rows.map((row, rowIndex) => ({
     key: `r-${rowIndex}`,
     cells: row.map((value, index) => ({
-      // The cell's own value, so the sortable column sorts by it. A constant
+      // The cell's own value, so the sortable column sorts by it; a constant
       // here — which is what this was — makes the header clickable and inert.
-      key: typeof value === 'string' ? value : value.text,
+      // Suffixed by column, because these collide too: "Entries 1" beside
+      // "Issues 1", or an age equal to its total.
+      key: cellKey(typeof value === 'string' ? value : value.text, index),
       content:
         typeof value === 'string' ? (
           index === emphasis ? (
@@ -1202,15 +1250,19 @@ export const ReportFilters = ({
         <Label labelFor="filter-created-from">Created from</Label>
         <DatePicker
           id="filter-created-from"
-          // ★ The placeholder states the format, and `dateFormat` makes the
-          // field display it, because this control can be typed into and a
-          // mistyped date does not fail — it parses into a different date and
-          // narrows the table to the wrong rows, which reads exactly like a
-          // broken filter. The picker's default is the viewer's locale, so
-          // "3/2/2026" means March in one country and February in another;
-          // an ISO field means one thing everywhere. It doubles as the empty
-          // state, replacing a stray locale sample date that looked like
-          // corrupted state.
+          // ★ This control can be typed into, and a mistyped date does not
+          // fail — it parses into a different date and narrows the table to
+          // the wrong rows, which reads exactly like a broken filter. The
+          // picker's default rendering is the viewer's locale, so "3/2/2026"
+          // means March in one country and February in another.
+          //
+          // `dateFormat` fixes what the field *displays*; parsing typed text
+          // still goes through the locale unless Atlassian's
+          // `platform-dst-dp-parse-date-format` gate is on, so the thing
+          // actually protecting the reader is the placeholder telling them
+          // what to type. Together they make the ambiguity visible rather
+          // than silent. The placeholder doubles as the empty state,
+          // replacing a stray locale sample date that read as corrupted.
           placeholder="YYYY-MM-DD"
           dateFormat="YYYY-MM-DD"
           value={filters.createdFrom ?? ''}

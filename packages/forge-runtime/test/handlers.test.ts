@@ -219,7 +219,13 @@ describe('error messages crossing the trust boundary', () => {
 describe('whether a refusal is worth retrying', () => {
   it('refuses a retry for the three refusals about who is asking', () => {
     // Pressing Try again re-asks the same question of the same permissions.
-    for (const settled of [NO_PERMISSION, NOT_IN_PROJECT, NOT_AN_ADMIN]) {
+    for (const settled of [
+      NO_PERMISSION,
+      NOT_IN_PROJECT,
+      NOT_AN_ADMIN,
+      NOT_ON_AN_ISSUE,
+      UNKNOWN_SLA_GOAL,
+    ]) {
       expect(isRetryableError(settled)).toBe(false);
     }
   });
