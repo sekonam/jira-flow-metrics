@@ -236,10 +236,15 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
         expectNoUnregisteredResolvers();
       });
 
-      it('renders the page heading as a level-1 heading', async () => {
+      it('does not repeat the page title the host already renders', async () => {
         mount('populated');
-        const heading = await screen.findByRole('heading', { name: spec.heading, level: 1 });
-        expect(heading).toBeDefined();
+        // Jira titles a `jira:projectPage` itself, directly above the app's
+        // content — an in-app <h1> with the same words printed the page's
+        // name twice in a row on the live site. The page leads with its
+        // subtitle instead; the title belongs to the host chrome. Waiting for
+        // the populated marker first keeps this from passing on a blank page.
+        await screen.findAllByText(spec.populatedText);
+        expect(screen.queryByRole('heading', { name: spec.heading })).toBeNull();
       });
     } else {
       it('renders the gadget heading as a level-3 heading', async () => {

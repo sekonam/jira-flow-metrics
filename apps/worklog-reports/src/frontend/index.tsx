@@ -151,7 +151,6 @@ export const App = (): React.JSX.Element => {
   return (
     <Stack space="space.200">
       <PageHeader
-        title="Worklog Reports"
         subtitle="Logged time totalled per person. Totals are what people entered in Jira."
         actions={
           <Inline space="space.100">

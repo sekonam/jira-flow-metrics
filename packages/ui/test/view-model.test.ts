@@ -26,8 +26,8 @@ function report(overrides: Partial<StatusReport> = {}): StatusReport {
   return {
     aggregatesCapped: false,
     columns: [
-      { statusId: '10000', name: 'To Do' },
-      { statusId: '3', name: 'In Progress' },
+      { statusId: '10000', name: 'To Do', category: 'todo' },
+      { statusId: '3', name: 'In Progress', category: 'inprogress' },
     ],
     rows: [
       {
@@ -286,7 +286,7 @@ describe('summary tiles', () => {
       }),
     );
     expect(tiles[1]?.value).toBe('—');
-    expect(tiles[1]?.hint).toBe('Across 1 issues.');
+    expect(tiles[1]?.hint).toBe('Across 1 issue.');
   });
 });
 

@@ -177,7 +177,6 @@ export const App = (): React.JSX.Element => {
   return (
     <Stack space="space.200">
       <PageHeader
-        title="Time in Status"
         subtitle="Cumulative time each issue has spent in every status, counting every re-entry."
         actions={
           <ButtonGroup>
@@ -291,7 +290,7 @@ export const App = (): React.JSX.Element => {
           />
           <SummaryTiles tiles={toSummaryTiles(envelope.report)} />
           <Box>
-            <Text size="small">
+            <Text size="small" color="color.text.subtlest">
               Showing {envelope.report.basis === 'business' ? 'working hours' : 'elapsed time'}.
             </Text>
           </Box>

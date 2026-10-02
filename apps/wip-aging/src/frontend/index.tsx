@@ -162,7 +162,6 @@ export const App = (): React.JSX.Element => {
   return (
     <Stack space="space.200">
       <PageHeader
-        title="WIP Aging"
         subtitle="How long each unfinished issue has been sitting where it is."
         actions={
           <Inline space="space.100">

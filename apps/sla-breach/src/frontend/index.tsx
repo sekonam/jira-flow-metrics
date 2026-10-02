@@ -225,7 +225,6 @@ export const App = (): React.JSX.Element => {
   return (
     <Stack space="space.200">
       <PageHeader
-        title="SLA & Due Dates"
         subtitle="Working time against a target, plus plain due-date breaches."
         actions={
           <Inline space="space.100">

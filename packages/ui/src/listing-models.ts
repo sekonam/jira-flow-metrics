@@ -67,7 +67,7 @@ export function toWorklogTable(result: WorklogAggregateResult, groupLabel: strin
       result.entries === 0
         ? ['No worklogs were found in this range.']
         : [
-            `${formatDurationForHumans(total, WORKING_TIME)} logged across ${result.entries} entries. ` +
+            `${formatDurationForHumans(total, WORKING_TIME)} logged across ${counted(result.entries, 'entry', 'entries')}. ` +
               'Totals are the durations people entered in Jira, not durations derived from timestamps.',
           ],
   };
@@ -79,7 +79,7 @@ export function toWorklogTiles(result: WorklogAggregateResult): SummaryTile[] {
     {
       label: 'Total logged',
       value: formatDurationForHumans(result.totalMs, WORKING_TIME),
-      hint: `${result.entries} worklog entries.`,
+      hint: `${counted(result.entries, 'worklog entry', 'worklog entries')}.`,
     },
     {
       label: 'Largest contributor',
@@ -227,6 +227,13 @@ export function matchesSavedGoal(choice: SlaGoalChoice, goal: SavedSlaGoal): boo
 
 const HOUR_MS = 3_600_000;
 
+/** "1 entry" / "3 entries" — a hint reading "across 1 entries" undercuts the
+ * number beside it. Handles the trailing-y case ("entry") by being given the
+ * singular, not by string surgery. */
+function counted(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export const DEFAULT_SLA_GOAL: SlaGoalChoice = {
   countedStatusIds: [],
   targetMs: 8 * HOUR_MS,
@@ -312,7 +319,7 @@ export function toSlaTiles(report: SlaReport): SummaryTile[] {
         report.attainment === null
           ? '—'
           : `${report.breachedCount === 0 ? 100 : Math.min(99, Math.floor(report.attainment * 100))}%`,
-      hint: `${report.rows.length} issues measured against "${report.goalName}".`,
+      hint: `${counted(report.rows.length, 'issue', 'issues')} measured against "${report.goalName}".`,
     },
     {
       label: 'Breached',
@@ -373,7 +380,7 @@ export function toHistoryTiles(report: HistoryReport): SummaryTile[] {
       hint:
         busiest === undefined
           ? 'No changes in range.'
-          : `${busiest.changes} changes across ${busiest.issues} issues.`,
+          : `${counted(busiest.changes, 'change', 'changes')} across ${counted(busiest.issues, 'issue', 'issues')}.`,
     },
   ];
 }

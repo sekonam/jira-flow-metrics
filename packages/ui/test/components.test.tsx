@@ -84,9 +84,9 @@ const REPORT: StatusReport = {
   capped: false,
   aggregatesCapped: false,
   columns: [
-    { statusId: '10000', name: 'To Do' },
-    { statusId: '3', name: 'In Progress' },
-    { statusId: '10100', name: 'Blocked' },
+    { statusId: '10000', name: 'To Do', category: 'todo' },
+    { statusId: '3', name: 'In Progress', category: 'inprogress' },
+    { statusId: '10100', name: 'Blocked', category: 'inprogress' },
   ],
   summaryByStatus: {
     '3': {

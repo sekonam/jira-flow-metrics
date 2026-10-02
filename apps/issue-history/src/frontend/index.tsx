@@ -151,7 +151,6 @@ export const App = (): React.JSX.Element => {
   return (
     <Stack space="space.200">
       <PageHeader
-        title="Issue History"
         subtitle="Every field change across the whole project in one exportable table."
         actions={
           <Inline space="space.100">

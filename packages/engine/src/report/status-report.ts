@@ -5,7 +5,7 @@ import {
   type StatusMetaRow,
 } from '../store/types.js';
 import { summariseDurations, type DistributionSummary } from '../metrics/cycle-time.js';
-import type { DurationBasis, Millis, StatusId } from '../types.js';
+import type { DurationBasis, Millis, StatusCategory, StatusId } from '../types.js';
 
 /**
  * Report assembly — turning stored aggregate rows into what the UI renders.
@@ -34,7 +34,12 @@ export interface StatusReportRow {
 }
 
 export interface StatusReport {
-  readonly columns: readonly { statusId: StatusId; name: string }[];
+  /**
+   * `category` rides along so the UI can render a status the way Jira itself
+   * does — a lozenge coloured by category — without a second lookup. It is
+   * already in hand here: `orderColumns` sorts by it.
+   */
+  readonly columns: readonly { statusId: StatusId; name: string; category: StatusCategory }[];
   readonly rows: readonly StatusReportRow[];
   readonly basis: DurationBasis;
   /**
@@ -227,14 +232,18 @@ function orderColumns(
   used: ReadonlySet<StatusId>,
   statusMeta: readonly StatusMetaRow[],
   nameOf: ReadonlyMap<StatusId, string>,
-): { statusId: StatusId; name: string }[] {
+): { statusId: StatusId; name: string; category: StatusCategory }[] {
   const rank: Record<string, number> = { todo: 0, inprogress: 1, done: 2, unknown: 3 };
   const categoryOf = new Map(statusMeta.map((s) => [s.statusId, s.category]));
   return [...used]
-    .map((statusId) => ({ statusId, name: nameOf.get(statusId) ?? statusId }))
+    .map((statusId) => ({
+      statusId,
+      name: nameOf.get(statusId) ?? statusId,
+      category: categoryOf.get(statusId) ?? 'unknown',
+    }))
     .sort((a, b) => {
-      const ra = rank[categoryOf.get(a.statusId) ?? 'unknown'] ?? 3;
-      const rb = rank[categoryOf.get(b.statusId) ?? 'unknown'] ?? 3;
+      const ra = rank[a.category] ?? 3;
+      const rb = rank[b.category] ?? 3;
       return ra - rb || a.name.localeCompare(b.name);
     });
 }

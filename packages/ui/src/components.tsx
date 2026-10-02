@@ -26,6 +26,7 @@ import {
   Strong,
   Text,
   Textfield,
+  xcss,
 } from '@forge/react';
 import {
   WORKING_TIME,
@@ -442,15 +443,35 @@ export function IndexingBanner({
   );
 }
 
+/**
+ * The tile card. A bordered, rounded surface with a fixed minimum width —
+ * not a flat neutral slab — so a row of tiles reads as a deliberate stat row
+ * rather than leftover table cells, and a wrap produces a second row of
+ * equal cards instead of a ragged one. Styled with design tokens only, so
+ * the card follows the user's Jira theme the way every ADS card does.
+ */
+const TILE_STYLE = xcss({
+  backgroundColor: 'elevation.surface',
+  borderColor: 'color.border',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderRadius: 'radius.large',
+  minWidth: '180px',
+});
+
 export function SummaryTiles({ tiles }: { tiles: readonly SummaryTile[] }): React.JSX.Element {
   return (
-    <Inline space="space.200" shouldWrap>
+    <Inline space="space.150" shouldWrap>
       {tiles.map((tile) => (
-        <Box key={tile.label} padding="space.150" backgroundColor="color.background.neutral">
-          <Stack space="space.050">
-            <Text size="small">{tile.label}</Text>
+        <Box key={tile.label} padding="space.200" xcss={TILE_STYLE}>
+          <Stack space="space.075">
+            <Text size="small" color="color.text.subtlest" weight="medium">
+              {tile.label}
+            </Text>
             <Heading as="h3">{tile.value}</Heading>
-            <Text size="small">{tile.hint}</Text>
+            <Text size="small" color="color.text.subtlest">
+              {tile.hint}
+            </Text>
           </Stack>
         </Box>
       ))}
@@ -557,6 +578,20 @@ export function AgingHistogram({ data }: { data: readonly ChartPoint[] }): React
  * chart cannot show, and it is why the cumulative total differs from what the
  * user sees natively.
  */
+/**
+ * Jira renders a status as a lozenge coloured by its category everywhere a
+ * user meets one — boards, issue views, JQL results. A metrics table that
+ * prints the same status as plain text reads as foreign; this map keeps the
+ * product speaking Jira's own visual language. `default` for `todo` is
+ * deliberate: ADS's neutral lozenge is exactly Jira's To Do grey.
+ */
+const STATUS_LOZENGE = {
+  todo: 'default',
+  inprogress: 'inprogress',
+  done: 'success',
+  unknown: 'default',
+} as const;
+
 export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.Element {
   const head = {
     cells: model.headers.map((header, index) => ({
@@ -578,7 +613,17 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
           </Inline>
         ),
       },
-      { key: 'status', content: <Text>{row.currentStatus}</Text> },
+      {
+        key: 'status',
+        content:
+          row.currentStatusCategory === null ? (
+            <Text>{row.currentStatus}</Text>
+          ) : (
+            <Lozenge appearance={STATUS_LOZENGE[row.currentStatusCategory]}>
+              {row.currentStatus}
+            </Lozenge>
+          ),
+      },
       { key: 'created', content: <Text>{row.created}</Text> },
       { key: 'resolved', content: <Text>{row.resolved}</Text> },
       ...row.cells.map((cell, index) => ({
@@ -608,20 +653,30 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
   );
 }
 
+/**
+ * The page's lead line and its action row.
+ *
+ * `title` is optional, and the project pages must not pass one: Jira itself
+ * renders the module's name directly above a `jira:projectPage`, so an in-app
+ * `<h1>` repeated the page's own name twice in a row — confirmed on the live
+ * dev site, and the single loudest "not finished" signal on every screen.
+ * Surfaces whose host chrome does not title them (the admin pages) still pass
+ * a title and get the heading.
+ */
 export function PageHeader({
   title,
   subtitle,
   actions,
 }: {
-  title: string;
+  title?: string | undefined;
   subtitle: string;
   actions?: React.ReactNode | undefined;
 }): React.JSX.Element {
   return (
     <Stack space="space.100">
-      <Heading as="h1">{title}</Heading>
-      <Inline spread="space-between" alignBlock="center">
-        <Text>{subtitle}</Text>
+      {title === undefined ? null : <Heading as="h1">{title}</Heading>}
+      <Inline spread="space-between" alignBlock="center" shouldWrap space="space.150">
+        <Text color="color.text.subtle">{subtitle}</Text>
         {actions}
       </Inline>
     </Stack>
@@ -1033,6 +1088,10 @@ export const ReportFilters = ({
         <Label labelFor="filter-created-from">Created from</Label>
         <DatePicker
           id="filter-created-from"
+          // Without this the picker shows its locale sample date — a blank
+          // filter reading "2/18/1993" looks like corrupted state, not an
+          // empty control.
+          placeholder="Any date"
           value={filters.createdFrom ?? ''}
           {...(filters.createdTo === null ? {} : { maxDate: filters.createdTo })}
           isDisabled={isDisabled === true}
@@ -1045,6 +1104,7 @@ export const ReportFilters = ({
         <Label labelFor="filter-created-to">Created to</Label>
         <DatePicker
           id="filter-created-to"
+          placeholder="Any date"
           value={filters.createdTo ?? ''}
           {...(filters.createdFrom === null ? {} : { minDate: filters.createdFrom })}
           isDisabled={isDisabled === true}

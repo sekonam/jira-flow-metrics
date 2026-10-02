@@ -1,5 +1,6 @@
 import React from 'react';
 import AdsBox from '@atlaskit/primitives/box';
+import { xcss as adsXcss } from '@atlaskit/primitives';
 import AdsInline from '@atlaskit/primitives/inline';
 import AdsStack from '@atlaskit/primitives/stack';
 import AdsText from '@atlaskit/primitives/text';
@@ -72,12 +73,19 @@ export interface BoxProps {
   readonly children?: React.ReactNode;
   readonly padding?: string;
   readonly backgroundColor?: string;
+  /**
+   * UI Kit's `xcss()` returns a validated plain style object; ADS's `xcss()`
+   * compiles one into the class ADS `Box` expects. The stand-in bridges the
+   * two so a tile styled in the product is styled in the screenshots.
+   */
+  readonly xcss?: Record<string, unknown>;
 }
 
-export const Box = ({ children, padding, backgroundColor }: BoxProps): React.JSX.Element => (
+export const Box = ({ children, padding, backgroundColor, xcss }: BoxProps): React.JSX.Element => (
   <AdsBox
     {...(padding === undefined ? {} : { padding: padding as never })}
     {...(backgroundColor === undefined ? {} : { backgroundColor: backgroundColor as never })}
+    {...(xcss === undefined ? {} : { xcss: adsXcss(xcss as never) })}
   >
     {children}
   </AdsBox>
@@ -134,10 +142,19 @@ export const Stack = ({
 export interface TextProps {
   readonly children?: React.ReactNode;
   readonly size?: string;
+  /** A `color.text.*` design token, as UI Kit's `Text` accepts. */
+  readonly color?: string;
+  readonly weight?: string;
 }
 
-export const Text = ({ children, size }: TextProps): React.JSX.Element => (
-  <AdsText {...(size === undefined ? {} : { size: size as never })}>{children}</AdsText>
+export const Text = ({ children, size, color, weight }: TextProps): React.JSX.Element => (
+  <AdsText
+    {...(size === undefined ? {} : { size: size as never })}
+    {...(color === undefined ? {} : { color: color as never })}
+    {...(weight === undefined ? {} : { weight: weight as never })}
+  >
+    {children}
+  </AdsText>
 );
 
 /** UI Kit 1 leftover, still exported by `@forge/react` and still used here. */

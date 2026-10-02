@@ -151,6 +151,12 @@ export interface ReportTableCell {
 export interface ReportTableRow {
   readonly issueKey: string;
   readonly currentStatus: string;
+  /**
+   * Jira's status category, so the table can colour the status the way Jira
+   * itself does. `null` when the issue has no current status to speak of —
+   * the cell then renders the em dash, not an empty lozenge.
+   */
+  readonly currentStatusCategory: 'todo' | 'inprogress' | 'done' | 'unknown' | null;
   readonly created: string;
   readonly resolved: string;
   readonly cells: readonly ReportTableCell[];
@@ -166,9 +172,9 @@ export interface ReportTableModel {
 }
 
 export function toReportTable(report: StatusReport): ReportTableModel {
-  const nameOf = new Map(report.columns.map((c) => [c.statusId, c.name]));
+  const columnOf = new Map(report.columns.map((c) => [c.statusId, c]));
   const format = formatFor(report.basis);
-  const rows = report.rows.map((row) => toReportTableRow(row, report, nameOf, format));
+  const rows = report.rows.map((row) => toReportTableRow(row, report, columnOf, format));
   const footnotes: string[] = [];
   if (report.rows.some((r) => r.truncated)) {
     footnotes.push(
@@ -201,13 +207,17 @@ export function toReportTable(report: StatusReport): ReportTableModel {
 function toReportTableRow(
   row: StatusReportRow,
   report: StatusReport,
-  nameOf: ReadonlyMap<string, string>,
+  columnOf: ReadonlyMap<string, StatusReport['columns'][number]>,
   format: DurationFormat,
 ): ReportTableRow {
+  const column = row.currentStatusId === null ? undefined : columnOf.get(row.currentStatusId);
   return {
     issueKey: row.issueKey,
-    currentStatus:
-      row.currentStatusId === null ? '—' : (nameOf.get(row.currentStatusId) ?? row.currentStatusId),
+    currentStatus: row.currentStatusId === null ? '—' : (column?.name ?? row.currentStatusId),
+    // An issue's current status always has an open visit, so it is always a
+    // column — `unknown` here means the status meta had no category, not
+    // that the lookup missed.
+    currentStatusCategory: row.currentStatusId === null ? null : (column?.category ?? 'unknown'),
     created: formatDate(row.createdAt),
     resolved: formatDate(row.resolvedAt),
     cells: report.columns.map((column) => {
@@ -243,6 +253,12 @@ export interface SeriesPoint extends ChartPoint {
   readonly series: string;
 }
 
+/** "1 issue" / "3 issues" — a tile hint that reads "across 1 issues" costs
+ * more trust than the figure beside it earns. */
+function countOfIssues(count: number): string {
+  return count === 1 ? '1 issue' : `${count} issues`;
+}
+
 /** The tiles above the table. Median and 85th percentile, never the mean alone —
  * cycle-time distributions are right-skewed and a mean misleads. */
 export function toSummaryTiles(report: StatusReport): SummaryTile[] {
@@ -271,8 +287,8 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
       value: summary.medianMs === null ? '—' : formatDurationForHumans(summary.medianMs, format),
       hint:
         summary.p85Ms === null
-          ? `Across ${summary.count} issues.`
-          : `85th percentile ${formatDurationForHumans(summary.p85Ms, format)}, across ${summary.count} issues.`,
+          ? `Across ${countOfIssues(summary.count)}.`
+          : `85th percentile ${formatDurationForHumans(summary.p85Ms, format)}, across ${countOfIssues(summary.count)}.`,
     });
   }
   return tiles;

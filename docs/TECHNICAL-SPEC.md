@@ -738,7 +738,7 @@ the real `invoke`, its payload validation and its rate limiter all run.
 16. **★★ Replace-path re-inserts raced under concurrent issue events — ER_DUP_ENTRY live, fixed
     2026-10-01.** Bulk-seeding JFMB from 300 to 600 issues, Time in Status's
     `avi:jira:updated:issue` handler failed repeatedly with `ER_DUP_ENTRY
-    (issue_status_agg.PRIMARY)` and its report stalled at 481/600 — while WIP Aging, fed the same
+(issue_status_agg.PRIMARY)` and its report stalled at 481/600 — while WIP Aging, fed the same
     event stream into its own separate store, held all 600. "Replace, never merge" was DELETE then
     plain INSERT; the two are not atomic on Forge SQL, so two invocations re-ingesting the same
     issue can both delete and then both insert, and the losing invocation's whole event is lost.
