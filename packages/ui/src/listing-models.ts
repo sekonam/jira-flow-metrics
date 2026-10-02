@@ -26,9 +26,30 @@ import {
  * portfolio thesis this repository is built to test.
  */
 
+/**
+ * What a lozenge cell means, in the product's own vocabulary rather than the
+ * design system's. `components.tsx` owns the mapping onto ADS appearances, so
+ * a view model never has to know what colour "breached" is.
+ *
+ * The four status categories are Jira's; `danger`/`success` are for columns
+ * that carry a judgement the product made — an SLA breach, say.
+ */
+export type CellTone = 'todo' | 'inprogress' | 'done' | 'unknown' | 'danger' | 'success';
+
+/** A cell Jira itself would draw as a lozenge rather than as text. */
+export interface SimpleCell {
+  readonly text: string;
+  readonly tone: CellTone;
+}
+
 export interface SimpleTable {
   readonly headers: readonly string[];
-  readonly rows: readonly (readonly string[])[];
+  /**
+   * A cell is a plain string, or a `SimpleCell` where the value is a state
+   * rather than a value — a status, a verdict. Strings still typecheck
+   * everywhere they did, so a table that has no states to show is unchanged.
+   */
+  readonly rows: readonly (readonly (string | SimpleCell)[])[];
   readonly footnotes: readonly string[];
   /**
    * Which column carries the row's identity and is rendered in bold.
@@ -104,7 +125,7 @@ export function toAgingTable(report: AgingReport): SimpleTable {
     headers: ['Issue', 'Status', 'Age in status', 'Working hours', 'Age total', 'Entered status'],
     rows: report.rows.map((row) => [
       row.issueKey,
-      row.statusName,
+      { text: row.statusName, tone: row.statusCategory ?? 'unknown' },
       formatDurationForHumans(row.ageInStatusMs),
       formatDurationForHumans(row.ageInStatusBusinessMs, WORKING_TIME),
       formatDurationForHumans(row.ageTotalMs),
@@ -286,7 +307,11 @@ export function toSlaTable(report: SlaReport): SimpleTable {
       row.remainingMs < 0
         ? `over by ${formatDurationForHumans(-row.remainingMs, WORKING_TIME)}`
         : formatDurationForHumans(row.remainingMs, WORKING_TIME),
-      row.breached ? 'Breached' : 'Within target',
+      // A breach is the one thing a reader scans this table for; as plain
+      // text it is indistinguishable from the row above it.
+      row.breached
+        ? ({ text: 'Breached', tone: 'danger' } as const)
+        : ({ text: 'Within target', tone: 'success' } as const),
       describeDueDate(row.dueDate),
     ]),
     footnotes: [

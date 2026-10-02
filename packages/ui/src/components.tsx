@@ -590,6 +590,10 @@ const STATUS_LOZENGE = {
   inprogress: 'inprogress',
   done: 'success',
   unknown: 'default',
+  // Judgements the product made, not categories Jira supplies — see
+  // `CellTone`. A breach is the one value a reader scans an SLA table for.
+  danger: 'removed',
+  success: 'success',
 } as const;
 
 export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.Element {
@@ -701,7 +705,18 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
     key: `r-${rowIndex}`,
     cells: row.map((value, index) => ({
       key: `c-${index}`,
-      content: index === emphasis ? <Strong>{value}</Strong> : <Text>{value}</Text>,
+      content:
+        typeof value === 'string' ? (
+          index === emphasis ? (
+            <Strong>{value}</Strong>
+          ) : (
+            <Text>{value}</Text>
+          )
+        ) : (
+          // A state, not a value: drawn the way Jira draws one. Emphasis is
+          // the lozenge itself, so an identity column never arrives here.
+          <Lozenge appearance={STATUS_LOZENGE[value.tone]}>{value.text}</Lozenge>
+        ),
     })),
   }));
   return (

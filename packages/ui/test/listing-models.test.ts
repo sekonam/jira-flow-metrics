@@ -55,6 +55,7 @@ const aging: AgingReport = {
       issueKey: 'FLOW-2',
       statusId: '3',
       statusName: 'In Progress',
+      statusCategory: 'inprogress',
       ageInStatusMs: 40 * DAY,
       ageInStatusBusinessMs: 30 * HOUR,
       ageTotalMs: 60 * DAY,
@@ -208,7 +209,9 @@ describe('SLA view model', () => {
   it('states overrun in words rather than as a negative duration', () => {
     const table = toSlaTable(sla);
     expect(table.rows[0]?.[3]).toBe('over by 22h');
-    expect(table.rows[0]?.[4]).toBe('Breached');
+    // A verdict, not a value: carried as a toned cell so the table can draw
+    // it the way Jira draws a state.
+    expect(table.rows[0]?.[4]).toEqual({ text: 'Breached', tone: 'danger' });
     expect(table.rows[1]?.[3]).toBe('2h');
   });
 

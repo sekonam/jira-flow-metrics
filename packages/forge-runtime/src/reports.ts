@@ -86,6 +86,8 @@ export interface AgingReportRow {
   readonly issueKey: string;
   readonly statusId: StatusId | null;
   readonly statusName: string;
+  /** Jira's category for that status, so the table can colour it as Jira does. */
+  readonly statusCategory: StatusCategory | null;
   /** Time in the current status, still running. */
   readonly ageInStatusMs: Millis;
   readonly ageInStatusBusinessMs: Millis;
@@ -237,6 +239,7 @@ export async function buildAgingReport(
       issueKey: meta.issueKey,
       statusId,
       statusName: statusId === null ? 'Unknown' : (byId.get(statusId)?.name ?? statusId),
+      statusCategory: statusId === null ? null : (byId.get(statusId)?.category ?? 'unknown'),
       ageInStatusMs: enteredAt === null ? 0 : Math.max(0, now - enteredAt),
       // The stored `business_ms` is the *closed* portion of the visit, so the
       // still-running part is added as elapsed. Reported as an approximation
