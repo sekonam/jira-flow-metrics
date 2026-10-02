@@ -184,6 +184,21 @@ export const NO_PERMISSION =
   'You do not have permission to browse this project in Jira, so this report is not available.';
 
 /**
+ * Is it worth offering this reader a retry?
+ *
+ * The three refusals above are settled facts about who is asking, not
+ * transient failures: pressing *Try again* re-asks the same question of the
+ * same permissions and gets the same answer, forever. Offering the button is
+ * not neutral — it implies the app might be wrong about them, so the reader
+ * presses it, nothing changes, and they learn nothing about why. Everything
+ * else that reaches this boundary (a rate limit, a timeout, a Jira 5xx) is
+ * worth one more go.
+ */
+export function isRetryableError(message: string): boolean {
+  return message !== NO_PERMISSION && message !== NOT_IN_PROJECT && message !== NOT_AN_ADMIN;
+}
+
+/**
  * Resolve and authorise the project for a resolver call.
  *
  * Two separate things, deliberately in one place because forgetting either is

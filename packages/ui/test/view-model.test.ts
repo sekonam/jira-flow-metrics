@@ -164,7 +164,14 @@ describe('report table model', () => {
   it('marks a re-entered status, which is the product argument in one badge', () => {
     const table = toReportTable(report());
     const row = table.rows[0]!;
-    expect(row.cells[1]).toEqual({ text: '12h', entries: 2, reentered: true });
+    expect(row.cells[1]).toEqual({
+      text: '12h',
+      // The figure behind the text, so the column sorts on duration rather
+      // than on how the duration happens to read.
+      ms: 12 * HOUR,
+      entries: 2,
+      reentered: true,
+    });
     expect(row.cells[0]?.reentered).toBe(false);
     expect(table.footnotes.some((f) => f.includes('cumulative across every visit'))).toBe(true);
   });

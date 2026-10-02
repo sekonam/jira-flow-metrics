@@ -140,8 +140,22 @@ export function formatDateTime(ms: Millis | null): string {
   return `${formatDate(ms)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
+/** A duration the issue never recorded, as a sort key. Below every real
+ * figure including `0m`, so descending — "who sat here longest" — puts the
+ * issues that were never in that status last, where they belong. */
+export const NO_DURATION = -1;
+
 export interface ReportTableCell {
   readonly text: string;
+  /**
+   * The figure behind `text`, in milliseconds, for sorting.
+   *
+   * ★ Sorting on the rendered text is the bug this field exists to prevent:
+   * "45m", "1d 20h" and "9h" collate alphabetically, so a column of durations
+   * sorts into an order that looks deliberate and means nothing. `NO_DURATION`
+   * where the issue was never in that status.
+   */
+  readonly ms: number;
   /** How many separate visits produced this figure. `null` where not applicable. */
   readonly entries: number | null;
   /** True when the issue re-entered this status — the thing Jira cannot show. */
@@ -162,6 +176,11 @@ export interface ReportTableRow {
   readonly cells: readonly ReportTableCell[];
   readonly total: string;
   readonly truncated: boolean;
+  /** Sort keys for the columns whose rendered form is not sortable: the two
+   * dates read "12 Mar 2026", which collates by month name. */
+  readonly createdAt: number;
+  readonly resolvedAt: number;
+  readonly totalMs: number;
 }
 
 export interface ReportTableModel {
@@ -222,14 +241,21 @@ function toReportTableRow(
     resolved: formatDate(row.resolvedAt),
     cells: report.columns.map((column) => {
       const entries = row.entriesByStatus[column.statusId] ?? null;
+      const ms = row.byStatus[column.statusId];
       return {
-        text: formatCell(row.byStatus[column.statusId], format),
+        text: formatCell(ms, format),
+        ms: ms ?? NO_DURATION,
         entries,
         reentered: entries !== null && entries > 1,
       };
     }),
     total: formatDurationForHumans(row.totalMs, format),
     truncated: row.truncated,
+    createdAt: row.createdAt,
+    // Unresolved sorts below every resolved issue rather than above them all,
+    // which is what `null` would do if it reached the collator.
+    resolvedAt: row.resolvedAt ?? NO_DURATION,
+    totalMs: row.totalMs,
   };
 }
 

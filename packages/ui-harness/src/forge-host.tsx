@@ -446,6 +446,12 @@ export interface DatePickerProps {
    */
   readonly minDate?: string;
   readonly maxDate?: string;
+  /**
+   * Declared for the same reason as the two above: the product sets it so a
+   * typed date cannot be read as the viewer's locale, and an undeclared prop
+   * is dropped silently — the one failure the prop scanner cannot see.
+   */
+  readonly dateFormat?: string;
   readonly onChange?: (value: string) => void;
 }
 
@@ -463,6 +469,7 @@ export const DatePicker = ({
   isDisabled,
   minDate,
   maxDate,
+  dateFormat,
   onChange,
 }: DatePickerProps): React.JSX.Element => (
   <AdsDatePicker
@@ -472,6 +479,7 @@ export const DatePicker = ({
     {...(isDisabled === undefined ? {} : { isDisabled })}
     {...(minDate === undefined ? {} : { minDate })}
     {...(maxDate === undefined ? {} : { maxDate })}
+    {...(dateFormat === undefined ? {} : { dateFormat })}
     {...(onChange === undefined ? {} : { onChange })}
     shouldShowCalendarButton
   />

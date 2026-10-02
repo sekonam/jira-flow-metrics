@@ -41,6 +41,7 @@ import {
   NO_PERMISSION,
   UNKNOWN_SLA_GOAL,
   UNUSABLE_HISTORY_WINDOW,
+  isRetryableError,
   issueKeyFromContext,
   parseGoalToSave,
   parseHistoryWindow,
@@ -212,6 +213,21 @@ describe('error messages crossing the trust boundary', () => {
     const message = toUserMessage(new Error('issue FLOW-1: acquire Contoso by Q3'));
     expect(message).not.toContain('Contoso');
     expect(message).toContain('app logs');
+  });
+});
+
+describe('whether a refusal is worth retrying', () => {
+  it('refuses a retry for the three refusals about who is asking', () => {
+    // Pressing Try again re-asks the same question of the same permissions.
+    for (const settled of [NO_PERMISSION, NOT_IN_PROJECT, NOT_AN_ADMIN]) {
+      expect(isRetryableError(settled)).toBe(false);
+    }
+  });
+
+  it('allows a retry for everything that might answer differently next time', () => {
+    expect(isRetryableError(toUserMessage(new HttpError(429, 'x')))).toBe(true);
+    expect(isRetryableError(toUserMessage(new Error('boom')))).toBe(true);
+    expect(isRetryableError('The report could not be loaded. Try again in a moment.')).toBe(true);
   });
 });
 

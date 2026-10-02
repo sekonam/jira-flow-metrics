@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ForgeReconciler, { Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { isRetryableError } from '@jfm/forge-runtime';
 import type { BackfillProgress } from '@jfm/engine';
 import type { AgingReport, FlowReport } from '@jfm/forge-runtime';
 import {
@@ -16,6 +17,7 @@ import {
   SimpleReportTable,
   SummaryTiles,
   surfaceStateOf,
+  useIndexingRefresh,
   toAgingChartData,
   toAgingTable,
   toAgingTiles,
@@ -156,6 +158,12 @@ export const App = (): React.JSX.Element => {
     void load();
   }, [load]);
 
+  // Keeps the indexing banner alive without a manual reload; see
+  // `useIndexingRefresh`.
+  useIndexingRefresh(progress, () => {
+    void load();
+  });
+
   const rowCount = report === null ? 0 : report.rows.length;
   const state = surfaceStateOf({ loading, error, rowCount });
 
@@ -192,9 +200,15 @@ export const App = (): React.JSX.Element => {
       {state === 'error' ? (
         <ErrorSurface
           message={error ?? 'Unknown error'}
-          onRetry={() => {
-            void load();
-          }}
+          // A refusal about who the reader is cannot be retried into a
+          // different answer; only a transient failure gets a button.
+          onRetry={
+            isRetryableError(error ?? '')
+              ? () => {
+                  void load();
+                }
+              : undefined
+          }
         />
       ) : null}
       {state === 'empty' ? (

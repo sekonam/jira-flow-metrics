@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import type { BackfillProgress, StatusReport } from '@jfm/engine';
 import { auditA11y, describeFindings } from '@jfm/ui-harness';
 
@@ -51,6 +59,7 @@ const {
   SimpleReportTable,
   SlaGoalForm,
   SummaryTiles,
+  useIndexingRefresh,
   filtersToRequest,
   hasActiveFilters,
   toCapBanner,
@@ -709,6 +718,187 @@ describe('PageHeader', () => {
   });
 });
 
+describe('useIndexingRefresh', () => {
+  const progressOf = (state: BackfillProgress['state']): BackfillProgress => ({
+    state,
+    issuesProcessed: 10,
+    issuesTotal: 900,
+    fraction: 0.01,
+    lastError: null,
+    startedAt: 0,
+    updatedAt: 0,
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('★ re-reads the report while indexing, so the banner is not frozen', () => {
+    // The defect: nothing on any page ever refetched, so "Indexing in
+    // progress — 0 issues indexed" was the last thing a first-time user saw
+    // until they reloaded by hand.
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    renderHook(() => {
+      useIndexingRefresh(progressOf('running'), reload);
+    });
+
+    expect(reload).not.toHaveBeenCalled(); // not on mount; the page just loaded
+    vi.advanceTimersByTime(3_000);
+    expect(reload).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    expect(reload.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('polls less often as it goes, because every poll is billed', () => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    renderHook(() => {
+      useIndexingRefresh(progressOf('running'), reload);
+    });
+
+    vi.advanceTimersByTime(10_000);
+    const early = reload.mock.calls.length;
+    vi.advanceTimersByTime(10_000);
+    const late = reload.mock.calls.length - early;
+    expect(late).toBeLessThan(early);
+  });
+
+  it('gives up rather than polling an abandoned tab forever', () => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    renderHook(() => {
+      useIndexingRefresh(progressOf('running'), reload);
+    });
+
+    vi.advanceTimersByTime(60 * 60_000);
+    const total = reload.mock.calls.length;
+    expect(total).toBeLessThanOrEqual(40);
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(reload).toHaveBeenCalledTimes(total);
+  });
+
+  it.each(['complete', 'failed', 'paused'] as const)(
+    'does not poll when the index is %s',
+    (state) => {
+      vi.useFakeTimers();
+      const reload = vi.fn();
+      renderHook(() => {
+        useIndexingRefresh(progressOf(state), reload);
+      });
+      vi.advanceTimersByTime(120_000);
+      expect(reload).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not poll a project that has never been indexed, or an unknown one', () => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    const { rerender } = renderHook(
+      ({ p }: { p: Parameters<typeof useIndexingRefresh>[0] }) => {
+        useIndexingRefresh(p, reload);
+      },
+      { initialProps: { p: null as Parameters<typeof useIndexingRefresh>[0] } },
+    );
+    vi.advanceTimersByTime(120_000);
+    expect(reload).not.toHaveBeenCalled();
+    rerender({ p: 'unknown' });
+    vi.advanceTimersByTime(120_000);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('stops as soon as indexing finishes', () => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    const { rerender } = renderHook(
+      ({ p }: { p: Parameters<typeof useIndexingRefresh>[0] }) => {
+        useIndexingRefresh(p, reload);
+      },
+      { initialProps: { p: progressOf('running') as Parameters<typeof useIndexingRefresh>[0] } },
+    );
+    vi.advanceTimersByTime(10_000);
+    const whileRunning = reload.mock.calls.length;
+    expect(whileRunning).toBeGreaterThan(0);
+
+    rerender({ p: progressOf('complete') });
+    vi.advanceTimersByTime(120_000);
+    expect(reload).toHaveBeenCalledTimes(whileRunning);
+  });
+
+  it('a caller that rebuilds its callback every render does not restart the backoff', () => {
+    // Every page closes its reload over the basis and the filters, so the
+    // function identity changes on each render. Keyed on that identity, the
+    // effect would tear down and re-arm on every poll — resetting the delay
+    // to the shortest one and polling at that rate for as long as indexing
+    // ran, which is the opposite of the cost control above.
+    vi.useFakeTimers();
+    const calls: number[] = [];
+    const { rerender } = renderHook(() => {
+      useIndexingRefresh(progressOf('running'), () => {
+        calls.push(Date.now());
+      });
+    });
+    vi.advanceTimersByTime(10_000);
+    rerender();
+    vi.advanceTimersByTime(10_000);
+    const withRerenders = calls.length;
+
+    cleanup();
+    calls.length = 0;
+    renderHook(() => {
+      useIndexingRefresh(progressOf('running'), () => {
+        calls.push(Date.now());
+      });
+    });
+    vi.advanceTimersByTime(20_000);
+    expect(withRerenders).toBe(calls.length);
+  });
+});
+
+describe('ReportTable sorting', () => {
+  /** The rendered issue keys, top to bottom. */
+  function issueOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent ?? '');
+  }
+
+  it('★ sorts a duration column by its value, not by how the value reads', () => {
+    // The regression this exists for: every cell used to carry a constant
+    // `key` ('issue', 'c-0'), and `DynamicTable` sorts a column by the key of
+    // the cell beneath its header. Identical keys meant clicking a header
+    // reordered nothing, silently. Sorting on the rendered text would be its
+    // own bug: "1d 20h" collates before "1h" before "12h".
+    render(<ReportTable model={toReportTable(REPORT)} />);
+    const blocked = screen.getByRole('columnheader', { name: /Blocked/ });
+
+    fireEvent.click(within(blocked).getByRole('button'));
+    const ascending = issueOrder();
+    fireEvent.click(within(blocked).getByRole('button'));
+    const descending = issueOrder();
+
+    // Something moved — the defect was that nothing did.
+    expect(descending).not.toEqual(ascending);
+    expect([...descending].reverse()).toEqual(ascending);
+    // FLOW-3 holds the only Blocked figure (1d 20h); FLOW-4 was never in
+    // Blocked and must sort below a real figure, not above it.
+    expect(descending[0]).toBe('FLOW-3');
+    // `startsWith`: this cell also carries the "partial history" badge.
+    expect(descending[descending.length - 1]?.startsWith('FLOW-4')).toBe(true);
+  });
+
+  it('sorts dates chronologically, which their rendered form does not', () => {
+    render(<ReportTable model={toReportTable(REPORT)} />);
+    const created = screen.getByRole('columnheader', { name: /Created/ });
+    fireEvent.click(within(created).getByRole('button'));
+    const ascending = issueOrder();
+    expect(ascending.length).toBeGreaterThan(1);
+    fireEvent.click(within(created).getByRole('button'));
+    expect(issueOrder()).toEqual([...ascending].reverse());
+  });
+});
+
 describe('ReportTable', () => {
   it('orders columns as issue, status, dates, then one per status, then total', () => {
     render(<ReportTable model={toReportTable(REPORT)} />);
@@ -1091,6 +1281,31 @@ describe('report filters', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
+  });
+
+  it('★ states the date format it will read, because a mistyped date does not fail', () => {
+    // A date field that accepts typing and parses by locale is a trap: in the
+    // viewer's locale "3/2/2026" is March in one country and February in
+    // another, and the wrong one silently narrows the table to the wrong
+    // rows, which reads exactly like a broken filter rather than like a typo.
+    // So the format is stated in the field, and the field renders in it.
+    render(
+      <ReportFilters assignees={[]} issueTypes={[]} filters={EMPTY_FILTERS} onChange={vi.fn()} />,
+    );
+    expect(screen.getAllByText('YYYY-MM-DD')).toHaveLength(2);
+  });
+
+  it('renders a chosen date in the format it advertises', () => {
+    render(
+      <ReportFilters
+        assignees={[]}
+        issueTypes={[]}
+        filters={on({ createdFrom: '2026-03-02' })}
+        onChange={vi.fn()}
+      />,
+    );
+    // Not "3/2/2026" — the ambiguous rendering is the whole defect.
+    expect(screen.getByText('2026-03-02')).toBeTruthy();
   });
 
   it('labels both window pickers, so each is addressable by name', () => {

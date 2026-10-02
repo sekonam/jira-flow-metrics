@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ForgeReconciler, { Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { isRetryableError } from '@jfm/forge-runtime';
 import type { SlaReport } from '@jfm/forge-runtime';
 import type { BackfillProgress, StatusMetaRow } from '@jfm/engine';
 import {
@@ -17,6 +18,7 @@ import {
   SlaGoalForm,
   SummaryTiles,
   surfaceStateOf,
+  useIndexingRefresh,
   toReportCapBanner,
   toProgressBanner,
   type MaybeProgress,
@@ -219,6 +221,12 @@ export const App = (): React.JSX.Element => {
     void load(goal);
   }, [goal, load]);
 
+  // Keeps the indexing banner alive without a manual reload; see
+  // `useIndexingRefresh`.
+  useIndexingRefresh(progress, () => {
+    void load(goal);
+  });
+
   const rowCount = report === null ? 0 : report.rows.length;
   const state = surfaceStateOf({ loading, error, rowCount });
 
@@ -271,9 +279,15 @@ export const App = (): React.JSX.Element => {
       {state === 'error' ? (
         <ErrorSurface
           message={error ?? 'Unknown error'}
-          onRetry={() => {
-            void load(goal);
-          }}
+          // A refusal about who the reader is cannot be retried into a
+          // different answer; only a transient failure gets a button.
+          onRetry={
+            isRetryableError(error ?? '')
+              ? () => {
+                  void load(goal);
+                }
+              : undefined
+          }
         />
       ) : null}
       {state === 'empty' ? (

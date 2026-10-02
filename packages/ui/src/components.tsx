@@ -32,6 +32,7 @@ import {
   WORKING_TIME,
   formatDurationForHumans,
   type ChartPoint,
+  type MaybeProgress,
   type ProgressBanner,
   type SeriesPoint,
   type ProjectOption,
@@ -459,6 +460,83 @@ const TILE_STYLE = xcss({
   minWidth: '180px',
 });
 
+/**
+ * Re-read the report by itself while the project is still indexing.
+ *
+ * ## The problem this solves
+ *
+ * Nothing on any of these pages ever refetched. A first-time user pressed
+ * **Start indexing**, got "Indexing in progress — 0 issues indexed", and then
+ * watched that sentence for as long as they were willing to: the banner is
+ * painted from the envelope fetched when the page loaded, and the only way to
+ * see any progress at all was to reload by hand. A 900-issue project takes a
+ * couple of minutes, during which a correct, honest banner is indistinguishable
+ * from a hung app. This is the first thing a buyer does with the product.
+ *
+ * ## Why it is bounded rather than a plain interval
+ *
+ * Forge went consumption-priced on 1 January 2026 and every poll is a billed
+ * invocation, so this is deliberately the smallest thing that fixes the
+ * problem:
+ *
+ * - it runs **only** while the index is actually moving (`running` /
+ *   `not_started`), which is a transient state a project passes through once;
+ * - the gap grows from {@link FIRST_POLL_MS} toward {@link SLOWEST_POLL_MS}, so
+ *   a small project that finishes in seconds is caught almost immediately while
+ *   a large one costs a poll every fifteen seconds rather than every three;
+ * - it gives up after {@link MAX_POLLS}, around ten minutes, instead of
+ *   polling an abandoned tab until the browser closes. The banner stays
+ *   truthful when it stops — it still says indexing is in progress, which it
+ *   is — so giving up costs the user a manual reload, not a wrong screen.
+ */
+const FIRST_POLL_MS = 3_000;
+const SLOWEST_POLL_MS = 15_000;
+const MAX_POLLS = 40;
+
+export function useIndexingRefresh(progress: MaybeProgress, reload: () => void): void {
+  // Held in a ref so a caller that rebuilds its reload callback every render —
+  // which every one of these pages does, since the callback closes over the
+  // basis and the filters — does not restart the schedule on every render and
+  // poll far faster than intended.
+  const latest = React.useRef(reload);
+  // Updated after commit rather than during render: a render React discards
+  // must not be able to leave a callback behind in the ref.
+  React.useEffect(() => {
+    latest.current = reload;
+  });
+
+  const indexing =
+    progress !== 'unknown' &&
+    progress !== null &&
+    (progress.state === 'running' || progress.state === 'not_started');
+
+  React.useEffect(() => {
+    if (!indexing) return undefined;
+    let stopped = false;
+    let polls = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const schedule = (): void => {
+      const delay = Math.min(FIRST_POLL_MS * Math.pow(1.4, polls), SLOWEST_POLL_MS);
+      timer = setTimeout(() => {
+        if (stopped) return;
+        polls += 1;
+        latest.current();
+        if (polls < MAX_POLLS) schedule();
+      }, delay);
+    };
+    schedule();
+
+    return () => {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+    // `indexing` only — a reload that leaves the state unchanged must not
+    // restart the schedule, or the backoff resets on every poll and the gap
+    // never grows.
+  }, [indexing]);
+}
+
 export function SummaryTiles({ tiles }: { tiles: readonly SummaryTile[] }): React.JSX.Element {
   return (
     <Inline space="space.150" shouldWrap>
@@ -596,12 +674,31 @@ const STATUS_LOZENGE = {
   success: 'success',
 } as const;
 
+/**
+ * ★ How sorting actually works here, because getting it wrong is invisible.
+ *
+ * `DynamicTable` finds the column whose **head** cell `key` matches the active
+ * sort key, then sorts on the **row** cell `key` at that index — numbers
+ * numerically, strings through an `Intl.Collator`. The cell `key` is not
+ * React's key (rows are keyed by index internally), so it is free to be the
+ * underlying value.
+ *
+ * This table used to pass a constant — `key: 'issue'`, `key: 'c-0'` — for
+ * every row, so the one column marked sortable sorted every row by the same
+ * value and did nothing at all. Clicking the header reordered nothing and
+ * reported no error.
+ *
+ * Every column is sortable now, and the durations sort on milliseconds rather
+ * than on their rendered text: "find the issues that sat longest in Blocked"
+ * is the question this product exists to answer, and until now the only way
+ * to ask it was to export the CSV and sort it in a spreadsheet.
+ */
 export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.Element {
   const head = {
     cells: model.headers.map((header, index) => ({
       key: `h-${index}`,
       content: header,
-      isSortable: index === 0,
+      isSortable: true,
     })),
   };
 
@@ -609,7 +706,7 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
     key: `${row.issueKey}-${rowIndex}`,
     cells: [
       {
-        key: 'issue',
+        key: row.issueKey,
         content: (
           <Inline space="space.075" alignBlock="center">
             <Strong>{row.issueKey}</Strong>
@@ -618,7 +715,7 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
         ),
       },
       {
-        key: 'status',
+        key: row.currentStatus,
         content:
           row.currentStatusCategory === null ? (
             <Text>{row.currentStatus}</Text>
@@ -628,10 +725,10 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
             </Lozenge>
           ),
       },
-      { key: 'created', content: <Text>{row.created}</Text> },
-      { key: 'resolved', content: <Text>{row.resolved}</Text> },
-      ...row.cells.map((cell, index) => ({
-        key: `c-${index}`,
+      { key: row.createdAt, content: <Text>{row.created}</Text> },
+      { key: row.resolvedAt, content: <Text>{row.resolved}</Text> },
+      ...row.cells.map((cell) => ({
+        key: cell.ms,
         content: (
           <Inline space="space.075" alignBlock="center">
             <Text>{cell.text}</Text>
@@ -641,7 +738,7 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
           </Inline>
         ),
       })),
-      { key: 'total', content: <Strong>{row.total}</Strong> },
+      { key: row.totalMs, content: <Strong>{row.total}</Strong> },
     ],
   }));
 
@@ -704,7 +801,9 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
   const rows = model.rows.map((row, rowIndex) => ({
     key: `r-${rowIndex}`,
     cells: row.map((value, index) => ({
-      key: `c-${index}`,
+      // The cell's own value, so the sortable column sorts by it. A constant
+      // here — which is what this was — makes the header clickable and inert.
+      key: typeof value === 'string' ? value : value.text,
       content:
         typeof value === 'string' ? (
           index === emphasis ? (
@@ -1103,10 +1202,17 @@ export const ReportFilters = ({
         <Label labelFor="filter-created-from">Created from</Label>
         <DatePicker
           id="filter-created-from"
-          // Without this the picker shows its locale sample date — a blank
-          // filter reading "2/18/1993" looks like corrupted state, not an
-          // empty control.
-          placeholder="Any date"
+          // ★ The placeholder states the format, and `dateFormat` makes the
+          // field display it, because this control can be typed into and a
+          // mistyped date does not fail — it parses into a different date and
+          // narrows the table to the wrong rows, which reads exactly like a
+          // broken filter. The picker's default is the viewer's locale, so
+          // "3/2/2026" means March in one country and February in another;
+          // an ISO field means one thing everywhere. It doubles as the empty
+          // state, replacing a stray locale sample date that looked like
+          // corrupted state.
+          placeholder="YYYY-MM-DD"
+          dateFormat="YYYY-MM-DD"
           value={filters.createdFrom ?? ''}
           {...(filters.createdTo === null ? {} : { maxDate: filters.createdTo })}
           isDisabled={isDisabled === true}
@@ -1119,7 +1225,8 @@ export const ReportFilters = ({
         <Label labelFor="filter-created-to">Created to</Label>
         <DatePicker
           id="filter-created-to"
-          placeholder="Any date"
+          placeholder="YYYY-MM-DD"
+          dateFormat="YYYY-MM-DD"
           value={filters.createdTo ?? ''}
           {...(filters.createdFrom === null ? {} : { minDate: filters.createdFrom })}
           isDisabled={isDisabled === true}

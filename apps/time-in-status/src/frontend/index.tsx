@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import ForgeReconciler, { Box, Button, ButtonGroup, Stack, Text } from '@forge/react';
+import ForgeReconciler, { Box, Button, ButtonGroup, Inline, Stack, Text } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { isRetryableError } from '@jfm/forge-runtime';
 import type { FilterOptions, ReportEnvelope } from '@jfm/forge-runtime';
 import {
   CsvExport,
@@ -18,6 +19,7 @@ import {
   SummaryTiles,
   filtersToRequest,
   surfaceStateOf,
+  useIndexingRefresh,
   toReportCapBanner,
   toProgressBanner,
   toReportTable,
@@ -172,6 +174,12 @@ export const App = (): React.JSX.Element => {
     void load(basis, filters);
   }, [basis, filters, load]);
 
+  // Keeps the indexing banner alive without a manual reload; see
+  // `useIndexingRefresh`.
+  useIndexingRefresh(envelope?.progress ?? 'unknown', () => {
+    void load(basis, filters);
+  });
+
   const state = surfaceStateOf({ loading, error, rowCount: envelope?.report.rows.length ?? 0 });
 
   return (
@@ -179,26 +187,37 @@ export const App = (): React.JSX.Element => {
       <PageHeader
         subtitle="Cumulative time each issue has spent in every status, counting every re-entry."
         actions={
-          <ButtonGroup>
-            <Button
-              isSelected={basis === 'elapsed'}
-              onClick={() => {
-                setBasis('elapsed');
-              }}
-            >
-              Elapsed
-            </Button>
-            <Button
-              isSelected={basis === 'business'}
-              onClick={() => {
-                setBasis('business');
-              }}
-            >
-              Working hours
-            </Button>
-            <CsvExport onRequestCsv={requestCsv} />
-            <ExtendHistoryControl onLoad={loadHistoryWindow} onExtend={extendHistory} />
-          </ButtonGroup>
+          // ★ Two groups, not one. `Elapsed`/`Working hours` are a segmented
+          // control — one of them is always selected, and the selection
+          // changes what every number on the page means. `Export CSV` and
+          // `Extend history` are actions that select nothing. Run together in
+          // a single `ButtonGroup` they render as one four-button strip, which
+          // invites the reader to ask which of the four is currently chosen
+          // and makes the basis the page is actually using harder to see.
+          <Inline space="space.150" alignBlock="center" shouldWrap>
+            <ButtonGroup>
+              <Button
+                isSelected={basis === 'elapsed'}
+                onClick={() => {
+                  setBasis('elapsed');
+                }}
+              >
+                Elapsed
+              </Button>
+              <Button
+                isSelected={basis === 'business'}
+                onClick={() => {
+                  setBasis('business');
+                }}
+              >
+                Working hours
+              </Button>
+            </ButtonGroup>
+            <ButtonGroup>
+              <CsvExport onRequestCsv={requestCsv} />
+              <ExtendHistoryControl onLoad={loadHistoryWindow} onExtend={extendHistory} />
+            </ButtonGroup>
+          </Inline>
         }
       />
 
@@ -230,9 +249,15 @@ export const App = (): React.JSX.Element => {
       {state === 'error' ? (
         <ErrorSurface
           message={error ?? 'Unknown error'}
-          onRetry={() => {
-            void load(basis, filters);
-          }}
+          // A refusal about who the reader is cannot be retried into a
+          // different answer; only a transient failure gets a button.
+          onRetry={
+            isRetryableError(error ?? '')
+              ? () => {
+                  void load(basis, filters);
+                }
+              : undefined
+          }
         />
       ) : null}
       {/*

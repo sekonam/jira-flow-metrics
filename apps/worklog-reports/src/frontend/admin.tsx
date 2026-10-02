@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ForgeReconciler, { Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { isRetryableError } from '@jfm/forge-runtime';
 import {
   ErrorSurface,
   LoadingSurface,
@@ -85,9 +86,15 @@ export const Admin = (): React.JSX.Element => {
       {state === 'error' ? (
         <ErrorSurface
           message={error ?? 'Unknown error'}
-          onRetry={() => {
-            void load();
-          }}
+          // A refusal about who the reader is cannot be retried into a
+          // different answer; only a transient failure gets a button.
+          onRetry={
+            isRetryableError(error ?? '')
+              ? () => {
+                  void load();
+                }
+              : undefined
+          }
         />
       ) : null}
       {estimate !== null && state === 'ready' ? (

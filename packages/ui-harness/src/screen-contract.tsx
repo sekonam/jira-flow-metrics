@@ -215,15 +215,17 @@ export function describeScreen(spec: ScreenSpec, scenarios: ScenarioMap): void {
         expectNoUnregisteredResolvers();
       });
 
-      it('retries the failed call when the user presses Try again', async () => {
+      it('★ offers no retry for a refusal a retry cannot change', async () => {
+        // This scenario's refusal is the permission one, which is a settled
+        // fact about the reader rather than a failure. The page used to offer
+        // *Try again* under it regardless: pressing it re-asked the same
+        // question of the same permissions, got the same answer, and told the
+        // reader nothing — while implying the app might be wrong about them.
+        // Retryable failures still get the button; `ErrorSurface`'s own tests
+        // cover that it calls back when pressed.
         mount('error');
-        const retry = await screen.findByRole('button', { name: 'Try again' });
-        const before = invokedResolvers().length;
-        retry.click();
-        await waitFor(() => {
-          expect(invokedResolvers().length).toBeGreaterThan(before);
-        });
-        expectNoUnregisteredResolvers();
+        await screen.findByText(/You do not have permission to browse this project in Jira/);
+        expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
       });
 
       it('starts indexing from the empty state', async () => {
