@@ -94,9 +94,10 @@ the sentence that carries the claim in words.
   alongside its `Total`; at least three further rows carrying `×2`/`×3`; and the `toReportTable`
   footnote — _"A "x2" badge means the issue entered that status more than once. These durations are
   cumulative across every visit; Jira's own control chart shows only the most recent one."_
-- **Not in frame:** the development badge (P1); Russian nav (P2); the duplicated heading (Jira's own
-  page title "Time in Status" stacked directly above `PageHeader`'s `<h1>` of the same words — crop
-  below Jira's).
+- **Not in frame:** the development badge (P1); Russian nav (P2). ~~The duplicated heading~~ —
+  **fixed in the product** (`c36d7bb`): the project pages no longer render an `<h1>` of their own,
+  because Jira already titles a `jira:projectPage`. There is nothing left to crop around, and a
+  shot may now include Jira's own title.
 - **Caption.** `Every visit counted: 15h 29m across 3 stays in In Progress, not just the last one.`
 - **Stale because:** the current PNG predates `0764571` _"a chart on every report page"_ — it shows
   tiles → table with no `ReportBarChart` between them, which is not the page a customer now sees.
