@@ -188,8 +188,10 @@ describe('report table model', () => {
   });
 
   it('labels the basis', () => {
-    expect(toReportTable(report()).basisLabel).toBe('Elapsed time');
-    expect(toReportTable(report({ basis: 'business' })).basisLabel).toBe('Working hours');
+    expect(toReportTable(report()).basisLabel).toBe('Measured in elapsed time');
+    expect(toReportTable(report({ basis: 'business' })).basisLabel).toBe(
+      'Measured in working hours',
+    );
   });
 
   /**
@@ -308,9 +310,35 @@ describe('indexing banner', () => {
 
   it('says the numbers are partial while indexing runs', () => {
     const banner = toProgressBanner(progress());
-    expect(banner?.showSpinner).toBe(true);
     expect(banner?.body).toContain('500 of 2,000 issues indexed (25%)');
     expect(banner?.body).toContain('only the issues indexed so far');
+  });
+
+  /**
+   * ★ One claim that it is moving, not two. A determinate bar already says
+   * so and says how far; a spinner beside it is a second animation making the
+   * weaker version of the same statement. The spinner is what a backfill with
+   * no total to divide by gets, because there a bar could only lie.
+   */
+  it('★ spins only where there is no share to draw', () => {
+    expect(toProgressBanner(progress())?.showSpinner).toBe(false);
+    expect(toProgressBanner(progress({ fraction: null, issuesTotal: null }))?.showSpinner).toBe(
+      true,
+    );
+  });
+
+  /**
+   * The share a bar can be drawn at, carried rather than left in the prose for
+   * `IndexingBanner` to parse back out of a sentence. `null` where it is not
+   * knowable: not indexed at all, finished, or a backfill Jira gave no total
+   * for — a bar at 0% in that last case would deny work that has happened.
+   */
+  it('★ carries the completed share, and withholds it where there is none', () => {
+    expect(toProgressBanner(progress())?.fraction).toBe(0.25);
+    expect(toProgressBanner(progress({ state: 'paused' }))?.fraction).toBe(0.25);
+    expect(toProgressBanner(progress({ state: 'failed' }))?.fraction).toBe(0.25);
+    expect(toProgressBanner(progress({ fraction: null, issuesTotal: null }))?.fraction).toBeNull();
+    expect(toProgressBanner(null)?.fraction).toBeNull();
   });
 
   it('reports a rate-limit pause as expected rather than as a fault', () => {
@@ -345,7 +373,13 @@ describe('indexing banner', () => {
   });
 
   it('treats not_started as indexing in progress', () => {
-    expect(toProgressBanner(progress({ state: 'not_started' }))?.showSpinner).toBe(true);
+    expect(toProgressBanner(progress({ state: 'not_started' }))?.title).toBe(
+      'Indexing in progress',
+    );
+    expect(
+      toProgressBanner(progress({ state: 'not_started', fraction: null, issuesTotal: null }))
+        ?.showSpinner,
+    ).toBe(true);
   });
 });
 

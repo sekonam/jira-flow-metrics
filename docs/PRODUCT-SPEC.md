@@ -307,6 +307,28 @@ WCAG 2.1 AA on the app's own UI. Achieved by using Atlassian Design System compo
 colour alone), the re-entry badge carries its count as text, and every table cell that means "no
 data" renders an em dash rather than an empty cell.
 
+### Layout and hierarchy
+
+Five rules, each written after looking at the rendered screens rather than before. They are
+product requirements for the same reason the honesty rules below are: a report that looks
+unfinished is not trusted with numbers, and being trusted with numbers is all this product sells.
+
+1. **A stat tile is one fixed width.** Cards sized by their own content turn a row of tiles into a
+   ragged line and a wrap into a staircase. The width is chosen against the _narrowest_ surface a
+   tile appears on — a dashboard gadget — so the same component sets two across there and five or
+   six across a project page, with every figure aligned down its column.
+2. **Every table says what one row is**, in a heading of its own: `Issues`, `People`, `Changes`,
+   `Issues in flight`. Charts on these pages carry titles; before this the table — the thing most
+   readers came for — was the only block on the page that did not say what it was.
+3. **Where the same columns can mean two different things, the table carries the one in force.**
+   Elapsed time and working hours are different numbers under identical headers, so the basis is a
+   caption on the table rather than a sentence somewhere else on the page.
+4. **Configuration is a named, bounded panel, never the page.** A form whose controls stretch the
+   full width reads as the page's subject; the report it configures then reads as its output. Each
+   control is as wide as what it holds.
+5. **Progress that is known is drawn.** A share the app has computed gets a bar; a share it has not
+   gets a spinner and no bar, because a bar at zero denies work that has happened.
+
 ### The four states
 
 Every data surface designs **loading, error, empty and ready** explicitly. The chooser is a tested

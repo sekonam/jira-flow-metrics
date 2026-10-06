@@ -19,6 +19,7 @@ import {
   ModalTitle,
   Label,
   ModalTransition,
+  ProgressBar,
   SectionMessage,
   Select,
   Spinner,
@@ -229,6 +230,41 @@ function countedNames(
   return [...chosen.map((s) => s.name), ...unknown].join(', ');
 }
 
+/**
+ * The goal editor's surface.
+ *
+ * Sunken rather than raised: this is the one block on the page that is
+ * settings rather than findings, and ADS's sunken surface is how Jira says
+ * "this configures what is below" without a second border colour or a heavier
+ * frame. The tiles stay on `elevation.surface` so the numbers remain the
+ * foreground.
+ */
+const PANEL_STYLE = xcss({
+  backgroundColor: 'elevation.surface.sunken',
+  borderColor: 'color.border',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderRadius: 'radius.large',
+  // Bounded, so the panel is the size of the form it holds rather than the
+  // size of the page: full-width, it was a large empty box with its controls
+  // huddled in the left third, which reads as a layout that failed rather
+  // than one that chose.
+  maxWidth: '720px',
+});
+
+/**
+ * ★ A control is as wide as what it holds, not as wide as the page.
+ *
+ * Rendered on a project page these fields were a full-bleed dropdown and a
+ * full-bleed text input — nearly two thousand pixels for "8 working hours" and
+ * for a goal name — stacked above the first number on the screen. A form that
+ * wide reads as the page's subject; the report it configures then reads as its
+ * output. Holding each field to the width of its content is what puts the
+ * report back on top, and it is the single loudest unfinished-looking thing
+ * left on any of the five surfaces.
+ */
+const FIELD_STYLE = xcss({ maxWidth: '320px' });
+
 export function SlaGoalForm({
   statuses,
   goal,
@@ -264,143 +300,169 @@ export function SlaGoalForm({
   }, []);
 
   return (
-    <Stack space="space.150">
-      {onSave !== undefined && goals.length > 0 ? (
-        <>
-          <Label labelFor="sla-saved-goal">Saved goal</Label>
-          <Select
-            inputId="sla-saved-goal"
-            options={goals.map((saved) => ({ label: saved.name, value: saved.id }))}
-            placeholder="Choose a saved goal"
-            // Controlled, like the target picker below it. Left uncontrolled
-            // the dropdown kept displaying a goal's name after a chip toggle
-            // had already detached the page from it — the caption said "not
-            // saved" while the control above still named the goal.
-            value={active === undefined ? null : { label: active.name, value: active.id }}
-            isDisabled={busy}
-            onChange={(option) => {
-              const id = (option as { value?: string } | null)?.value;
-              const saved = goals.find((candidate) => candidate.id === id);
-              if (saved !== undefined) onChange(toGoalChoice(saved));
-            }}
-          />
-        </>
-      ) : null}
+    <Box padding="space.200" xcss={PANEL_STYLE}>
+      <Stack space="space.150">
+        {/*
+          Named, because an unnamed form at the top of a report page is read as
+          part of the report. "Goal" is also the word every caption, footnote
+          and tile hint on this listing already uses for the same thing.
+        */}
+        <Heading as="h3">Goal</Heading>
 
-      <Label labelFor="sla-goal-target">Working-time target</Label>
-      <Select
-        inputId="sla-goal-target"
-        options={SLA_TARGET_OPTIONS}
-        // ★ Always controlled, even when the target is not one of the
-        // presets. Dropping `value` for an unlisted target left the control
-        // showing whatever was last picked while the page computed against
-        // something else — a saved 6-hour goal rendered under "8 working
-        // hours". That is verbatim the defect the comment on the saved-goal
-        // `Select` above says was fixed, still live on the next control.
-        // The label for an unlisted target is formatted, not rounded to
-        // hours: `Math.round` rendered a 90-minute goal as "2 working hours"
-        // and a 1-minute goal as "0 working hours" while the page divided
-        // every number on it by the real value — the control disagreeing
-        // with the computation, which is the same defect one control up,
-        // narrowed rather than fixed. `parseSlaGoal` accepts any target from
-        // a minute to a year; only the presets are whole hours.
-        value={
-          defaultTarget ?? {
-            label: `${formatDurationForHumans(goal.targetMs, WORKING_TIME)} of working time`,
-            value: String(goal.targetMs),
-          }
-        }
-        onChange={(option) => {
-          const value = (option as { value?: string } | null)?.value;
-          if (value !== undefined) onChange(withTarget(goal, Number(value)));
-        }}
-      />
-      {/*
-        ★ The caption names the counted statuses rather than referring to
-        them. An ADS `Button` with `isSelected` emits no `aria-pressed`,
-        `aria-selected` or `aria-current` — the state is carried by
-        background colour alone, so a screen-reader user toggling "In
-        Progress" hears "In Progress, button" before and after, with no way
-        to tell which statuses the goal counts. Every number on this page is
-        divided by that goal, so a text fallback is not a nicety. axe does
-        not flag it (an absent `aria-pressed` is not a violation), which is
-        why it survived the audit that runs on every screen.
-      */}
-      <Text size="small">
-        {goal.countedStatusIds.length === 0
-          ? 'Counting time in every status. Select statuses to count only those.'
-          : `Counting time only in: ${countedNames(statuses, goal.countedStatusIds)}.`}
-      </Text>
-      <Inline space="space.100" shouldWrap>
-        {statuses.map((status) => (
-          <Button
-            key={status.id}
-            isSelected={goal.countedStatusIds.includes(status.id)}
-            onClick={() => {
-              onChange(toggleCountedStatus(goal, status.id));
-            }}
-          >
-            {status.name}
-          </Button>
-        ))}
-      </Inline>
+        {onSave !== undefined && goals.length > 0 ? (
+          <Box xcss={FIELD_STYLE}>
+            <Stack space="space.050">
+              <Label labelFor="sla-saved-goal">Saved goal</Label>
+              <Select
+                inputId="sla-saved-goal"
+                options={goals.map((saved) => ({ label: saved.name, value: saved.id }))}
+                placeholder="Choose a saved goal"
+                // Controlled, like the target picker below it. Left uncontrolled
+                // the dropdown kept displaying a goal's name after a chip toggle
+                // had already detached the page from it — the caption said "not
+                // saved" while the control above still named the goal.
+                value={active === undefined ? null : { label: active.name, value: active.id }}
+                isDisabled={busy}
+                onChange={(option) => {
+                  const id = (option as { value?: string } | null)?.value;
+                  const saved = goals.find((candidate) => candidate.id === id);
+                  if (saved !== undefined) onChange(toGoalChoice(saved));
+                }}
+              />
+            </Stack>
+          </Box>
+        ) : null}
 
-      {onSave === undefined ? null : (
-        <Stack space="space.100">
-          <Text size="small">
-            {active === undefined
-              ? 'This selection is not saved. Name it to make it the goal everyone on this project sees.'
-              : `Measuring against the saved goal "${active.name}".`}
-          </Text>
-          <Inline space="space.100" alignBlock="center" shouldWrap>
-            <Label labelFor="sla-goal-name">Goal name</Label>
-            <Textfield
-              id="sla-goal-name"
-              value={name}
-              placeholder="Time to resolution"
-              isDisabled={busy}
-              onChange={(event) => {
-                // `SerialisableEvent.target.value` is typed `any` by
-                // `@forge/react` — the bridge hands back whatever the host
-                // serialised. Coerced here rather than asserted, so an
-                // absent or non-string value becomes an empty name the
-                // resolver refuses, not an `any` laundered into state.
-                setName(String(event.target.value ?? ''));
+        <Box xcss={FIELD_STYLE}>
+          <Stack space="space.050">
+            <Label labelFor="sla-goal-target">Working-time target</Label>
+            <Select
+              inputId="sla-goal-target"
+              options={SLA_TARGET_OPTIONS}
+              // ★ Always controlled, even when the target is not one of the
+              // presets. Dropping `value` for an unlisted target left the control
+              // showing whatever was last picked while the page computed against
+              // something else — a saved 6-hour goal rendered under "8 working
+              // hours". That is verbatim the defect the comment on the saved-goal
+              // `Select` above says was fixed, still live on the next control.
+              // The label for an unlisted target is formatted, not rounded to
+              // hours: `Math.round` rendered a 90-minute goal as "2 working hours"
+              // and a 1-minute goal as "0 working hours" while the page divided
+              // every number on it by the real value — the control disagreeing
+              // with the computation, which is the same defect one control up,
+              // narrowed rather than fixed. `parseSlaGoal` accepts any target from
+              // a minute to a year; only the presets are whole hours.
+              value={
+                defaultTarget ?? {
+                  label: `${formatDurationForHumans(goal.targetMs, WORKING_TIME)} of working time`,
+                  value: String(goal.targetMs),
+                }
+              }
+              onChange={(option) => {
+                const value = (option as { value?: string } | null)?.value;
+                if (value !== undefined) onChange(withTarget(goal, Number(value)));
               }}
             />
-            <LoadingButton
-              isLoading={busy}
-              isDisabled={name.trim() === ''}
+          </Stack>
+        </Box>
+
+        {/*
+          ★ The caption names the counted statuses rather than referring to
+          them. An ADS `Button` with `isSelected` emits no `aria-pressed`,
+          `aria-selected` or `aria-current` — the state is carried by
+          background colour alone, so a screen-reader user toggling "In
+          Progress" hears "In Progress, button" before and after, with no way
+          to tell which statuses the goal counts. Every number on this page is
+          divided by that goal, so a text fallback is not a nicety. axe does
+          not flag it (an absent `aria-pressed` is not a violation), which is
+          why it survived the audit that runs on every screen.
+        */}
+        <Text size="small">
+          {goal.countedStatusIds.length === 0
+            ? 'Counting time in every status. Select statuses to count only those.'
+            : `Counting time only in: ${countedNames(statuses, goal.countedStatusIds)}.`}
+        </Text>
+        <Inline space="space.100" rowSpace="space.100" shouldWrap>
+          {statuses.map((status) => (
+            <Button
+              key={status.id}
+              isSelected={goal.countedStatusIds.includes(status.id)}
               onClick={() => {
-                run(
-                  onSave(name.trim()).then(() => {
-                    setName('');
-                  }),
-                );
+                onChange(toggleCountedStatus(goal, status.id));
               }}
             >
-              Save goal
-            </LoadingButton>
-            {active !== undefined && onDelete !== undefined ? (
-              <Button
-                appearance="subtle"
-                isDisabled={busy}
+              {status.name}
+            </Button>
+          ))}
+        </Inline>
+
+        {onSave === undefined ? null : (
+          <Stack space="space.100">
+            <Text size="small">
+              {active === undefined
+                ? 'This selection is not saved. Name it to make it the goal everyone on this project sees.'
+                : `Measuring against the saved goal "${active.name}".`}
+            </Text>
+            <Inline space="space.100" rowSpace="space.100" alignBlock="end" shouldWrap>
+              {/*
+                The name field is bounded like the pickers above it, and its
+                label sits over it rather than beside it: left inline, the
+                label, a page-wide input and two buttons wrapped into a row
+                whose parts had no visible relationship to each other.
+              */}
+              <Box xcss={FIELD_STYLE}>
+                <Stack space="space.050">
+                  <Label labelFor="sla-goal-name">Goal name</Label>
+                  <Textfield
+                    id="sla-goal-name"
+                    value={name}
+                    placeholder="Time to resolution"
+                    isDisabled={busy}
+                    onChange={(event) => {
+                      // `SerialisableEvent.target.value` is typed `any` by
+                      // `@forge/react` — the bridge hands back whatever the host
+                      // serialised. Coerced here rather than asserted, so an
+                      // absent or non-string value becomes an empty name the
+                      // resolver refuses, not an `any` laundered into state.
+                      setName(String(event.target.value ?? ''));
+                    }}
+                  />
+                </Stack>
+              </Box>
+              <LoadingButton
+                isLoading={busy}
+                isDisabled={name.trim() === ''}
                 onClick={() => {
-                  run(onDelete(active.id));
+                  run(
+                    onSave(name.trim()).then(() => {
+                      setName('');
+                    }),
+                  );
                 }}
               >
-                Delete &ldquo;{active.name}&rdquo;
-              </Button>
-            ) : null}
-          </Inline>
-          {error !== null && (
-            <SectionMessage title="Could not save the goal" appearance="error">
-              <Text>{error}</Text>
-            </SectionMessage>
-          )}
-        </Stack>
-      )}
-    </Stack>
+                Save goal
+              </LoadingButton>
+              {active !== undefined && onDelete !== undefined ? (
+                <Button
+                  appearance="subtle"
+                  isDisabled={busy}
+                  onClick={() => {
+                    run(onDelete(active.id));
+                  }}
+                >
+                  Delete &ldquo;{active.name}&rdquo;
+                </Button>
+              ) : null}
+            </Inline>
+            {error !== null && (
+              <SectionMessage title="Could not save the goal" appearance="error">
+                <Text>{error}</Text>
+              </SectionMessage>
+            )}
+          </Stack>
+        )}
+      </Stack>
+    </Box>
   );
 }
 
@@ -431,15 +493,41 @@ export function IndexingBanner({
   if (banner === null) return null;
   return (
     <SectionMessage title={banner.title} appearance={banner.appearance}>
-      <Inline alignBlock="center" space="space.100">
-        {banner.showSpinner ? <Spinner size="small" label="Indexing" /> : null}
-        <Text>{banner.body}</Text>
-      </Inline>
-      {banner.showRetry && onRetry !== undefined ? (
-        <Button appearance="warning" onClick={onRetry}>
-          Retry indexing
-        </Button>
-      ) : null}
+      <Stack space="space.100">
+        <Inline alignBlock="center" space="space.100">
+          {banner.showSpinner ? <Spinner size="small" label="Indexing" /> : null}
+          <Text>{banner.body}</Text>
+        </Inline>
+        {/*
+          ★ The share, drawn.
+
+          `BackfillProgress.fraction` has been computed since the backfill was
+          written and never reached a screen: the banner spelled the percentage
+          into its sentence beside a spinner that says only "something is
+          happening". A first-time user pressing **Start indexing** on a
+          900-issue project then watches a paragraph for two minutes and has to
+          re-read a number to tell whether it moved. This is the screen that
+          decides whether the product looks alive, so it gets the bar.
+
+          Only when there is a share to draw. Jira does not always give a total
+          to divide by, and a bar sitting at 0% over a backfill that has
+          processed four thousand issues is a worse answer than the spinner —
+          which is why `showSpinner` is now `fraction === null` rather than
+          `true`, and why the two are never on screen together.
+        */}
+        {banner.fraction === null ? null : (
+          <ProgressBar value={banner.fraction} ariaLabel="Indexing progress" />
+        )}
+        {/* Wrapped, because a `Stack` stretches its children and a
+            full-width warning button reads as the banner itself. */}
+        {banner.showRetry && onRetry !== undefined ? (
+          <Inline>
+            <Button appearance="warning" onClick={onRetry}>
+              Retry indexing
+            </Button>
+          </Inline>
+        ) : null}
+      </Stack>
     </SectionMessage>
   );
 }
@@ -457,7 +545,27 @@ const TILE_STYLE = xcss({
   borderWidth: 'border.width',
   borderStyle: 'solid',
   borderRadius: 'radius.large',
-  minWidth: '180px',
+  /*
+   * ★ A fixed width, not a minimum.
+   *
+   * `minWidth` let every card take the width of its own longest hint, so a row
+   * of tiles was a row of different-sized boxes — and because a wrap inherits
+   * those widths, the second row started wherever the first happened to end.
+   * Rendered on a project with six statuses it read as six unrelated boxes
+   * rather than one stat row; in a dashboard gadget, where the tiles stack,
+   * it read as a ragged left-aligned staircase. One width makes the wrap a
+   * grid, and makes the figures line up down the column, which is the only
+   * reason to put numbers in cards at all.
+   *
+   * 200px is chosen against the narrowest surface rather than the widest: a
+   * dashboard gadget gets a few hundred pixels, and at 232px exactly one card
+   * fitted per row there, leaving half the gadget empty beside a column of
+   * cards. At 200 two fit, the project page still sets five or six across, and
+   * the longest hint this product writes ("85th percentile 1d 21h 42m, across
+   * 2 issues.") sets to three lines — which `alignBlock="stretch"` below makes
+   * harmless, since every card in a row takes the height of the tallest.
+   */
+  width: '200px',
 });
 
 /**
@@ -561,7 +669,10 @@ export function useIndexingRefresh(progress: MaybeProgress, reload: () => void):
 
 export function SummaryTiles({ tiles }: { tiles: readonly SummaryTile[] }): React.JSX.Element {
   return (
-    <Inline space="space.150" shouldWrap>
+    // `alignBlock="stretch"` so a card whose hint wraps to three lines does not
+    // leave its neighbours short; `rowSpace` so the gap between wrapped rows
+    // matches the gap within one, which `space` alone does not set.
+    <Inline space="space.150" rowSpace="space.150" alignBlock="stretch" shouldWrap>
       {tiles.map((tile) => (
         <Box key={tile.label} padding="space.200" xcss={TILE_STYLE}>
           <Stack space="space.075">
@@ -636,7 +747,15 @@ export function ReportLineChart({
   title: string;
   subtitle: string;
 }): React.JSX.Element | null {
-  if (data.length === 0) return null;
+  // ★ An all-zero series is the absence of data wearing a chart's clothes.
+  //
+  // The cumulative flow diagram covers the last 30 days, so a project whose
+  // issues all predate that window plots one flat line per status along the
+  // axis under a confident title — which is exactly what the rendered screen
+  // showed. Nothing is the honest render: the table below says whatever is
+  // actually there, and a heading promising a diagram that contains no
+  // information costs more trust than the empty space saves.
+  if (data.length === 0 || data.every((point) => point.value === 0)) return null;
   return (
     <LineChart
       data={data as unknown[]}
@@ -735,7 +854,51 @@ export function cellKey(value: number | string, column: number): string {
       : value;
   return `${token}#${column}`;
 }
-export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.Element {
+/**
+ * The caption above a report table.
+ *
+ * ★ Two things the pages were getting wrong at once.
+ *
+ * **The table had no name.** Every chart on these pages carries a title and a
+ * subtitle, so a page read as heading, chart, heading, chart — and then a bare
+ * grid of numbers with nothing saying what it was. The table is the thing most
+ * readers came for; it was the only section on the page that did not say so.
+ *
+ * **The basis reached one screen out of ten.** `ReportTableModel.basisLabel`
+ * has been computed and unit-tested since the model was written and was
+ * rendered nowhere, while the time-in-status page built the same sentence by
+ * hand into a loose line of text between the tiles and the chart. Elapsed time
+ * and working hours are different numbers under identical column headers, so
+ * the label belongs on the table itself, where it is true on every surface
+ * that renders one rather than on the page that remembered to say it.
+ */
+function TableCaption({
+  heading,
+  basisLabel,
+}: {
+  heading?: string | undefined;
+  basisLabel?: string | undefined;
+}): React.JSX.Element | null {
+  if (heading === undefined && basisLabel === undefined) return null;
+  return (
+    <Stack space="space.050">
+      {heading === undefined ? null : <Heading as="h3">{heading}</Heading>}
+      {basisLabel === undefined ? null : (
+        <Text size="small" color="color.text.subtlest">
+          {basisLabel}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+export function ReportTable({
+  model,
+  heading,
+}: {
+  model: ReportTableModel;
+  heading?: string | undefined;
+}): React.JSX.Element {
   const head = {
     cells: model.headers.map((header, index) => ({
       key: `h-${index}`,
@@ -790,6 +953,7 @@ export function ReportTable({ model }: { model: ReportTableModel }): React.JSX.E
 
   return (
     <Stack space="space.150">
+      <TableCaption heading={heading} basisLabel={model.basisLabel} />
       <DynamicTable head={head} rows={rows} rowsPerPage={25} />
       {model.footnotes.map((note) => (
         <Text key={note} size="small">
@@ -831,7 +995,13 @@ export function PageHeader({
 }
 
 /** A plain table for the listings whose data is a flat list of rows. */
-export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.Element {
+export function SimpleReportTable({
+  model,
+  heading,
+}: {
+  model: SimpleTable;
+  heading?: string | undefined;
+}): React.JSX.Element {
   // Clamped: an out-of-range index would silently emphasise nothing.
   const emphasis = Math.min(Math.max(model.emphasisColumn ?? 0, 0), model.headers.length - 1);
   const head = {
@@ -868,6 +1038,9 @@ export function SimpleReportTable({ model }: { model: SimpleTable }): React.JSX.
   }));
   return (
     <Stack space="space.150">
+      {/* These listings measure one thing each, so there is no basis to name —
+          only the table's own name, which they had no way to give it. */}
+      <TableCaption heading={heading} />
       <DynamicTable head={head} rows={rows} rowsPerPage={25} />
       {model.footnotes.map((note) => (
         <Text key={note} size="small">

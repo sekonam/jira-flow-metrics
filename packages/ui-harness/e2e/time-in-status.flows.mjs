@@ -194,14 +194,14 @@ export const flows = [
     app: 'time-in-status',
     screen: 'time-in-status-page',
     async run({ page, expect }) {
-      await page.getByText('Showing elapsed time.').waitFor({ state: 'visible', timeout: 15_000 });
+      await page.getByText('Measured in elapsed time').waitFor({ state: 'visible', timeout: 15_000 });
       const elapsedTotal = await reportCell(page, 'FLOW-3', 'Total');
       expect.equal(elapsedTotal, '3d 4h', 'FLOW-3 totals 76h of elapsed time across every status');
 
       await page.getByRole('button', { name: 'Working hours' }).click();
       // Wait for the caption the new response produced, not for a timeout:
       // the table unmounts while the re-fetch is in flight.
-      await page.getByText('Showing working hours.').waitFor({ state: 'visible', timeout: 15_000 });
+      await page.getByText('Measured in working hours').waitFor({ state: 'visible', timeout: 15_000 });
 
       const businessTotal = await reportCell(page, 'FLOW-3', 'Total');
       expect.equal(
@@ -222,7 +222,7 @@ export const flows = [
       );
 
       await page.getByRole('button', { name: 'Elapsed' }).click();
-      await page.getByText('Showing elapsed time.').waitFor({ state: 'visible', timeout: 15_000 });
+      await page.getByText('Measured in elapsed time').waitFor({ state: 'visible', timeout: 15_000 });
       expect.equal(
         await reportCell(page, 'FLOW-3', 'Total'),
         elapsedTotal,
@@ -262,7 +262,7 @@ export const flows = [
 
       // Switch first: the export must follow the page, not the mount.
       await page.getByRole('button', { name: 'Working hours' }).click();
-      await page.getByText('Showing working hours.').waitFor({ state: 'visible', timeout: 15_000 });
+      await page.getByText('Measured in working hours').waitFor({ state: 'visible', timeout: 15_000 });
 
       const business = await csvForFlow3();
       // Hours to two decimals, per `statusReportToCsv`'s `durationFormat: 'hours'`.
@@ -280,7 +280,7 @@ export const flows = [
       );
 
       await page.getByRole('button', { name: 'Elapsed' }).click();
-      await page.getByText('Showing elapsed time.').waitFor({ state: 'visible', timeout: 15_000 });
+      await page.getByText('Measured in elapsed time').waitFor({ state: 'visible', timeout: 15_000 });
 
       const elapsed = await csvForFlow3();
       expect.contains(

@@ -97,6 +97,14 @@ export interface InlineProps {
   readonly alignBlock?: string;
   readonly spread?: string;
   readonly shouldWrap?: boolean;
+  /**
+   * The gap between wrapped *rows*, which `space` does not set. Without it
+   * forwarded here, a wrapped row of tiles sat tight against the row above in
+   * the screenshots while the product had asked for a gap — a difference only
+   * the stand-in had, which is the one kind of divergence this file must not
+   * introduce.
+   */
+  readonly rowSpace?: string;
 }
 
 export const Inline = ({
@@ -105,12 +113,14 @@ export const Inline = ({
   alignBlock,
   spread,
   shouldWrap,
+  rowSpace,
 }: InlineProps): React.JSX.Element => (
   <AdsInline
     {...(gap === undefined ? {} : { space: space(gap) as never })}
     {...(alignBlock === undefined ? {} : { alignBlock: alignBlock as never })}
     {...(spread === undefined ? {} : { spread: spread as never })}
     {...(shouldWrap === undefined ? {} : { shouldWrap })}
+    {...(rowSpace === undefined ? {} : { rowSpace: space(rowSpace) as never })}
   >
     {children}
   </AdsInline>
@@ -526,6 +536,60 @@ export const Spinner = ({ size, label }: SpinnerProps): React.JSX.Element => (
     {...(label === undefined ? {} : { label })}
   />
 );
+
+/**
+ * `ProgressBar` has no ADS equivalent in this workspace's dependency set —
+ * `@atlaskit/progress-bar` is not installed, and adding a package to draw one
+ * rectangle would buy nothing a test or a screenshot can read. The stand-in is
+ * a track and a fill, carrying the ARIA a progress bar owes a screen reader:
+ * the role, an accessible name from `ariaLabel`, and the value as a percentage
+ * of a 0-100 range.
+ *
+ * `value` is 0-1, as `@atlaskit/progress-bar` takes it. An indeterminate bar
+ * carries no `aria-valuenow`, which is how assistive technology is told the
+ * share is unknown rather than zero.
+ */
+export interface ProgressBarProps {
+  readonly value?: number;
+  readonly ariaLabel?: string;
+  readonly isIndeterminate?: boolean;
+}
+
+export const ProgressBar = ({
+  value,
+  ariaLabel,
+  isIndeterminate,
+}: ProgressBarProps): React.JSX.Element => {
+  const share = Math.min(Math.max(value ?? 0, 0), 1);
+  return (
+    <div
+      role="progressbar"
+      {...(ariaLabel === undefined ? {} : { 'aria-label': ariaLabel })}
+      {...(isIndeterminate === true
+        ? {}
+        : {
+            'aria-valuenow': Math.round(share * 100),
+            'aria-valuemin': 0,
+            'aria-valuemax': 100,
+          })}
+      style={{
+        width: '100%',
+        height: 4,
+        borderRadius: 2,
+        background: token('color.background.neutral'),
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          width: isIndeterminate === true ? '100%' : `${share * 100}%`,
+          height: '100%',
+          background: token('color.background.brand.bold'),
+        }}
+      />
+    </div>
+  );
+};
 
 /**
  * ADS has no `EmptyState` in the dependency set `@forge/react` pulls in, so

@@ -234,7 +234,7 @@ export const App = (): React.JSX.Element => {
             title="Changes by field"
             subtitle="Which fields churn the most in this range, busiest first."
           />
-          <SimpleReportTable model={toHistoryTable(report)} />
+          <SimpleReportTable heading="Changes" model={toHistoryTable(report)} />
         </Stack>
       ) : null}
     </Stack>

@@ -92,7 +92,7 @@ export const Admin = (): React.JSX.Element => {
       {estimate !== null && state === 'ready' ? (
         <Stack space="space.200">
           <SummaryTiles tiles={toStorageTiles(estimate)} />
-          <SimpleReportTable model={toStorageTable(estimate)} />
+          <SimpleReportTable heading="Tables" model={toStorageTable(estimate)} />
         </Stack>
       ) : null}
     </Stack>

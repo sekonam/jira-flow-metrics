@@ -276,7 +276,7 @@ export const App = (): React.JSX.Element => {
               />
             </Stack>
           ) : null}
-          <SimpleReportTable model={toAgingTable(report)} />
+          <SimpleReportTable heading="Issues in flight" model={toAgingTable(report)} />
         </Stack>
       ) : null}
     </Stack>

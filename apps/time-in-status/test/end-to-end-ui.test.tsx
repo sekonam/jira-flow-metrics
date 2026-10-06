@@ -103,12 +103,15 @@ describe('end to end: recorded Jira payloads to pixels', () => {
     wireResolvers(runtime);
     render(<App />);
     await screen.findByText(EXPECTED.issueKey);
-    expect(screen.getByText('Showing elapsed time.')).toBeDefined();
+    // The basis is the table's caption now, not a loose line above the chart:
+    // `ReportTableModel.basisLabel`, rendered where the columns it qualifies
+    // are. Same claim, one place, on every surface that renders the table.
+    expect(screen.getByText('Measured in elapsed time')).toBeDefined();
 
     screen.getByRole('button', { name: 'Working hours' }).click();
 
     await waitFor(() => {
-      expect(screen.getByText('Showing working hours.')).toBeDefined();
+      expect(screen.getByText('Measured in working hours')).toBeDefined();
     });
 
     const cells = cellsOf(EXPECTED.issueKey);

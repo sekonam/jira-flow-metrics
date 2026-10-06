@@ -218,7 +218,17 @@ describe('IndexingBanner', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('shows progress and a spinner while the backfill is running', async () => {
+  /**
+   * ★ The first-run screen is a progress bar, not a sentence to re-read.
+   *
+   * `BackfillProgress.fraction` has been computed since the backfill was
+   * written and reached no screen: the banner spelled the percentage into
+   * prose beside an indeterminate spinner, so the one question a first-time
+   * user has — is this moving, and how far has it got — was answered only by
+   * reading a number and remembering the last one. A bar answers it at a
+   * glance, and this is the screen a buyer meets before any report exists.
+   */
+  it('★ draws how far the backfill has got, instead of only spelling it out', async () => {
     const running: BackfillProgress = {
       state: 'running',
       issuesProcessed: 1200,
@@ -231,7 +241,56 @@ describe('IndexingBanner', () => {
     render(<IndexingBanner banner={toProgressBanner(running)} />);
     expect(screen.getByText(/1,200 of 4,000 issues indexed \(30%\)/)).toBeDefined();
     expect(screen.getByText(/only the issues indexed so far/)).toBeDefined();
+    const bar = screen.getByRole('progressbar', { name: 'Indexing progress' });
+    expect(bar.getAttribute('aria-valuenow')).toBe('30');
+    // The spinner is gone: a bar that fills is the same "it is moving" claim,
+    // made once rather than twice.
+    expect(screen.queryByRole('img', { name: 'Indexing' })).toBeNull();
+    await expectNoA11yViolations();
+  });
+
+  /**
+   * Jira does not always return a total to divide by — `fraction` is null
+   * then, and a bar drawn at 0% would read as "nothing has happened" over a
+   * backfill that has processed thousands of issues. The spinner is the
+   * honest control for an unknown share.
+   */
+  it('keeps the spinner when Jira gave no total to measure against', async () => {
+    const running: BackfillProgress = {
+      state: 'running',
+      issuesProcessed: 1200,
+      issuesTotal: null,
+      fraction: null,
+      lastError: null,
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    render(<IndexingBanner banner={toProgressBanner(running)} />);
+    expect(screen.getByText(/1,200 issues indexed\./)).toBeDefined();
     expect(screen.getByRole('img', { name: 'Indexing' })).toBeDefined();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    await expectNoA11yViolations();
+  });
+
+  /**
+   * A paused backfill shows no spinner — nothing is moving — but how far it
+   * got before Jira rate-limited it is exactly what the reader wants, and the
+   * bar is the only thing on that banner that answers it without arithmetic.
+   */
+  it('still draws the bar once indexing has paused', async () => {
+    const paused: BackfillProgress = {
+      state: 'paused',
+      issuesProcessed: 500,
+      issuesTotal: 1000,
+      fraction: 0.5,
+      lastError: null,
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    render(<IndexingBanner banner={toProgressBanner(paused)} />);
+    expect(
+      screen.getByRole('progressbar', { name: 'Indexing progress' }).getAttribute('aria-valuenow'),
+    ).toBe('50');
     await expectNoA11yViolations();
   });
 
@@ -371,6 +430,22 @@ describe('SlaGoalForm', () => {
     { id: '3', name: 'In Progress' },
     { id: '10200', name: 'In Review' },
   ];
+
+  /**
+   * ★ Configuration that outranks the report it configures.
+   *
+   * Rendered, this form opened the page: a page-wide target dropdown, a row of
+   * chips, a page-wide name field and a Save button, all above the first
+   * number. The reader's question is "are we hitting the goal", and the
+   * answer sat below a form most people touch once. Naming it as a section
+   * and holding the controls to the width of what they hold is what turns it
+   * from the page's subject into its settings.
+   */
+  it('★ reads as a named section rather than as the page itself', async () => {
+    render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: 'Goal' })).toBeDefined();
+    await expectNoA11yViolations();
+  });
 
   it('renders the target picker and one chip per status', async () => {
     render(<SlaGoalForm statuses={STATUSES} goal={DEFAULT_SLA_GOAL} onChange={vi.fn()} />);
@@ -701,6 +776,29 @@ describe('ReportLineChart', () => {
     );
     expect(container.textContent).toBe('');
   });
+
+  /**
+   * ★ A series that is all zeroes is not data, it is the absence of data
+   * wearing a chart's clothes. The cumulative flow diagram covers the last 30
+   * days, so a project whose issues all predate that window plots five flat
+   * lines along the axis under a confident title — which is what the rendered
+   * screen showed. Saying nothing is the honest render; the table below
+   * carries whatever is actually there.
+   */
+  it('★ renders nothing when every point in the series is zero', () => {
+    const { container } = render(
+      <ReportLineChart
+        data={[
+          { label: '1 Mar 2026', series: 'To Do', value: 0 },
+          { label: '2 Mar 2026', series: 'To Do', value: 0 },
+          { label: '1 Mar 2026', series: 'In Progress', value: 0 },
+        ]}
+        title="Cumulative flow"
+        subtitle="Issues in each status at the end of each day."
+      />,
+    );
+    expect(container.textContent).toBe('');
+  });
 });
 
 describe('PageHeader', () => {
@@ -951,6 +1049,27 @@ describe('ReportTable sorting', () => {
 });
 
 describe('ReportTable', () => {
+  /**
+   * ★ `basisLabel` existed on the model, was unit-tested, and reached no
+   * screen. Meanwhile the time-in-status page built the same sentence by hand
+   * into a bare line of text floating between the tiles and the chart — the
+   * one orphan on an otherwise sectioned page. The caption is where it
+   * belongs: attached to the numbers it qualifies, on every surface that
+   * renders the table rather than on the one page that remembered to.
+   */
+  it('★ captions the table with what it is and what its numbers mean', async () => {
+    render(<ReportTable heading="Issues" model={toReportTable(REPORT)} />);
+    expect(screen.getByRole('heading', { name: 'Issues' })).toBeDefined();
+    expect(screen.getByText('Measured in elapsed time')).toBeDefined();
+    await expectNoA11yViolations();
+  });
+
+  it('names the basis even where the page gives the table no heading', () => {
+    render(<ReportTable model={toReportTable({ ...REPORT, basis: 'business' })} />);
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(screen.getByText('Measured in working hours')).toBeDefined();
+  });
+
   it('orders columns as issue, status, dates, then one per status, then total', () => {
     render(<ReportTable model={toReportTable(REPORT)} />);
     expect(headerTexts()).toEqual([

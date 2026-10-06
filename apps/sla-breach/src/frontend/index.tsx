@@ -325,7 +325,7 @@ export const App = (): React.JSX.Element => {
             title="How close to the target"
             subtitle="Issues by the share of the working-time target they have used. The 80-100% band is the one to act on."
           />
-          <SimpleReportTable model={toSlaTable(report)} />
+          <SimpleReportTable heading="Issues against the goal" model={toSlaTable(report)} />
         </Stack>
       ) : null}
     </Stack>

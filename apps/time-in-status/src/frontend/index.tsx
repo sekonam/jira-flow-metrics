@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import ForgeReconciler, { Box, Button, ButtonGroup, Inline, Stack, Text } from '@forge/react';
+import ForgeReconciler, { Button, ButtonGroup, Inline, Stack } from '@forge/react';
 import { invoke } from '@forge/bridge';
 import { isRetryableError } from '@jfm/forge-runtime';
 import type { FilterOptions, ReportEnvelope } from '@jfm/forge-runtime';
@@ -322,11 +322,14 @@ export const App = (): React.JSX.Element => {
             })}
           />
           <SummaryTiles tiles={toSummaryTiles(envelope.report)} />
-          <Box>
-            <Text size="small" color="color.text.subtlest">
-              Showing {envelope.report.basis === 'business' ? 'working hours' : 'elapsed time'}.
-            </Text>
-          </Box>
+          {/*
+            The basis used to be stated here, in a bare line of text between
+            the tiles and the chart — the one unsectioned thing on the page,
+            saying what the segmented control above it and the chart subtitle
+            below it both already said. It now rides on the table as a
+            caption (`ReportTableModel.basisLabel`, which had been computed
+            and rendered nowhere), attached to the columns it qualifies.
+          */}
           <ReportBarChart
             data={toStatusChartData(envelope.report)}
             title="Median time in status"
@@ -334,7 +337,7 @@ export const App = (): React.JSX.Element => {
               envelope.report.basis === 'business' ? 'working hours' : 'elapsed time'
             }).`}
           />
-          <ReportTable model={toReportTable(envelope.report)} />
+          <ReportTable heading="Issues" model={toReportTable(envelope.report)} />
         </Stack>
       ) : null}
     </Stack>

@@ -35,7 +35,10 @@ describe('time-in-status issue panel', () => {
     setBridgeResolvers(resolversFor(scenarios.canonical.responses));
     render(<Panel />);
     const heading = await screen.findByText('Totals per status');
-    const table = heading.parentElement;
+    // The heading sits inside the table's own caption now rather than beside
+    // the table as a sibling, so the block holding both is one level further
+    // up — see `TableCaption`.
+    const table = heading.parentElement?.parentElement;
     expect(table).not.toBeNull();
     // "the most recent stay" footnote only appears when a status really was
     // entered more than once — the claim is conditional on the data.

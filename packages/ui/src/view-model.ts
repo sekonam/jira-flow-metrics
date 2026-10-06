@@ -218,7 +218,13 @@ export function toReportTable(report: StatusReport): ReportTableModel {
       'Total',
     ],
     rows,
-    basisLabel: report.basis === 'business' ? 'Working hours' : 'Elapsed time',
+    // ★ A sentence fragment, not a noun. This is rendered now (as the table's
+    // caption), and "Working hours" on its own collided with the segmented
+    // control that *sets* the basis — same two words, one a statement of what
+    // the columns mean and one a button that changes it. "Measured in …" can
+    // only be read as the former.
+    basisLabel:
+      report.basis === 'business' ? 'Measured in working hours' : 'Measured in elapsed time',
     footnotes,
   };
 }
@@ -412,6 +418,18 @@ export interface ProgressBanner {
    * without this the project has no way back short of reinstalling the app.
    */
   readonly showRetry: boolean;
+  /**
+   * The completed share of the backfill, 0-1, or `null` where there is none to
+   * draw: nothing indexed yet, a cap banner (which measures rows, not work),
+   * or a backfill Jira gave no total to divide by. `IndexingBanner` turns this
+   * into a bar; the body sentence states the same figure for anyone reading
+   * rather than looking.
+   *
+   * ★ It is carried rather than re-derived. `describeProgress` already folds
+   * the percentage into prose, and a component that parsed it back out of a
+   * sentence would break the first time the sentence was reworded.
+   */
+  readonly fraction: number | null;
 }
 
 /**
@@ -431,6 +449,7 @@ export function toProgressBanner(progress: MaybeProgress): ProgressBanner | null
       body: 'Start indexing to build the report for this project.',
       showSpinner: false,
       showRetry: false,
+      fraction: null,
     };
   }
   switch (progress.state) {
@@ -442,8 +461,11 @@ export function toProgressBanner(progress: MaybeProgress): ProgressBanner | null
         appearance: 'information',
         title: 'Indexing in progress',
         body: `${describeProgress(progress)} Numbers below cover only the issues indexed so far.`,
-        showSpinner: true,
+        // The spinner is still what a backfill with no total gets; the bar
+        // replaces it only when there is a share to draw. See `IndexingBanner`.
+        showSpinner: progress.fraction === null,
         showRetry: false,
+        fraction: progress.fraction,
       };
     case 'paused':
       return {
@@ -454,6 +476,7 @@ export function toProgressBanner(progress: MaybeProgress): ProgressBanner | null
           'this happens on large instances and needs no action.',
         showSpinner: false,
         showRetry: false,
+        fraction: progress.fraction,
       };
     case 'failed':
       return {
@@ -462,6 +485,7 @@ export function toProgressBanner(progress: MaybeProgress): ProgressBanner | null
         body: `${describeProgress(progress)} ${progress.lastError ?? 'No error detail was recorded.'}`,
         showSpinner: false,
         showRetry: true,
+        fraction: progress.fraction,
       };
     default: {
       const exhaustive: never = progress.state;
@@ -496,6 +520,7 @@ export function toCapBanner(input: {
       'lower bound. Narrow the filters to cover the remainder.',
     showSpinner: false,
     showRetry: false,
+    fraction: null,
   };
 }
 
@@ -526,6 +551,7 @@ export function toReadCapBanner(input: {
       'figure on it is a lower bound. Narrow the range to cover the remainder.',
     showSpinner: false,
     showRetry: false,
+    fraction: null,
   };
 }
 
@@ -550,6 +576,7 @@ export function toAggregateCapBanner(input: { included: number; noun: string }):
       'are. Narrow the filters to cover the remainder.',
     showSpinner: false,
     showRetry: false,
+    fraction: null,
   };
 }
 

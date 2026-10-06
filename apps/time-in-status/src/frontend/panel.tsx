@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import ForgeReconciler, { Heading, Stack, Text } from '@forge/react';
+import ForgeReconciler, { Stack, Text } from '@forge/react';
 import { invoke } from '@forge/bridge';
 import { isRetryableError } from '@jfm/forge-runtime';
 import type { IssueTimelineReport } from '@jfm/forge-runtime';
@@ -91,10 +91,14 @@ export const Panel = (): React.JSX.Element => {
       {state === 'ready' && report !== null ? (
         <Stack space="space.200">
           <SummaryTiles tiles={toTimelineTiles(report)} />
-          <Heading as="h3">Every visit, in order</Heading>
-          <SimpleReportTable model={toTimelineTable(report)} />
-          <Heading as="h3">Totals per status</Heading>
-          <SimpleReportTable model={toTimelineTotals(report)} />
+          {/*
+            The headings used to be siblings of the tables in this `Stack`,
+            which spaced each one as far from its own table as from the
+            section above it — a heading floating between two tables belongs
+            to neither. `heading` hands it to the table it names.
+          */}
+          <SimpleReportTable heading="Every visit, in order" model={toTimelineTable(report)} />
+          <SimpleReportTable heading="Totals per status" model={toTimelineTotals(report)} />
         </Stack>
       ) : null}
     </Stack>

@@ -234,7 +234,7 @@ export const App = (): React.JSX.Element => {
             title="Time logged per person"
             subtitle="Hours logged per person, largest first. The table below lists every one."
           />
-          <SimpleReportTable model={toWorklogTable(report, 'Person')} />
+          <SimpleReportTable heading="People" model={toWorklogTable(report, 'Person')} />
         </Stack>
       ) : null}
     </Stack>

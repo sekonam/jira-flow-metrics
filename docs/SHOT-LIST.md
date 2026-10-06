@@ -133,7 +133,8 @@ the sentence that carries the claim in words.
 - **Project: `JFMB`.** A median needs a population. `JFM`'s existing tiles read _"85th percentile
   <1m, across 1 issues"_ — see § "Shots that would be dishonest", item 3.
 - **In frame:** chart title and subtitle; every status bar labelled; the `Issues` tile immediately
-  above so the bars have a stated denominator; the line _"Showing elapsed time."_
+  above so the bars have a stated denominator; the table's caption _"Measured in elapsed time"_
+  under its **Issues** heading (the loose "Showing elapsed time." line it replaced is gone)
 - **Not in frame:** the chart cropped away from its `Issues` tile; any bar whose status the tiles
   say is backed by one or two issues — check each tile's `across N issues` hint first.
 - **Caption.** `Median time per status across 300 issues — the shape of the flow, before the rows.`
@@ -148,7 +149,7 @@ the sentence that carries the claim in words.
 - **Project: `JFM`.** The `15h 29m` elapsed → `43m` working-hours contrast on `JFM-11` is already
   hand-confirmed live and recorded in `LISTING-COPY.md` row 3.
 - **In frame:** the `ButtonGroup` with **Working hours** in its selected state, legible at thumbnail
-  size; the line _"Showing working hours."_; `JFM-11`'s In Progress cell showing the recomputed
+  size; the table caption _"Measured in working hours"_; `JFM-11`'s In Progress cell showing the recomputed
   figure.
 - **Not in frame:** a crop identical to shot 1 with no visible state change — if a viewer cannot see
   which button is pressed, the shot proves nothing. There is no separate calendar UI to show; do
