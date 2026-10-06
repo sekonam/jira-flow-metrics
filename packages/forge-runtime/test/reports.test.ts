@@ -559,6 +559,25 @@ describe('cumulative flow (listing 3) — the report the aggregate cannot answer
     expect(report.partial).toBe(true);
   });
 
+  /**
+   * ★ A cut read cannot tell "no visits stored" from "beyond the ceiling", so
+   * it must not accuse the index of the first. Found by reading the fixed
+   * banner on the live JFMB page, where it claimed 798 issues had no status
+   * history on a project whose visits had merely been cut at 500 rows.
+   */
+  it('★ does not call a cut read partial — it cannot know which it is', async () => {
+    const store = await flowStore();
+    for (let i = 0; i < 8; i += 1) {
+      await store.putIssueAggregate(
+        meta({ issueId: `no-visits-${String(i)}`, createdAt: DAY_0 }),
+        [],
+      );
+    }
+    const report = await buildFlowReport(store, '10000', NOW, { days: 5, limit: 2 });
+    expect(report.capped).toBe(true);
+    expect(report.partial).toBe(false);
+  });
+
   it('is not partial when every stored issue has visits', async () => {
     const report = await buildFlowReport(await flowStore(), '10000', NOW, { days: 5 });
     expect(report.projectIssueCount).toBe(2);

@@ -660,10 +660,15 @@ export async function buildFlowReport(
     to,
     issueCount: issues.size,
     projectIssueCount,
-    // Strictly fewer, so a fully indexed project is never qualified. Left to
-    // the UI to decide what to say when `capped` is also true: a cut read is
-    // already a lower bound and does not need a second banner saying so.
-    partial: issues.size < projectIssueCount,
+    // ★ Only claimable when the read was NOT cut.
+    //
+    // `partial` carries a specific accusation — those issues have no stored
+    // visits — and a truncated read cannot support it: the missing issues may
+    // simply be the ones beyond the row ceiling. Read live on JFMB, where the
+    // banner said "The other 798 have no status history stored yet" about a
+    // 900-issue project whose visits were cut at 500 rows. `capped` is the
+    // honest statement in that case and the banner already makes it.
+    partial: !visitsCapped && issues.size < projectIssueCount,
     // The query stopped at its own cap, so there are visits in this window
     // it did not read and every band below is a lower bound.
     capped: visitsCapped,

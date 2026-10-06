@@ -580,8 +580,8 @@ export function toFlowChartBanner(input: {
   if (input.partial) {
     sentences.push(
       `The other ${(input.total - input.covered).toLocaleString('en-GB')} have no status history ` +
-        'stored yet, so the bands below cover only part of the project. Extend history re-reads ' +
-        'this project from the beginning and fills them in.',
+        'stored yet, so its bands cover only part of the project. Extend history re-reads this ' +
+        'project from the beginning and fills them in.',
     );
   }
   if (input.capped) {

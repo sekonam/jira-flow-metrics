@@ -640,6 +640,11 @@ describe('★ a cap banner must not contradict itself', () => {
     });
     expect(banner?.title).toBe('The cumulative flow chart above is drawn from 1 of 10 issues');
     expect(banner?.body).toContain('The other 9 have no status history stored yet');
+    // ★ Read in place on the live tenant: the banner renders *under* the
+    // chart, so "the bands below" pointed at the issues table — the same
+    // wrong-neighbour defect the title's "above" exists to avoid, re-made one
+    // sentence later.
+    expect(banner?.body).not.toContain('below');
     expect(banner?.body).toContain('Extend history');
     // Not capped, so it must not claim a ceiling it never hit, and there is
     // no page banner to point at.
@@ -647,6 +652,13 @@ describe('★ a cap banner must not contradict itself', () => {
     expect(banner?.body).not.toContain('capped separately');
   });
 
+  /**
+   * The two facts are mutually exclusive by construction — `buildFlowReport`
+   * refuses to call a cut read partial, because it cannot tell an unindexed
+   * issue from one beyond the row ceiling. The builder still handles both, so
+   * that a future caller passing both gets a banner that states both rather
+   * than one that silently drops a warning.
+   */
   it('states both problems in one banner rather than stacking two', () => {
     const banner = toFlowChartBanner({
       capped: true,
@@ -657,7 +669,6 @@ describe('★ a cap banner must not contradict itself', () => {
       rowNoun: 'status changes',
       pageCapped: true,
     });
-    // Coverage leads: it is the larger claim and the actionable one.
     expect(banner?.title).toContain('drawn from 102 of 900 issues');
     expect(banner?.body).toContain('Extend history');
     expect(banner?.body).toContain('500 status changes');
