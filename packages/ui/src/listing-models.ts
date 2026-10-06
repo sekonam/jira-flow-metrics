@@ -9,6 +9,7 @@ import type {
 import {
   WORKING_TIME,
   formatDateTime,
+  formatCount,
   formatDurationForHumans,
   toHours,
   formatBytes,
@@ -116,6 +117,7 @@ export function toWorklogTiles(result: WorklogAggregateResult): SummaryTile[] {
 // ----------------------------------------------- listing 3: WIP aging ---
 
 export function toAgingTable(report: AgingReport): SimpleTable {
+  const cap = agingPageCap(report);
   return {
     // "Working hours" is a real column now. The footnote below has always
     // promised the working-hours figure "is shown separately rather than
@@ -132,11 +134,41 @@ export function toAgingTable(report: AgingReport): SimpleTable {
       formatDate(row.enteredStatusAt),
     ]),
     footnotes: [
-      `${report.excludedDone} finished ${report.excludedDone === 1 ? 'issue is' : 'issues are'} ` +
-        'excluded; ageing only applies to work in flight.',
+      cap === null
+        ? `${report.excludedDone} finished ${report.excludedDone === 1 ? 'issue is' : 'issues are'} ` +
+          'excluded; ageing only applies to work in flight.'
+        : // ★ The excluded count and the in-flight count add up to the page,
+          // and the page never said so. On JFMB: "In flight 121", "379
+          // finished issues are excluded", top banner "capped at 500 of 900" —
+          // and 121 + 379 = 500, which is the one arithmetic fact that makes
+          // the other figures reconcilable. Printing the denominator here puts
+          // it on screen in words.
+          `${report.excludedDone} of the ${cap.read} issues read ` +
+          `${report.excludedDone === 1 ? 'is' : 'are'} finished and excluded; ageing only ` +
+          'applies to work in flight.',
       'Age in status is elapsed time. Working-hours ageing covers the completed part of the ' +
         'current visit only, so it is shown separately rather than blended in.',
     ],
+  };
+}
+
+/**
+ * The denominator for a page-capped aging report, or `null` when there is none.
+ *
+ * ★ Page-capped, not `report.capped`. `capped` is
+ * `projectIssueCount > metas.length || aggregatesCapped`, so it is also true
+ * when every issue was read and only some of their aggregate rows were cut —
+ * and then `read === total`, so qualifying a tile with "among the 500 of 500
+ * issues read" would be the self-contradiction this file's cap banners have
+ * had to remove three times. When only the aggregates were cut, "in this
+ * project" is a true statement about the count and stays.
+ */
+function agingPageCap(report: AgingReport): { read: string; total: string } | null {
+  const read = report.rows.length + report.excludedDone;
+  if (!report.capped || read >= report.projectIssueCount) return null;
+  return {
+    read: read.toLocaleString('en-GB'),
+    total: report.projectIssueCount.toLocaleString('en-GB'),
   };
 }
 
@@ -145,22 +177,46 @@ export function toAgingTiles(report: AgingReport): SummaryTile[] {
   const stale = report.buckets
     .filter((b) => b.label === '14-30d' || b.label === '30d+')
     .reduce((n, b) => n + b.count, 0);
+  // ★ Every one of these tiles counts the issues the report *read*, not the
+  // project.
+  //
+  // Observed on the deployed app against JFMB (900 issues, page size 500):
+  // "In flight 121 — Unfinished issues in this project." sat under a banner
+  // saying the report covered 500 of 900 issues. 121 is unfinished among those
+  // 500; the project's figure is unknown and larger. A tile that claims the
+  // project while counting a page is the silent-ceiling failure with the
+  // banner still on screen, so each hint now carries the same denominator the
+  // banner above already prints.
+  const cap = agingPageCap(report);
   return [
     {
       label: 'In flight',
-      value: String(report.rows.length),
-      hint: 'Unfinished issues in this project.',
+      value: formatCount(report.rows.length),
+      hint:
+        cap === null
+          ? 'Unfinished issues in this project.'
+          : `Unfinished among the ${cap.read} of ${cap.total} issues read — a lower bound.`,
     },
     {
       label: 'Oldest',
       value: oldest === undefined ? '—' : formatDurationForHumans(oldest.ageInStatusMs),
       hint:
-        oldest === undefined ? 'Nothing in flight.' : `${oldest.issueKey} in ${oldest.statusName}.`,
+        oldest === undefined
+          ? 'Nothing in flight.'
+          : cap === null
+            ? `${oldest.issueKey} in ${oldest.statusName}.`
+            : // Not "the oldest in this project": the page read 500 of 900
+              // issues and something older may sit in the 400 it did not.
+              `${oldest.issueKey} in ${oldest.statusName} — oldest of the ${cap.read} issues read.`,
     },
     {
       label: 'Older than 14 days',
-      value: String(stale),
-      hint: 'Issues that have not moved in a fortnight.',
+      value: formatCount(stale),
+      hint:
+        cap === null
+          ? 'Issues that have not moved in a fortnight.'
+          : `Issues that have not moved in a fortnight, among the ${cap.read} of ${cap.total} ` +
+            'issues read — a lower bound.',
     },
   ];
 }
@@ -348,12 +404,12 @@ export function toSlaTiles(report: SlaReport): SummaryTile[] {
     },
     {
       label: 'Breached',
-      value: String(report.breachedCount),
+      value: formatCount(report.breachedCount),
       hint: 'Issues over the working-time target.',
     },
     {
       label: 'Late against due date',
-      value: String(report.dueDateBreaches),
+      value: formatCount(report.dueDateBreaches),
       hint: 'Issues resolved after their due date, or still open past it.',
     },
   ];
@@ -393,11 +449,11 @@ export function toHistoryTiles(report: HistoryReport): SummaryTile[] {
       // "Report capped at 3 of 3,000 changes". `view-model.ts` solved the
       // same problem for the status report; history had not caught up.
       label: 'Changes',
-      value: String(report.totalMatching),
+      value: formatCount(report.totalMatching),
       hint:
         report.totalMatching === report.total
           ? 'Field changes in the selected range.'
-          : `Field changes in the selected range. These figures cover ${report.total} of them.`,
+          : `Field changes in the selected range. These figures cover ${formatCount(report.total)} of them.`,
     },
     {
       label: 'Busiest field',
@@ -577,7 +633,7 @@ export function toTimelineTiles(report: IssueTimelineReport): SummaryTile[] {
   const tiles: SummaryTile[] = [
     {
       label: 'Visits recorded',
-      value: String(report.visits.length),
+      value: formatCount(report.visits.length),
       hint: `Since ${formatDate(report.createdAt)}.`,
     },
   ];

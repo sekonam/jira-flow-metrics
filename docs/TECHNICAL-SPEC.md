@@ -767,6 +767,50 @@ the real `invoke`, its payload validation and its rate limiter all run.
     decision rather than a patch — recorded here so it is decided deliberately, not rediscovered
     by a customer comparing a stale report against the WIP Aging listing.
 
+18. **★ One page, two caps, five figures a reader could not reconcile — found by driving the
+    deployed app, fixed 2026-10-06.** WIP Aging on JFMB (900 issues) rendered: a top banner
+    "Report capped at 500 of 900 issues"; tiles "In flight 121 / Unfinished issues in this
+    project." and "Older than 14 days 54"; a **second** banner between the two charts saying
+    "Showing 102 issues, and there are more — This report reached the maximum number of rows it
+    will read in one pass, so every figure on it is a lower bound"; and a footnote "379 finished
+    issues are excluded". Every number was individually correct and the page as a whole was
+    unreadable.
+
+    Three separate defects, all of the same kind — a true sentence attached to the wrong scope.
+    (a) The second banner (`toReadCapBanner`) covers **only** the cumulative flow chart — its own
+    resolver, its own table (`issue_status_visit`), its own cap — and claimed the page. It now
+    names its block, and `subject`/`rowLimit`/`rowNoun` are **required** parameters so the
+    page-wide claim cannot return at the next call site. (b) It rendered _before_
+    `ReportLineChart`, which is what carries the "Cumulative flow" title, so on screen it sat
+    under "Age distribution" and read as that chart's banner. The chart now renders first and a
+    `compareDocumentPosition` assertion holds the order — nothing in the suite asserted DOM order
+    before, and presence assertions cannot tell a banner from a banner on the wrong neighbour.
+    (c) The tiles and the excluded-issues footnote are computed over the 500 issues **read** and
+    said "in this project"; they now carry the denominator the top banner already prints, which
+    also puts `121 + 379 = 500` on the page in words. The banner's title also counted issues
+    while its body said "rows": `FlowReport.readRowLimit` now carries the ceiling that actually
+    fired (500 visit rows) so the UI prints it instead of staying vague.
+
+    **Two findings from the same session are deliberately not fixed here**, because both change
+    which rows are read rather than what is said about them, and so change Forge SQL read cost:
+
+    - **`buildAgingReport` pages `issue_meta` ordered `created_at ASC`** — the _oldest_ 500
+      issues. For an ageing report that is the wrong slice twice over: the 400 unread issues are
+      the newest, and the headline "Oldest" figure is therefore biased by the slice rather than
+      measured. Item 14 fixed exactly this shape in the flow report by letting the question select
+      the rows; the aging report still selects by creation order. The honest fix is to order the
+      page by `last_entered_at ASC` among unfinished issues, which needs an index on
+      (`project_id`, `last_exited_at` null-ness, `last_entered_at`) — same row count per render,
+      so no extra read cost, but a schema migration and a re-measured query plan.
+    - **`buildFlowReport` takes the first 500 visit rows ordered `issue_id ASC`** — so a capped
+      window is not merely low, its _shape_ is unrepresentative: the bands describe the
+      lowest-numbered issues only, and a reader comparing two days reads a trend that is an
+      artefact of the slice. Making the curve honest requires either aggregating in SQL (one
+      `GROUP BY` per day-band instead of a row read, bounded output, but a new statement shape to
+      bind and clamp) or reading the whole window (unbounded, and so a cost incident on a
+      consumption-priced platform). Until one is chosen, the banner above is what carries the
+      warning.
+
 ---
 
 ## 12. ⚠️ The unverified surface, exhaustively

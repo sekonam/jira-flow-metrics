@@ -469,6 +469,21 @@ describe('cumulative flow (listing 3) — the report the aggregate cannot answer
     expect((await buildFlowReport(store, '10000', NOW, { days: 5, limit: 3 })).capped).toBe(true);
   });
 
+  it('★ reports the ceiling it actually applied, not the one it was asked for', async () => {
+    // The page's cap banner had no number to print: it said "the maximum
+    // number of rows it will read in one pass" above a title counting
+    // *issues*, so on JFMB a 500-row ceiling appeared on screen as "102
+    // issues". The limit is also clamped, so echoing `options.limit` would
+    // print a ceiling that never fired.
+    const store = await flowStore();
+    expect((await buildFlowReport(store, '10000', NOW, { days: 5, limit: 2 })).readRowLimit).toBe(
+      2,
+    );
+    expect(
+      (await buildFlowReport(store, '10000', NOW, { days: 5, limit: 50_000 })).readRowLimit,
+    ).toBeLessThanOrEqual(STORE_MAX_ROWS);
+  });
+
   it('★ keeps the visit limit under the ceiling the store enforces', async () => {
     // The default was 20,000 — twice `STORE_MAX_ROWS` — so the store clamped
     // the read to 10,000 and `length >= 20_000` could never be true: a
@@ -507,6 +522,48 @@ describe('cumulative flow (listing 3) — the report the aggregate cannot answer
     const report = await buildFlowReport(store, '10000', NOW, { days: 5 });
     // Two issues have visits; a third exists and never moved in the window.
     expect(report.issueCount).toBe(2);
+  });
+
+  /**
+   * ★ The defect this test exists for was found by opening the deployed app.
+   *
+   * On the real dev site the JFM cumulative flow chart topped out at **1**
+   * where the project's true answer is 6, and said nothing. The arithmetic was
+   * right; the store held visit rows for one issue in ten, because the visits
+   * table shipped after that project was indexed and only one issue has had a
+   * status change since. `unavailable` is the report's only completeness
+   * signal and it is all-or-nothing — one issue's rows flip it to `false` and
+   * the chart renders with the confidence of a complete answer.
+   *
+   * "Some issues have no visits yet" and "those issues were not in flight"
+   * are different claims, and a chart that cannot tell them apart makes the
+   * second one. The sibling report on the same page has always done this
+   * properly: `buildAgingReport` compares its page against `countIssueMeta`.
+   */
+  it('★ says how much of the project the chart is drawn from', async () => {
+    const store = await flowStore();
+    // Eight more issues the indexer has stored but never wrote visits for —
+    // the shape a project indexed before `datasets.statusVisits` existed is
+    // left in, and the shape JFM was actually in.
+    for (let i = 0; i < 8; i += 1) {
+      await store.putIssueAggregate(
+        meta({ issueId: `no-visits-${String(i)}`, createdAt: DAY_0 }),
+        [],
+      );
+    }
+    const report = await buildFlowReport(store, '10000', NOW, { days: 5 });
+    expect(report.projectIssueCount).toBe(10);
+    // `issueCount` is the chart's own coverage: every stored issue has an
+    // open final visit, so one the window cannot see has no visit rows.
+    expect(report.issueCount).toBe(2);
+    expect(report.partial).toBe(true);
+  });
+
+  it('is not partial when every stored issue has visits', async () => {
+    const report = await buildFlowReport(await flowStore(), '10000', NOW, { days: 5 });
+    expect(report.projectIssueCount).toBe(2);
+    expect(report.issueCount).toBe(2);
+    expect(report.partial).toBe(false);
   });
 
   it('★ says the data is unavailable rather than drawing a flat zero', async () => {

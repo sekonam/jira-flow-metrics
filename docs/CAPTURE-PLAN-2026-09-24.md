@@ -85,8 +85,29 @@ share data. **Shoot the `Dev` row.**
 | `time-in-status`  | `fde3c0c8-379b-499a-961c-f9fd7f3c2f7f` | `239eaf4e-5adb-47fa-9eb9-95c06d11f03b` |
 | `worklog-reports` | `feae5eaa-b3ac-4b5c-bb8d-07d4d8b7aaa2` | `ff19d429-6269-4460-85d7-b524a703f717` |
 | `wip-aging`       | `47f79ea7-77c2-44ee-9d83-91a58f3924db` | `cf14724d-db7a-4659-bb88-b92db0facebd` |
-| `sla-breach`      | `a353ce2c-8607-4496-b594-3e5af38c01a3` | (none in the menu)                     |
+| `sla-breach`      | `c5e0fed8-17ae-4d9a-b213-6939568bf1a9` | `a353ce2c-8607-4496-b594-3e5af38c01a3` |
 | `issue-history`   | `553260fe-526a-4f8c-878e-af7ea6f44335` | `1e92b446-f773-4b39-a528-17b735f142f8` |
+
+**⚠️ Corrected 2026-10-06.** The `sla-breach` row above was wrong in both columns, and it cost a
+testing session: `a353ce2c` is the **production** install, not the `Dev` one, and driving it reads a
+build from before the goal editor, the chart and _Extend history_ existed — which looks exactly like
+five regressions. The real `Dev` instance is `c5e0fed8`. Two things follow.
+
+**Every one of the five apps has a `production` install on this site as well as a `development` one**
+(`forge install list`, per app). So the tab strip carries two entries per app, only one of them
+carries the `Dev` lozenge, and the non-`Dev` one serves the stale 2026-09-10 build. Before believing
+any observation, confirm the instance id against this table — a missing feature is far more likely to
+be the wrong install than a regression.
+
+**The overflow menu does not have to be driven at all.** Shrinking the page makes Jira render every
+tab into the DOM, where the one-liner below can read them without a click — which matters because
+clicks into a Forge iframe are dropped when the window is not visible:
+
+```js
+document.body.style.zoom = '0.33';
+window.dispatchEvent(new Event('resize'));
+// …then run the collector below.
+```
 
 Collecting them by hand is no longer necessary, and the **More** menu is awkward to drive: its items
 are not in the DOM until it opens. Reading them back out afterwards is one line in the page console —

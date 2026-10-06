@@ -300,7 +300,7 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
       // The whole matching set, not this page: the tile says "Issues
       // matching the current filters" and a page length is not that.
       label: 'Issues',
-      value: String(report.matchingIssueCount),
+      value: formatCount(report.matchingIssueCount),
       // "below" was a lie on the dashboard gadget, which renders these tiles
       // and no table at all — it read "1,500 issues … 200 of them are shown
       // below" above nothing. The wording has to be true on every surface
@@ -308,7 +308,7 @@ export function toSummaryTiles(report: StatusReport): SummaryTile[] {
       hint:
         report.matchingIssueCount === report.issueCount
           ? 'Issues matching the current filters.'
-          : `Issues matching the current filters. These figures cover ${report.issueCount} of them.`,
+          : `Issues matching the current filters. These figures cover ${formatCount(report.issueCount)} of them.`,
     },
   ];
   for (const column of report.columns) {
@@ -525,30 +525,83 @@ export function toCapBanner(input: {
 }
 
 /**
- * The cap banner for a report that knows it was truncated but cannot say
- * against what.
+ * The one banner that qualifies the cumulative flow chart.
  *
- * `toCapBanner` needs an honest denominator. The cumulative flow report has
- * none — its `issueCount` is "distinct issues appearing in the window,
- * counted from the visits read", which is a property of what was read rather
- * than of what exists — and passing it as both halves produced the flatly
- * self-contradicting **"Report capped at 412 of 412 issues"**, a title saying
- * nothing was left out above a body saying the rest are missing.
+ * Two different things can be wrong with that chart, they have different
+ * causes and different remedies, and both are invisible in the drawing:
  *
- * So this says only what is known: the figures are a lower bound, and why.
+ * - **It was cut.** The visit read stopped at its row ceiling, so there are
+ *   visits in the window it never saw. Remedy: narrow the range.
+ * - **It is drawn from part of the project.** Issues with no stored visits
+ *   cannot appear in any window, so the bands describe only the issues the
+ *   indexer has written visits for. Remedy: *Extend history*, which replays
+ *   every issue.
+ *
+ * ★ Both found by opening the deployed app, and neither was sayable before.
+ *
+ * On JFMB (900 issues) the cap banner claimed the whole page — "every figure
+ * on it is a lower bound" — while covering one chart fed by its own resolver,
+ * its own table and its own cap, leaving five figures on screen that a reader
+ * could not reconcile. On JFM the chart topped out at 1 against a true answer
+ * of 6 and said nothing at all: `issue_status_visit` held rows for one issue
+ * in ten, and `unavailable` is all-or-nothing, so a tenth of a project
+ * rendered with the confidence of a complete answer.
+ *
+ * One banner rather than two, because two stacked warnings about one chart is
+ * the defect this replaced. When both are true the coverage fact leads — it
+ * is the larger claim and the actionable one — and the ceiling follows in its
+ * own sentence.
+ *
+ * `pageCapped` is not decoration: the closing pointer at the page's own
+ * banner is only true when that banner is on screen, and this builder cannot
+ * see it.
  */
-export function toReadCapBanner(input: {
+export function toFlowChartBanner(input: {
+  /** The visit read hit its row ceiling. */
   capped: boolean;
-  included: number;
-  noun: string;
+  /** The chart covers fewer issues than the project holds. */
+  partial: boolean;
+  /** Issues the chart could see. */
+  covered: number;
+  /** Issues stored for the project — the denominator `covered` is short of. */
+  total: number;
+  /** The ceiling that actually fired, in rows, not the derived issue count. */
+  rowLimit: number;
+  /** What those rows are ("status changes"), so two numbers cannot be confused. */
+  rowNoun: string;
+  /** Whether the page's own cap banner is on screen to be pointed at. */
+  pageCapped: boolean;
 }): ProgressBanner | null {
-  if (!input.capped) return null;
+  if (!input.capped && !input.partial) return null;
+  const covered = input.covered.toLocaleString('en-GB');
+  const total = input.total.toLocaleString('en-GB');
+
+  const sentences: string[] = [];
+  if (input.partial) {
+    sentences.push(
+      `The other ${(input.total - input.covered).toLocaleString('en-GB')} have no status history ` +
+        'stored yet, so the bands below cover only part of the project. Extend history re-reads ' +
+        'this project from the beginning and fills them in.',
+    );
+  }
+  if (input.capped) {
+    sentences.push(
+      `It stopped at the ${input.rowLimit.toLocaleString('en-GB')} ${input.rowNoun} it reads in ` +
+        'one pass, so each figure in it is a lower bound.',
+    );
+  }
+  if (input.pageCapped) {
+    sentences.push(
+      'The tiles and table on this page are capped separately — see the banner at the top.',
+    );
+  }
+
   return {
     appearance: 'warning',
-    title: `Showing ${input.included.toLocaleString('en-GB')} ${input.noun}, and there are more`,
-    body:
-      'This report reached the maximum number of rows it will read in one pass, so every ' +
-      'figure on it is a lower bound. Narrow the range to cover the remainder.',
+    title: input.partial
+      ? `The cumulative flow chart above is drawn from ${covered} of ${total} issues`
+      : `The cumulative flow chart above covers ${covered} issues, and there are more`,
+    body: sentences.join(' '),
     showSpinner: false,
     showRetry: false,
     fraction: null,
@@ -562,7 +615,7 @@ export function toReadCapBanner(input: {
  * ("400 of 5,000 issues"); this truncation has none, because every issue was
  * read and only some of their status rows were cut — `included === total`,
  * and routing it through `toCapBanner` printed "Report capped at 400 of 400
- * issues". `toReadCapBanner` says "showing N, and there are more", which is
+ * issues". `toFlowChartBanner` says what the chart covers rather than a false total, which is
  * also wrong here: there are not more issues, there is less known about
  * these ones.
  */
@@ -663,6 +716,24 @@ function describeProgress(progress: BackfillProgress): string {
   const percent = Math.round(progress.fraction * 100);
   const total = progress.issuesTotal ?? 0;
   return `${progress.issuesProcessed.toLocaleString('en-GB')} of ${total.toLocaleString('en-GB')} issues indexed (${percent}%).`;
+}
+
+/**
+ * A count as a reader expects to see it: `8,564`, never `8564`.
+ *
+ * ★ Every cap banner in this file already localised its counts and every tile
+ * did not, so the Issue History page rendered "Changes 8564" eighty pixels
+ * from its own banner reading "Report capped at 500 of 8,564 changes" — one
+ * number, twice, two ways. It survived because no fixture and neither seeded
+ * project produces a four-figure count on a tile; it took opening the
+ * deployed app against a project with 8,564 changes to see it.
+ *
+ * `en-GB` rather than the viewer's locale, deliberately and consistently with
+ * `formatDate`: a report people paste figures out of should not change the
+ * separator under them depending on who opened it.
+ */
+export function formatCount(value: number): string {
+  return value.toLocaleString('en-GB');
 }
 
 /** Bytes as a human figure, always labelled as an estimate by the caller. */

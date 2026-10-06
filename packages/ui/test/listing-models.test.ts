@@ -464,6 +464,9 @@ describe('the cumulative flow series', () => {
         to: at + 2 * DAY,
         issueCount: 7,
         capped: false,
+        readRowLimit: 500,
+        projectIssueCount: 2,
+        partial: false,
         unavailable: false,
       }),
     ).toEqual([
@@ -481,6 +484,9 @@ describe('the cumulative flow series', () => {
       to: at + DAY,
       issueCount: 1,
       capped: false,
+      readRowLimit: 500,
+      projectIssueCount: 2,
+      partial: false,
       unavailable: false,
     });
     // An unnamed line is still a line with a real count on it; dropping the
@@ -661,7 +667,9 @@ describe('★ tiles that must not contradict the data beside them', () => {
     // here put "Changes 3" directly under a banner reading "Report capped at
     // 3 of 3,000 changes".
     const capped = toHistoryTiles({ ...history, total: 3, totalMatching: 3000, capped: true });
-    expect(capped[0]?.value).toBe('3000');
+    // Separated, like the banner beside it — this assertion read '3000' while
+    // the comment above it wrote "3,000", which is how the defect survived.
+    expect(capped[0]?.value).toBe('3,000');
     expect(capped[0]?.hint).toContain('cover 3 of them');
 
     // Uncapped, the hint stays the plain sentence.

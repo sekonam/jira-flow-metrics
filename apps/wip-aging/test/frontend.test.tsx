@@ -147,7 +147,10 @@ describe('★ wip-aging: a capped report says so on both surfaces', () => {
   it('carries the same notice into the gadget', async () => {
     setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: false, total: 40 })));
     render(<Gadget />);
-    expect(await screen.findByText(/of 40 issues/)).toBeDefined();
+    // `Covering`, not a bare /of 40 issues/: the tiles now carry the same
+    // denominator in their hints, so the looser pattern matched three
+    // elements and said nothing about the notice it was written for.
+    expect(await screen.findByText(/Covering \d+ of 40 issues/)).toBeDefined();
   });
 
   it('★ and distinguishes the two ceilings there too', async () => {
@@ -159,6 +162,64 @@ describe('★ wip-aging: a capped report says so on both surfaces', () => {
     setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: true })));
     render(<Gadget />);
     expect(await screen.findByText(/are missing measurements/)).toBeDefined();
+  });
+
+  /**
+   * ★ DOM order, because nothing in this suite asserted any.
+   *
+   * Observed on the deployed app against JFMB: the flow chart's cap banner
+   * rendered one index too early in the `Stack`, so it sat between the two
+   * charts and read as the banner of the "Age distribution" chart above it.
+   * Every presence assertion in this file was green throughout — "it is on
+   * screen" cannot distinguish a banner from a banner attached to the wrong
+   * neighbour. Position is the only assertion shape that can.
+   */
+  function withBothCaps() {
+    const flow = scenarios.populated.responses.getFlowReport as {
+      ok: true;
+      data: Record<string, unknown>;
+    };
+    return {
+      ...withCap({ aggregatesCapped: false, total: 40 }),
+      getFlowReport: { ...flow, data: { ...flow.data, capped: true } },
+    };
+  }
+
+  const isFollowedBy = (first: Element, second: Element): boolean =>
+    Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it('★ keeps the flow cap banner below the title of the chart it describes', async () => {
+    setBridgeResolvers(resolversFor(withBothCaps()));
+    render(<App />);
+    const flowTitle = await screen.findByText('Cumulative flow');
+    const ageTitle = screen.getByText('Age distribution');
+    const flowBanner = screen.getByText(/cumulative flow chart/);
+    // The aging chart comes first — the page's order is tiles, aging, flow.
+    expect(isFollowedBy(ageTitle, flowTitle)).toBe(true);
+    // ...and the flow banner belongs to the flow chart, so it follows its
+    // title rather than separating it from the chart above.
+    expect(isFollowedBy(flowTitle, flowBanner)).toBe(true);
+    // Both caps are live, so both banners are on screen and each names its
+    // own block: five unreconcilable figures was one banner claiming both.
+    expect(screen.getByText(/Report capped at \d+ of 40 issues/)).toBeDefined();
+  });
+
+  it('★ states the denominator on the tiles and the footnote when the page was cut', async () => {
+    // "In flight 121 / Unfinished issues in this project." against a banner
+    // saying 500 of 900 issues were read: 121 is counted over the 500, and
+    // 121 + 379 excluded = 500, which the page said nowhere. A tile claiming
+    // the project while counting a page is the silent-ceiling failure with
+    // the banner still on screen.
+    setBridgeResolvers(resolversFor(withCap({ aggregatesCapped: false, total: 40 })));
+    render(<App />);
+    await screen.findByText('FLOW-1');
+    expect(screen.queryByText('Unfinished issues in this project.')).toBeNull();
+    expect(screen.getByText(/Unfinished among the \d+ of 40 issues read/)).toBeDefined();
+    expect(screen.getByText(/not moved in a fortnight.*of 40 issues read/)).toBeDefined();
+    // The two halves add up to the page in words.
+    expect(
+      screen.getByText(/\d+ of the \d+ issues read (is|are) finished and excluded/),
+    ).toBeDefined();
   });
 
   it('says nothing at all when the report is complete', async () => {

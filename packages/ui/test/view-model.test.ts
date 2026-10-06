@@ -10,7 +10,7 @@ import {
   surfaceStateOf,
   toProgressBanner,
   gadgetEmptyMessage,
-  toReadCapBanner,
+  toFlowChartBanner,
   toReportCapBanner,
   toCapNotice,
   toProjectOptions,
@@ -245,6 +245,23 @@ describe('report table model', () => {
 });
 
 describe('summary tiles', () => {
+  /**
+   * ★ Found by reading the deployed app, not the code: the Issue History
+   * page rendered "Changes 8564" beside its own banner reading "Report capped
+   * at 500 of 8,564 changes" — the same number, twice, formatted two ways,
+   * eighty pixels apart. Every count below a thousand hid it, which is every
+   * count the fixtures and both seeded projects produce for this tile.
+   *
+   * A figure is the one thing this product sells, and an unseparated
+   * five-digit one reads as a different number for the half-second it takes
+   * to count the digits.
+   */
+  it('★ separates thousands on a tile, like every other figure on the page', () => {
+    const tiles = toSummaryTiles(report({ matchingIssueCount: 12_345, issueCount: 9_999 }));
+    expect(tiles[0]?.value).toBe('12,345');
+    expect(tiles[0]?.hint).toContain('9,999 of them');
+  });
+
   it('★ reports working-hours medians in hours, matching the table', () => {
     const tiles = toSummaryTiles(
       report({
@@ -557,15 +574,108 @@ describe('★ a cap banner must not contradict itself', () => {
     // what was read, not what exists — and passing it as both halves of
     // `toCapBanner` produced "Report capped at 412 of 412 issues": a title
     // saying nothing was left out above a body saying the rest are missing.
-    const banner = toReadCapBanner({ capped: true, included: 412, noun: 'issues' });
+    const banner = toFlowChartBanner({
+      capped: true,
+      partial: false,
+      covered: 412,
+      total: 412,
+      rowLimit: 500,
+      rowNoun: 'status changes',
+      pageCapped: false,
+    });
     expect(banner).not.toBeNull();
-    expect(banner?.title).toBe('Showing 412 issues, and there are more');
+    expect(banner?.title).toContain('412 issues');
     expect(banner?.title).not.toContain('of 412');
     expect(banner?.body).toContain('lower bound');
   });
 
+  it('★ names the block it covers, not the page', () => {
+    // Observed on the deployed app against JFMB (900 issues): this banner
+    // landed between the two charts, under the "Age distribution" heading,
+    // and claimed "every figure on it is a lower bound" — while the tiles and
+    // the table above it come from a different resolver, a different table
+    // and a different cap. Five figures on one page that a reader cannot
+    // reconcile. A banner that covers one block has to name that block and
+    // leave the rest of the page to the banner that does cover it.
+    const banner = toFlowChartBanner({
+      capped: true,
+      partial: false,
+      covered: 102,
+      total: 102,
+      rowLimit: 500,
+      rowNoun: 'status changes',
+      pageCapped: true,
+    });
+    expect(banner?.title).toContain('cumulative flow chart');
+    // ★ The page-wide claim is the half that was false, and the assertion is
+    // on "every figure" rather than the old sentence verbatim: a reworded
+    // sentence that still indicts the whole page is the same defect.
+    expect(banner?.body).not.toContain('every figure');
+    expect(banner?.body).toContain('each figure in it is a lower bound');
+    // ★ The ceiling is 500 rows of `issue_status_visit`; 102 is a derived
+    // distinct-issue count. The old title counted issues while its body said
+    // "rows", so the one number on screen was not the one that fired.
+    expect(banner?.body).toContain('500 status changes');
+    // And it points at the banner that does speak for the rest of the page.
+    expect(banner?.body).toMatch(/capped separately/);
+  });
+
+  /**
+   * ★ The JFM defect, at the surface that has to say it.
+   *
+   * The chart was drawn from one issue in ten and claimed nothing. The
+   * remedy belongs in the sentence too: this is not something a reader can
+   * narrow their way out of, it is an index that has never written visits for
+   * those issues, and *Extend history* is what writes them.
+   */
+  it('★ says how much of the project the chart is drawn from, and what fixes it', () => {
+    const banner = toFlowChartBanner({
+      capped: false,
+      partial: true,
+      covered: 1,
+      total: 10,
+      rowLimit: 500,
+      rowNoun: 'status changes',
+      pageCapped: false,
+    });
+    expect(banner?.title).toBe('The cumulative flow chart above is drawn from 1 of 10 issues');
+    expect(banner?.body).toContain('The other 9 have no status history stored yet');
+    expect(banner?.body).toContain('Extend history');
+    // Not capped, so it must not claim a ceiling it never hit, and there is
+    // no page banner to point at.
+    expect(banner?.body).not.toContain('status changes it reads');
+    expect(banner?.body).not.toContain('capped separately');
+  });
+
+  it('states both problems in one banner rather than stacking two', () => {
+    const banner = toFlowChartBanner({
+      capped: true,
+      partial: true,
+      covered: 102,
+      total: 900,
+      rowLimit: 500,
+      rowNoun: 'status changes',
+      pageCapped: true,
+    });
+    // Coverage leads: it is the larger claim and the actionable one.
+    expect(banner?.title).toContain('drawn from 102 of 900 issues');
+    expect(banner?.body).toContain('Extend history');
+    expect(banner?.body).toContain('500 status changes');
+    expect(banner?.body).toContain('capped separately');
+  });
+
   it('is silent when nothing was truncated', () => {
-    expect(toReadCapBanner({ capped: false, included: 12, noun: 'issues' })).toBeNull();
+    expect(
+      toFlowChartBanner({
+        capped: false,
+        partial: false,
+        covered: 12,
+        total: 12,
+        rowLimit: 500,
+        rowNoun: 'status changes',
+        pageCapped: false,
+      }),
+    ).toBeNull();
   });
 
   it("★ picks by which of a report's two ceilings actually fired", () => {
@@ -689,7 +799,7 @@ describe('★ the summary tile hint has to be true on every surface', () => {
     // It read "1,500 issues … 200 of them are shown below" on a dashboard
     // gadget, above nothing at all.
     const tiles = toSummaryTiles(report({ issueCount: 200, matchingIssueCount: 1500 }));
-    expect(tiles[0]?.value).toBe('1500');
+    expect(tiles[0]?.value).toBe('1,500');
     expect(tiles[0]?.hint).not.toContain('below');
     expect(tiles[0]?.hint).toContain('cover 200 of them');
   });

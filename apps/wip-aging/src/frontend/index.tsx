@@ -22,7 +22,7 @@ import {
   toAgingTable,
   toAgingTiles,
   toReportCapBanner,
-  toReadCapBanner,
+  toFlowChartBanner,
   toFlowChartData,
   toProgressBanner,
   type MaybeProgress,
@@ -251,28 +251,52 @@ export const App = (): React.JSX.Element => {
           {flow !== null && !flow.unavailable ? (
             <Stack space="space.100">
               {/*
-                A capped flow chart is a lower bound like any other capped
-                report, and it said so nowhere: every other report in the
-                product renders `toCapBanner` and this one quietly did not.
+                ★ The chart renders BEFORE its banner, and the order is
+                load-bearing.
+
+                `ReportLineChart` is what carries the "Cumulative flow" title,
+                so with the banner first the banner landed between the two
+                charts — directly under "Age distribution" — and read as that
+                chart's banner. Driving the deployed app against JFMB showed
+                what that costs: a top banner about 500 of 900 issues, tiles
+                counted over those 500, and this one in the middle claiming
+                the page, five figures a reader cannot reconcile. A banner
+                that qualifies one block has to sit with that block's title,
+                and the only thing deciding that here is this index in the
+                `Stack` — hence the DOM-order assertion in
+                `test/frontend.test.tsx`, which is the only shape that catches
+                a move back.
+
+                It also means the banner speaks of the chart *above* it: the
+                `subject` below says so, because "below" would point the
+                reader at the issues table instead.
               */}
-              {/*
-                `toReadCapBanner`, not `toCapBanner`: the flow report has no
-                honest denominator — `issueCount` counts what was read, not
-                what exists — and passing it as both halves produced the
-                flatly self-contradicting "Report capped at 412 of 412
-                issues".
-              */}
-              <IndexingBanner
-                banner={toReadCapBanner({
-                  capped: flow.capped,
-                  included: flow.issueCount,
-                  noun: 'issues',
-                })}
-              />
               <ReportLineChart
                 data={toFlowChartData(flow)}
                 title="Cumulative flow"
                 subtitle="Issues in each status at the end of each day, last 30 days (UTC)."
+              />
+              {/*
+                One banner for this chart, carrying whichever of its two
+                honesty problems applies — see `toFlowChartBanner`. It covers
+                the chart above it and says so; the page's own cap banner at
+                the top speaks for the tiles and the table, which come from a
+                different resolver, a different table and a different cap.
+              */}
+              <IndexingBanner
+                banner={toFlowChartBanner({
+                  capped: flow.capped,
+                  partial: flow.partial,
+                  covered: flow.issueCount,
+                  total: flow.projectIssueCount,
+                  // The real ceiling, from the report that applied it. The
+                  // banner used to say "the maximum number of rows" with no
+                  // number, next to a title counting issues.
+                  rowLimit: flow.readRowLimit,
+                  rowNoun: 'status changes',
+                  // Only point at the page banner when the page has one.
+                  pageCapped: report.capped,
+                })}
               />
             </Stack>
           ) : null}

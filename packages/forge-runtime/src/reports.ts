@@ -482,6 +482,18 @@ export interface FlowReport {
    */
   readonly capped: boolean;
   /**
+   * The row ceiling that `capped` reports hitting — visit rows, not issues.
+   *
+   * The UI printed "This report reached the maximum number of rows it will
+   * read in one pass" with no number, having only `issueCount` to hand: a
+   * *derived* distinct-issue count. On JFMB that produced a title saying 102
+   * issues above a body about rows, where the ceiling that actually fired was
+   * 500 rows of `issue_status_visit`. A banner that cannot name the ceiling
+   * either stays vague or invents a figure, so the report that applied the
+   * limit reports it.
+   */
+  readonly readRowLimit: number;
+  /**
    * True when nothing has stored visits for this project.
    *
    * Distinct from "no work happened": one means the listing has not indexed
@@ -491,6 +503,34 @@ export interface FlowReport {
    * failure this product is built to avoid.
    */
   readonly unavailable: boolean;
+  /** Issues stored for this project, from a real count — the denominator. */
+  readonly projectIssueCount: number;
+  /**
+   * ★ True when the chart is drawn from fewer issues than the project holds.
+   *
+   * `unavailable` above is all-or-nothing, and that was not enough. Opening
+   * the deployed app showed why: on JFM the chart topped out at 1 where the
+   * project's answer is 6, because `issue_status_visit` held rows for one
+   * issue in ten — the visits table shipped after that project was indexed,
+   * and only one issue has had a status change since. One issue's rows make
+   * `unavailable` false, so a chart describing a tenth of the project
+   * rendered with the confidence of a complete one.
+   *
+   * Between "no visits at all" and "every issue has visits" there is a whole
+   * range where the shape on screen is an artefact of what has been indexed,
+   * and the reader has to be told. Recovery is **Extend history**, which
+   * replays every issue and writes the missing rows.
+   *
+   * ★ Why `issueCount` is a fair proxy for "issues this chart could see".
+   * Every issue's final visit is open-ended (`reconstruct` leaves the last
+   * interval's end `null`), and the query selects by overlap, so an issue
+   * with visit rows at all overlaps every window — including one that has not
+   * moved in years. An issue the window does not see is therefore an issue
+   * with no stored visits, not an issue that stood still. That is what makes
+   * this answerable without a second count over `issue_status_visit`, which
+   * on a metered database would be a real bill at scale.
+   */
+  readonly partial: boolean;
 }
 
 /** Midnight UTC on or before `ms`. */
@@ -546,6 +586,11 @@ export async function buildFlowReport(
   const lastDay = startOfDayUtc(now);
   const from = lastDay - (days - 1) * DAY_MS;
   const to = lastDay + DAY_MS;
+
+  // The denominator for `partial`. One COUNT per render, the same one
+  // `buildAgingReport` already pays on this page — and the alternative is a
+  // chart that cannot tell "not indexed yet" from "did not move".
+  const projectIssueCount = await store.countIssueMeta({ projectId });
 
   // ★ The visits are selected by the **window**, not by an issue page.
   //
@@ -614,9 +659,18 @@ export async function buildFlowReport(
     from,
     to,
     issueCount: issues.size,
+    projectIssueCount,
+    // Strictly fewer, so a fully indexed project is never qualified. Left to
+    // the UI to decide what to say when `capped` is also true: a cut read is
+    // already a lower bound and does not need a second banner saying so.
+    partial: issues.size < projectIssueCount,
     // The query stopped at its own cap, so there are visits in this window
     // it did not read and every band below is a lower bound.
     capped: visitsCapped,
+    // The clamped limit, not `options.limit`: the caller's number may be
+    // above `AGGREGATE_ROW_CAP`, and the ceiling the page names has to be the
+    // one that was actually applied.
+    readRowLimit: visitLimit,
     unavailable: visits.length === 0,
   };
 }
