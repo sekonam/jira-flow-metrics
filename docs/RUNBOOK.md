@@ -125,6 +125,29 @@ both fail against that iframe specifically, and the known-good CSV modal fails i
 is an automation limit rather than a product fault. Items 9 and 10, and every listing screenshot,
 still need a person at the screen.
 
+**Re-confirmed and sharpened 2026-10-09**, on a 2,000-issue project. The limit is a property of
+the automation transport connected that day, not of Forge, and it has now flipped twice — so test
+it before planning a session around it.
+
+- **Reading works, and goes deeper than expected.** `read_page` and `find` cross into the Forge
+  iframe: tiles, captions, cap banners, table cells, chart data points and pagination controls all
+  appear in the accessibility tree. Items 1, 2, 2a, 13 and 14 were confirmed this way for **all
+  five apps**, plus item 12 on `JFMB-2`. Prefer `find` — `read_page` output is swamped by Jira's
+  own sidebar.
+- **Clicking inside the iframe does not commit.** The pointer arrives (hovering a sortable header
+  produced its "Sort descending" tooltip) but nothing changes: pagination does not page, Export CSV
+  opens no modal, a sort does not apply. **Screenshots fail outright** —
+  `Page.captureScreenshot` times out on any Jira SPA tab, on a fresh tab, at any settle time.
+- So items **3, 6, 7, 9, 10** and item 8's badge, plus every control-driven claim (the filters, the
+  basis toggle, Extend history, saving an SLA goal, the gadget's Configure menu), still need a
+  person at the screen. `pnpm run e2e:ui` is the substitute for all of them except 9 and 10.
+- ⚠️ **Two traps in reading the tree.** It appears to omit **single-character** cell text — an em
+  dash, `0`, `8` — while keeping multi-character text (`0 B`, `<1m`), and it collapses a
+  **composite** table cell to its text alone, so the `x2` lozenge in item 8 is invisible even
+  though `components.test.tsx` asserts it renders and a human confirmed it on Forge. Do not report
+  a missing cell or badge on that evidence; check the local model first
+  (`node` against `packages/ui/dist/listing-models.js`). Both scares cost real time.
+
 Repeat steps 1-2 and 6-8 for each of the other four apps once listing 1 is confirmed.
 
 ---

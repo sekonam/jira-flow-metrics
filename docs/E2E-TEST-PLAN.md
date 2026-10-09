@@ -151,9 +151,20 @@ frontend rather than in `EmptySurface`.
 
 - **Issue-history pagination.** The table pages at 25 rows and the fixture does not reach a second
   page, so nothing can drive one. Closing it means a larger fixture, not another flow.
+  **Observed on a real tenant 2026-10-09** instead: JFMB at 2,000 issues holds 18,736 field
+  changes and the page renders 20 pages of pagination. Observed, not driven — a click inside a
+  Forge iframe does not commit from the automation (RUNBOOK § 3), so the control was read and not
+  operated. The gap in the _suite_ is unchanged.
 - **Cap banners.** Every cap on this fixture is orders of magnitude away — 500-row reports against
   four issues. The banner arithmetic is unit-tested; the banner _rendering_ is in the component
   suite; nothing exercises a real one end to end, and nothing on this fixture can.
+  **Closed against a real tenant 2026-10-09**, on five surfaces at once: the time-in-status page
+  (`Report capped at 500 of 2,000 issues`, with the `Issues` tile reading 2,000 above the caption
+  "These figures cover 500 of them"), the SLA page, WIP aging, issue history
+  (`capped at 500 of 18,736 changes`), and — the one that matters most, because it is the surface
+  someone who did not install the app ever sees — the **dashboard gadget**, which read
+  "Covering 200 of 2,000 issues, so every figure here is a lower bound." The _suite_ gap is
+  unchanged; what changed is that a real banner has now been read on the platform.
 - **CSV formula defusing, visible in the export modal.** No fixture value starts with `=`, `+`, `-`
   or `@`. The escaping is unit-tested in `packages/engine/test`; seeing it survive to the modal
   needs a fixture written for it.
