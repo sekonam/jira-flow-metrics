@@ -409,13 +409,30 @@ export class SqlMetricsStore implements MetricsStore {
     );
   }
 
+  /**
+   * Newest change first.
+   *
+   * ★ The ordering decides which changes a capped read *keeps*, not merely
+   * what order they appear in. Listing 5's page asks for 500 rows at offset 0
+   * and has no filter controls, so under `changed_at ASC` the only changes a
+   * reader could ever reach were the **oldest** 500 — on a real 18,736-change
+   * project (2026-10-09) that was everything from the first two seconds of the
+   * project's life, and nothing since. An audit log is opened to answer "what
+   * changed recently"; ascending order answered the opposite question and the
+   * cap banner, honest about magnitude, said nothing about the slice.
+   *
+   * `KEY (project_id, changed_at)` already covers this, so descending reads
+   * the same number of rows at the same cost — unlike the two sibling slice
+   * problems in TECHNICAL-SPEC § 11 item 14, which need a migration or an
+   * unbounded read and are therefore still only documented.
+   */
   async queryHistory(query: HistoryQuery): Promise<HistoryRecord[]> {
     const { clauses, params } = historyClauses(query);
     const limit = clampLimit(query.limit ?? STORE_MAX_ROWS);
     const offset = clampOffset(query.offset ?? 0);
     const rows = await this.sql.query<Record<string, unknown>>(
       `SELECT * FROM issue_history WHERE ${clauses.join(' AND ')}
-       ORDER BY changed_at ASC, change_id ASC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
+       ORDER BY changed_at DESC, change_id DESC LIMIT ${String(limit)} OFFSET ${String(offset)}`,
       params,
     );
     return rows.map(historyFromRow);

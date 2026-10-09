@@ -260,7 +260,12 @@ Niche leader: SaaSJet Issue History, 3,128 installs at $750/50 users.
 ### In scope
 
 - Every field change across every issue in a project, flattened to one row per change.
-- Filters: field, author, date window, value substring, issue key.
+- Filters: field, author, date window, value substring, issue key. ⚠️ **Not shipped in v1** — the
+  engine and the resolver support field/author/date filtering, the project page renders no filter
+  controls, and the Marketplace copy was reworded on 2026-09-21 to claim none
+  (`docs/LISTING-COPY-issue-history.md`, note 2). This line describes the intended scope, not what
+  ships; on-page controls are a v1.1 item. Until they exist the report shows the **most recent**
+  500 changes and says so in its cap banner.
 - "Which fields churn most" summary.
 - CSV export; dashboard gadget.
 

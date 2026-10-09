@@ -510,14 +510,35 @@ export function toCapBanner(input: {
   included: number;
   total: number;
   noun: string;
+  /**
+   * Which rows were kept, named — "most recent", say.
+   *
+   * A cap banner that gives only a count says the figures are low; it does
+   * not say the slice is skewed, and on a report whose ordering decides what
+   * a reader can reach at all, that is the more useful half. Omitted where
+   * the page's ordering carries no such meaning.
+   */
+  slice?: string;
+  /**
+   * What the reader can do about it, or `null` where there is nothing.
+   *
+   * ★ The default tells them to narrow the filters, which was printed on the
+   * one page in the product that **has** no filter controls — advice that
+   * cannot be followed reads as the reader's failure rather than the page's.
+   */
+  remedy?: string | null;
 }): ProgressBanner | null {
   if (!input.capped) return null;
+  const rest =
+    input.slice === undefined
+      ? `The rest are beyond this report's page size`
+      : `These are the ${input.slice} ${input.noun}; the rest are beyond this report's page size`;
+  const remedy =
+    input.remedy === undefined ? 'Narrow the filters to cover the remainder.' : input.remedy;
   return {
     appearance: 'warning',
     title: `Report capped at ${input.included.toLocaleString('en-GB')} of ${input.total.toLocaleString('en-GB')} ${input.noun}`,
-    body:
-      `The rest are beyond this report's page size, so every figure on this page is a ` +
-      'lower bound. Narrow the filters to cover the remainder.',
+    body: `${rest}, so every figure on this page is a lower bound.${remedy === null ? '' : ` ${remedy}`}`,
     showSpinner: false,
     showRetry: false,
     fraction: null,

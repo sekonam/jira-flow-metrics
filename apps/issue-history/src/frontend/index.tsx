@@ -226,6 +226,10 @@ export const App = (): React.JSX.Element => {
               included: report.total,
               total: report.totalMatching,
               noun: 'changes',
+              // This page carries no filter controls, so it names the slice
+              // it kept and offers no remedy it cannot honour.
+              slice: 'most recent',
+              remedy: null,
             })}
           />
           <SummaryTiles tiles={toHistoryTiles(report)} />

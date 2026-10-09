@@ -93,6 +93,21 @@ describe('★ issue-history: a capped report says so on both surfaces', () => {
     expect(await screen.findByText(/of 99 changes/)).toBeDefined();
   });
 
+  it('★ names the slice it kept, and withholds advice this page cannot take', async () => {
+    // Two defects in one sentence, both only visible at volume. The page has
+    // no filter controls, yet the shared banner's default body told the
+    // reader to "Narrow the filters to cover the remainder" — advice that
+    // cannot be followed reads as the reader's failure rather than the
+    // page's. And a banner that gives only a count says the figures are low
+    // without saying the slice is skewed, which on this report is the half
+    // that matters: it is the ordering, not the cap, that decides whether a
+    // reader can reach anything recent. See `history-slice.test.ts`.
+    setBridgeResolvers(resolversFor(withCap(18_736)));
+    render(<App />);
+    expect(await screen.findByText(/These are the most recent changes/)).toBeDefined();
+    expect(screen.queryByText(/Narrow the filters/)).toBeNull();
+  });
+
   it('says nothing when the report is complete', async () => {
     // A spurious banner is as wrong as a missing one.
     setBridgeResolvers(resolversFor(scenarios.populated.responses));

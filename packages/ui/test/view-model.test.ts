@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BackfillProgress, JiraProjectRef, StatusReport } from '@jfm/engine';
 import {
   formatBytes,
+  toCapBanner,
   formatCell,
   formatDate,
   formatDateTime,
@@ -813,5 +814,34 @@ describe('★ the summary tile hint has to be true on every surface', () => {
     expect(tiles[0]?.value).toBe('1,500');
     expect(tiles[0]?.hint).not.toContain('below');
     expect(tiles[0]?.hint).toContain('cover 200 of them');
+  });
+});
+
+describe('the cap banner names its slice', () => {
+  it('★ names the rows it kept and withholds advice the page cannot take', () => {
+    // Listing 5 has no filter controls, yet the shared default told its
+    // reader to narrow them. And a banner giving only a count says the
+    // figures are low without saying the slice is skewed — on an audit log
+    // whose ordering decides what is reachable at all, that is the half that
+    // matters. See `packages/forge-runtime/test/history-slice.test.ts`.
+    const banner = toCapBanner({
+      capped: true,
+      included: 500,
+      total: 18_736,
+      noun: 'changes',
+      slice: 'most recent',
+      remedy: null,
+    });
+
+    expect(banner?.title).toBe('Report capped at 500 of 18,736 changes');
+    expect(banner?.body).toContain('These are the most recent changes');
+    expect(banner?.body).toContain('lower bound');
+    expect(banner?.body).not.toContain('Narrow the filters');
+  });
+
+  it('still tells a page that has filters to use them', () => {
+    const banner = toCapBanner({ capped: true, included: 500, total: 2_000, noun: 'issues' });
+    expect(banner?.body).toContain('Narrow the filters to cover the remainder.');
+    expect(banner?.body).not.toContain('These are the');
   });
 });

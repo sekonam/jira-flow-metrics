@@ -811,22 +811,27 @@ the real `invoke`, its payload validation and its rate limiter all run.
       consumption-priced platform). Until one is chosen, the banner above is what carries the
       warning.
 
-    - **`queryHistory` orders `changed_at ASC`** — so listing 5's page, which asks for 500 rows at
-      offset 0 and exposes no filters, shows the **oldest** 500 changes in the project. Observed on
-      a real tenant 2026-10-09: JFMB holds 18,736 changes, and the 500 reachable ones were all from
-      the first two seconds of 11 September. Three consequences, in increasing order of how much
-      they matter: the twenty pages of pagination all sit inside that slice, so nothing newer is
-      reachable by clicking; the "busiest field" tile is computed over it (`175 changes across 46
-issues`, beside a true total of 18,736); and an audit log whose reachable rows are its oldest
-      answers the opposite of the question it is opened with, which is "what changed recently".
-      The cap banner is honest about the _magnitude_ — every figure is a lower bound — and says
-      nothing about the _slice_, which is the same omission item 14 fixed on the flow report.
-      Unlike its two siblings above, the fix here is cheap: `KEY (project_id, changed_at)` already
-      exists, so `DESC` reads the same number of rows at the same cost and needs no migration. It
-      is listed here rather than applied because it changes which rows listing 5 shows and the
-      order of its CSV, which is a product decision, not a correctness one — the recommendation is
-      to take it, together with the v1.1 filter controls that make any slice reachable
-      (`docs/LISTING-COPY-issue-history.md`, note 2).
+    - **`queryHistory` ordered `changed_at ASC` — fixed 2026-10-09.** Listing 5's page asks for
+      500 rows at offset 0 and exposes no filters, so the ordering decided not the order of the
+      rows but _which_ rows a reader could reach: the **oldest** 500. Observed on a real tenant —
+      JFMB holds 18,736 changes and every reachable one came from the first two seconds of
+      11 September, with the twenty pages of pagination all inside that slice and the "busiest
+      field" tile describing it beside a true total. An audit log is opened to ask what changed
+      _recently_.
+
+      Fixed rather than deferred, unlike the two siblings above: `KEY (project_id, changed_at)`
+      already covers it, so `DESC` reads the same rows at the same cost with no migration. Two
+      things went with it. The cap banner now **names the slice** — "These are the most recent
+      changes" — because a count alone says the figures are low without saying they are skewed.
+      And it no longer tells this page's reader to "Narrow the filters to cover the remainder":
+      listing 5 has no filter controls, and advice that cannot be followed reads as the reader's
+      failure rather than the page's. `toCapBanner` took `slice` and `remedy` for both.
+
+      Nothing had asserted the ordering — the suite stayed green with it reversed, which is how it
+      reached a real tenant. `packages/forge-runtime/test/history-slice.test.ts` now pins the
+      behaviour against `MemoryStore` **and** the statement text against `SqlMetricsStore`, whose
+      test double cannot sort; the banner wording is pinned at the surface that renders it, in
+      `apps/issue-history/test/frontend.test.tsx`.
 
 ---
 

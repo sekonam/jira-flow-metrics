@@ -247,8 +247,10 @@ export class MemoryStore implements MetricsStore {
   }
 
   queryHistory(query: HistoryQuery): Promise<HistoryRecord[]> {
+    // Newest first, matching `SqlMetricsStore` — the ordering decides which
+    // changes survive a capped read. See that store's `queryHistory`.
     const rows = this.matchingHistory(query).sort(
-      (a, b) => a.at - b.at || a.changeId.localeCompare(b.changeId),
+      (a, b) => b.at - a.at || b.changeId.localeCompare(a.changeId),
     );
     const offset = query.offset ?? 0;
     const limit = query.limit ?? rows.length;
