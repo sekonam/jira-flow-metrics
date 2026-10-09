@@ -99,14 +99,19 @@ function makeExpect(flowName) {
  * the flow: a React error boundary or a rejected promise can leave a screen
  * that looks fine and is not.
  */
-async function openSurface(context, base, { screen, app }) {
+async function openSurface(context, base, { screen, app, fail }) {
   const page = await context.newPage();
   const problems = [];
   page.on('console', (m) => {
     if (m.type() === 'error') problems.push(`console: ${m.text()}`);
   });
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-  await page.goto(`${base}/?screen=${screen}&live=${app}`, { waitUntil: 'domcontentloaded' });
+  // `fail` makes the server refuse one resolver, so a flow can drive the
+  // error state a user actually reaches. See `harness/main.tsx`.
+  const failParam = fail === undefined ? '' : `&fail=${fail}`;
+  await page.goto(`${base}/?screen=${screen}&live=${app}${failParam}`, {
+    waitUntil: 'domcontentloaded',
+  });
   await page.waitForSelector('body[data-harness-ready="true"]', { timeout: 30_000 });
   return { page, problems };
 }
@@ -118,7 +123,13 @@ async function runFlow(browser, base, flow) {
   try {
     const { page, problems } = await openSurface(context, base, flow);
     await flow.run({ page, expect });
-    if (problems.length > 0) throw new Error(`${flow.name}: ${problems.join('; ')}`);
+    // A flow that forced a resolver to fail has asked for the 500 the
+    // browser then logs; everything *else* on its console still counts.
+    const unexpected =
+      flow.fail === undefined
+        ? problems
+        : problems.filter((p) => !/failed to load resource|forced failure|500/i.test(p));
+    if (unexpected.length > 0) throw new Error(`${flow.name}: ${unexpected.join('; ')}`);
     return { name: flow.name, ok: true, ms: Date.now() - started };
   } catch (error) {
     return {
@@ -171,7 +182,18 @@ async function main() {
             req.on('end', () => {
               void (async () => {
                 try {
-                  const { app, key, payload } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                  const { app, key, payload, fail } = JSON.parse(
+                    Buffer.concat(chunks).toString('utf8'),
+                  );
+                  // The page asked for this key to fail — see `main.tsx`.
+                  // Refused here rather than in `callLiveResolver` so the
+                  // product's own resolver layer stays untouched by the
+                  // harness's ability to break it.
+                  if (typeof fail === 'string' && fail === key) {
+                    res.statusCode = 500;
+                    res.end(`forced failure of ${key}`);
+                    return;
+                  }
                   const result = await callLiveResolver(app, key, payload);
                   res.setHeader('content-type', 'application/json');
                   res.end(JSON.stringify(result ?? null));

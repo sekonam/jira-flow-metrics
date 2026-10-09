@@ -69,11 +69,21 @@ async function loadScenarios(): Promise<Readonly<Record<string, Scenario>>> {
  * about the resolver layer is simulated in the browser.
  */
 function liveResolvers(app: string): Record<string, (payload: unknown) => Promise<unknown>> {
+  // ★ `?fail=<key>` makes the server refuse that one resolver.
+  //
+  // The error state is designed, screenshotted and asserted by
+  // `screen-contract.tsx` — and nothing proved a *user* could arrive at it,
+  // which `docs/E2E-TEST-PLAN.md` § 8 names as the category the one real
+  // defect of that pass came from. Carried on the page's own URL and sent
+  // with each request rather than armed as server state, because flows share
+  // one runtime per app and run several at a time: a global "fail the next
+  // call" would land in a neighbour's request.
+  const fail = new URLSearchParams(window.location.search).get('fail');
   const call = async (key: string, payload: unknown): Promise<unknown> => {
     const response = await fetch('/__resolver', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ app, key, payload }),
+      body: JSON.stringify({ app, key, payload, fail }),
     });
     if (!response.ok) throw new Error(`live resolver ${key} failed: ${String(response.status)}`);
     return await response.json();

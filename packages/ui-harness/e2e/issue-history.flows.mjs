@@ -311,6 +311,65 @@ export const flows = [
      * value harmlessly whatever it says, and the whole risk lives in what a
      * spreadsheet does with the download.
      */
+    /**
+     * The error state, reached the way a user reaches it.
+     *
+     * `screen-contract.tsx` proves the error screen renders and axe-audits
+     * it. It cannot prove a person can arrive at one, or that what they find
+     * there is usable — and `docs/E2E-TEST-PLAN.md` § 8 records that this
+     * distinction is where the one real defect of that pass came from: a
+     * state that rendered correctly and said something false about why the
+     * reader was looking at it.
+     *
+     * So: the report resolver is refused, and this asserts the page says so
+     * plainly, offers the way out, and does not pretend to hold data.
+     */
+    name: 'history: a refused report says so, and offers a way out',
+    app: 'issue-history',
+    screen: 'issue-history-page',
+    fail: 'getHistoryReport',
+    async run({ page, expect }) {
+      const body = page.locator('body');
+      await body.waitFor({ state: 'visible', timeout: 30_000 });
+      const text = await body.innerText();
+
+      expect.contains(
+        text,
+        'could not be loaded',
+        'the page states that the report failed, rather than leaving the reader on an empty ' +
+          'screen to decide whether the project simply has no history',
+      );
+
+      // ★ The dangerous confusion, in the negative. An error must not be
+      // dressed as an empty or unindexed project: "no changes yet" on a
+      // project with 18,736 of them is a false statement, and the fix it
+      // invites — Start indexing — re-walks the whole project from Jira.
+      expect.absent(
+        /not indexed|no changes|nothing to show/i.test(text),
+        'a failed fetch is being reported as an empty or unindexed project, which is a ' +
+          'statement about the data rather than about the request',
+      );
+
+      const retry = page.getByRole('button', { name: /retry|try again/i });
+      expect.equal(
+        await retry.count(),
+        1,
+        'the error offers exactly one way forward — a retryable failure with no retry leaves ' +
+          'the reader reloading the whole Jira page to find out whether it was transient',
+      );
+
+      // The table must not be on screen beside the error: half a report under
+      // a failure notice is the worst of both, and it is what rendering the
+      // error without clearing the last good state produces.
+      expect.equal(
+        await page.locator('table tbody tr').count(),
+        0,
+        'rows are on screen under an error notice, so the page is showing data it has just ' +
+          'said it could not load',
+      );
+    },
+  },
+  {
     name: 'history: a summary that would execute as a formula is defused in the export',
     app: 'issue-history',
     screen: 'issue-history-page',
