@@ -347,7 +347,7 @@ describe('capped reports carry the real total', () => {
         new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
         { migrate: () => Promise.resolve() },
       ),
-      { projectId: '10000', basis: 'business', limit: issues, offset: 0 },
+      { projectId: '10000', basis: 'business', limit: issues, offset: 0, now: NOW },
     );
 
     // Flagged, because at exactly the ceiling there is no way to know — and
@@ -431,6 +431,7 @@ describe('capped reports carry the real total', () => {
       { migrate: () => Promise.resolve() },
     );
     const report = await buildStatusReport(sqlStore, {
+      now: NOW,
       projectId: '10000',
       basis: 'business',
       limit: issues,
@@ -453,6 +454,7 @@ describe('capped reports carry the real total', () => {
       { migrate: () => Promise.resolve() },
     );
     const complete = await buildStatusReport(small, {
+      now: NOW,
       projectId: '10000',
       basis: 'business',
       limit: 100,
@@ -595,7 +597,7 @@ describe('capped reports carry the real total', () => {
         new LimitHonouringSqlExecutor({ issue_meta: metaRows, issue_status_agg: aggRows }),
         { migrate: () => Promise.resolve() },
       ),
-      { projectId: '10000', basis: 'business', limit: issues, offset: 0 },
+      { projectId: '10000', basis: 'business', limit: issues, offset: 0, now: NOW },
     );
     expect(report.capped).toBe(false);
     expect(report.aggregatesCapped).toBe(true);
@@ -632,6 +634,7 @@ describe('capped reports carry the real total', () => {
     // the same writer as the other four — including the line ending, which
     // was a bare LF in a CRLF document.
     const report = await buildStatusReport(await threeIssueStore(), {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 2,

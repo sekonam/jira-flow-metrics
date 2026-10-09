@@ -254,6 +254,11 @@ export class ListingRuntime {
     const report = await buildStatusReport(this.deps.store, {
       projectId: request.projectId,
       basis: request.basis ?? settings.defaultBasis,
+      // Report time and the project's calendar, so a status an issue is
+      // still sitting in is measured up to now rather than up to whenever
+      // the row was last written. See `topUpOpenVisit`.
+      now: this.clock.now(),
+      calendar: settings.calendar,
       limit: clamp(request.limit ?? 500, 1, 500),
       offset: Math.max(0, request.offset ?? 0),
       ...(request.assigneeAccountIds === undefined
@@ -311,7 +316,8 @@ export class ListingRuntime {
   /** Listing 3 — how long each unfinished issue has sat where it is. */
   async agingReport(projectId: string, limit = 500): Promise<AgingReport> {
     await this.deps.store.migrate();
-    return buildAgingReport(this.deps.store, projectId, this.clock.now(), limit);
+    const settings = await this.deps.settings.get(projectId);
+    return buildAgingReport(this.deps.store, projectId, this.clock.now(), limit, settings.calendar);
   }
 
   /**
@@ -342,6 +348,9 @@ export class ListingRuntime {
       // resolution instant is on time for one team and late for another.
       // See `evaluateDueDate`.
       settings.calendar.timeZone,
+      // The same calendar the consumed figure is expressed in, so the open
+      // visit is advanced on the working clock rather than the wall clock.
+      settings.calendar,
     );
   }
 

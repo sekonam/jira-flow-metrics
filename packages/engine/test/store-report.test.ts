@@ -378,6 +378,7 @@ describe('status report assembly', () => {
   it('lays statuses out in workflow order and fills gaps with zero', async () => {
     const store = await seededStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -394,6 +395,7 @@ describe('status report assembly', () => {
   it('surfaces incomplete history rather than hiding it', async () => {
     const store = await seededStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -406,6 +408,7 @@ describe('status report assembly', () => {
   it('switches between elapsed and business bases', async () => {
     const store = await seededStore();
     const business = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'business',
       limit: 10,
@@ -418,6 +421,7 @@ describe('status report assembly', () => {
   it('★ says when the project holds more issues than the page could fetch', async () => {
     const store = await seededStore();
     const capped = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 1,
@@ -431,6 +435,7 @@ describe('status report assembly', () => {
     expect(capped.rows).toHaveLength(1);
 
     const complete = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -443,6 +448,7 @@ describe('status report assembly', () => {
   it('summarises each status across the result set', async () => {
     const store = await seededStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -455,6 +461,7 @@ describe('status report assembly', () => {
   it('filters by assignee, issue type and creation window', async () => {
     const store = await seededStore();
     const byAssignee = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -464,6 +471,7 @@ describe('status report assembly', () => {
     expect(byAssignee.rows.map((r) => r.issueId)).toEqual(['2']);
 
     const byType = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -473,6 +481,7 @@ describe('status report assembly', () => {
     expect(byType.rows.map((r) => r.issueId)).toEqual(['1']);
 
     const byWindow = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -482,6 +491,7 @@ describe('status report assembly', () => {
     expect(byWindow.rows.map((r) => r.issueId)).toEqual(['2']);
 
     const empty = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -495,6 +505,7 @@ describe('status report assembly', () => {
   it('carries the visit count that Jira does not report', async () => {
     const store = await seededStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -538,6 +549,7 @@ describe('CSV export', () => {
   it('renders a status report with durations, visit counts and completeness', async () => {
     const store = await seededStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 10,
@@ -559,6 +571,7 @@ describe('CSV export', () => {
   it('supports the three duration formats', async () => {
     const store = await seededStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 1,
@@ -712,8 +725,8 @@ describe('★ report filters are evaluated by the store, not after the page', ()
       assigneeAccountIds: ['acc-anna'],
       limit: 2,
     };
-    const first = await buildStatusReport(store, { ...query, offset: 0 });
-    const second = await buildStatusReport(store, { ...query, offset: 2 });
+    const first = await buildStatusReport(store, { now: NOW, ...query, offset: 0 });
+    const second = await buildStatusReport(store, { now: NOW, ...query, offset: 2 });
 
     // Anna has issues 1, 3 and 5. Fetching `limit + offset` rows unfiltered
     // and slicing afterwards gave page two of [1,3] — rows 2 and 3 of a
@@ -726,6 +739,7 @@ describe('★ report filters are evaluated by the store, not after the page', ()
   it('counts the matching issues, not the ones inside the fetched window', async () => {
     const store = await mixedStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       assigneeAccountIds: ['acc-anna'],
@@ -744,6 +758,7 @@ describe('★ report filters are evaluated by the store, not after the page', ()
   it('does not call a filtered report capped when every match is on the page', async () => {
     const store = await mixedStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       issueTypeIds: ['10003'],
@@ -761,6 +776,7 @@ describe('★ report filters are evaluated by the store, not after the page', ()
   it('filters on created date as a half-open range', async () => {
     const store = await mixedStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       createdFrom: T('2026-03-02T00:00:00Z'),
@@ -776,6 +792,7 @@ describe('★ report filters are evaluated by the store, not after the page', ()
   it('treats an empty id list as no filter rather than as matching nothing', async () => {
     const store = await mixedStore();
     const report = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       assigneeAccountIds: [],
@@ -791,6 +808,7 @@ describe('★ report filters are evaluated by the store, not after the page', ()
       agg('7', '3', 1),
     ]);
     const filtered = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       assigneeAccountIds: ['acc-anna'],
@@ -798,6 +816,7 @@ describe('★ report filters are evaluated by the store, not after the page', ()
       offset: 0,
     });
     const unfiltered = await buildStatusReport(store, {
+      now: NOW,
       projectId: '10000',
       basis: 'elapsed',
       limit: 500,

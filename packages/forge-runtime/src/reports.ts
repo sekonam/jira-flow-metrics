@@ -14,6 +14,8 @@ import {
   type StatusId,
   type StatusCategory,
   type StatusMetaRow,
+  topUpOpenVisit,
+  type WorkingCalendar,
   type WorklogAggregateResult,
   type WorklogGroupBy,
 } from '@jfm/engine';
@@ -209,6 +211,11 @@ export async function buildAgingReport(
   projectId: string,
   now: Millis,
   limit = 500,
+  // Optional, and last, so existing positional callers keep compiling. The
+  // runtime supplies the project's configured calendar; without it the
+  // working-hours column falls back to elapsed time, exactly as
+  // `computeTimeInStatus` does with no calendar.
+  calendar?: WorkingCalendar,
 ): Promise<AgingReport> {
   const metas = await store.queryIssueMeta({ projectId, limit });
   const projectIssueCount = await store.countIssueMeta({ projectId });
@@ -241,10 +248,18 @@ export async function buildAgingReport(
       statusName: statusId === null ? 'Unknown' : (byId.get(statusId)?.name ?? statusId),
       statusCategory: statusId === null ? null : (byId.get(statusId)?.category ?? 'unknown'),
       ageInStatusMs: enteredAt === null ? 0 : Math.max(0, now - enteredAt),
-      // The stored `business_ms` is the *closed* portion of the visit, so the
-      // still-running part is added as elapsed. Reported as an approximation
-      // rather than silently blended — see docs/PRODUCT-SPEC.md.
-      ageInStatusBusinessMs: aggregate?.businessMs ?? 0,
+      // ★ The stored `business_ms` covers the visit only up to the row's own
+      // `updatedAt`, so it has to be advanced to report time like every other
+      // reading of an open visit — see `topUpOpenVisit`.
+      //
+      // The comment that stood here claimed the still-running part "is added
+      // as elapsed", which the code never did: it returned the stored figure
+      // untouched. That left the elapsed column (computed live from
+      // `enteredAt`) and the working-hours column beside it measuring two
+      // different instants — observed on 2026-10-09 as `JFMB-2` reading
+      // 27d 20h elapsed next to 66h working, where roughly 159h was due.
+      ageInStatusBusinessMs:
+        aggregate === undefined ? 0 : topUpOpenVisit(aggregate, now, calendar).businessMs,
       ageTotalMs: Math.max(0, now - meta.createdAt),
       enteredStatusAt: enteredAt,
     });
@@ -339,6 +354,11 @@ export async function buildSlaReport(
   // to UTC keeps every existing caller behaving as before; the runtime passes
   // the configured calendar's zone, which is the one the customer set.
   timeZone = 'UTC',
+  // Optional, and last, so the existing positional callers keep compiling.
+  // Supplied by the runtime, which holds the project's configured calendar;
+  // without it the top-up below falls back to elapsed time, which is what
+  // `computeTimeInStatus` does with no calendar and so keeps the two agreeing.
+  calendar?: WorkingCalendar,
 ): Promise<SlaReport> {
   const metas = await store.queryIssueMeta({ projectId, limit });
   const projectIssueCount = await store.countIssueMeta({ projectId });
@@ -352,7 +372,13 @@ export async function buildSlaReport(
   const consumedByIssue = new Map<string, number>();
   for (const row of aggregates) {
     if (counted.size > 0 && !counted.has(row.statusId)) continue;
-    consumedByIssue.set(row.issueId, (consumedByIssue.get(row.issueId) ?? 0) + row.businessMs);
+    // ★ The SLA clock has to keep running while the issue sits in a counted
+    // status. The stored `businessMs` stopped at the row's own `updatedAt`,
+    // so without this an issue that has since burned past its target still
+    // reads as compliant — the one number this listing sells, wrong in the
+    // direction that hides a breach. See `topUpOpenVisit`.
+    const topped = topUpOpenVisit(row, now, calendar);
+    consumedByIssue.set(row.issueId, (consumedByIssue.get(row.issueId) ?? 0) + topped.businessMs);
   }
 
   const rows: SlaReportRow[] = metas.map((meta) => {

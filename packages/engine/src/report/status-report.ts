@@ -5,6 +5,8 @@ import {
   type StatusMetaRow,
 } from '../store/types.js';
 import { summariseDurations, type DistributionSummary } from '../metrics/cycle-time.js';
+import { topUpOpenVisit } from './open-visit.js';
+import type { WorkingCalendar } from '../time/calendar.js';
 import type { DurationBasis, Millis, StatusCategory, StatusId } from '../types.js';
 
 /**
@@ -111,6 +113,20 @@ export interface StatusReportQuery {
   readonly issueTypeIds?: readonly string[];
   readonly createdFrom?: Millis;
   readonly createdTo?: Millis;
+  /**
+   * Report time, used to advance the visit each issue is still sitting in.
+   *
+   * Required rather than defaulted to `Date.now()`: a report whose clock is
+   * implicit is a report whose staleness nobody can test. See
+   * `topUpOpenVisit`.
+   */
+  readonly now: Millis;
+  /**
+   * The calendar the working-hours basis is expressed in. Omitted only by
+   * callers that have none, where business time collapses onto elapsed time
+   * exactly as it does in `computeTimeInStatus`.
+   */
+  readonly calendar?: WorkingCalendar;
 }
 
 export async function buildStatusReport(
@@ -180,7 +196,14 @@ export async function buildStatusReport(
     const entriesByStatus: Record<StatusId, number> = {};
     let total = 0;
     for (const row of byIssue.get(meta.issueId) ?? []) {
-      const value = query.basis === 'business' ? row.businessMs : row.elapsedMs;
+      // ★ The stored row is only correct as of its own `updatedAt`. An issue
+      // that has not moved since it was indexed emits no event, so nothing
+      // re-ingests it and the status it is *currently* in keeps the duration
+      // it had then. Topping up here rather than at the store boundary keeps
+      // one rule — the table, the totals, the percentiles below and the CSV
+      // built from this same report all read the same number.
+      const topped = topUpOpenVisit(row, query.now, query.calendar);
+      const value = query.basis === 'business' ? topped.businessMs : topped.elapsedMs;
       byStatus[row.statusId] = value;
       entriesByStatus[row.statusId] = row.entries;
       total += value;

@@ -35,6 +35,7 @@ export * from './ingest/backfill.js';
 export * from './ingest/incremental.js';
 
 export * from './report/status-report.js';
+export * from './report/open-visit.js';
 export * from './export/csv.js';
 export * from './cost/model.js';
 export * from './config/pricing.js';
