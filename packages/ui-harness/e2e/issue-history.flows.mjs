@@ -297,6 +297,48 @@ export const flows = [
      * own history at all — so the header row is asserted exactly, and the
      * time-in-status header "Current status" is asserted absent.
      */
+    /**
+     * A summary that would execute in Excel leaves as text.
+     *
+     * `csvCell` prefixes a quote to any cell opening `=`, `+`, `-`, `@`, tab
+     * or CR. That was unit-tested on the function and nothing carried a
+     * dangerous value all the way into the file a user receives — the gap
+     * `docs/E2E-TEST-PLAN.md` records as needing a fixture. `FLOW-2` now has
+     * a summary change to a real `HYPERLINK` formula, and this follows it
+     * through the report, the table and the export modal.
+     *
+     * The assertion is on the *file*, not the screen: the table renders the
+     * value harmlessly whatever it says, and the whole risk lives in what a
+     * spreadsheet does with the download.
+     */
+    name: 'history: a summary that would execute as a formula is defused in the export',
+    app: 'issue-history',
+    screen: 'issue-history-page',
+    async run({ page, expect }) {
+      await page.getByRole('button', { name: 'Export CSV' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor({ state: 'visible', timeout: 15_000 });
+      const text = await dialog.innerText();
+
+      expect.contains(
+        text,
+        'HYPERLINK',
+        'the formula-shaped summary reached the export at all — without it this flow would ' +
+          'pass by testing nothing, which is how the escaping went unproven in the first place',
+      );
+      expect.contains(
+        text,
+        "'=HYPERLINK",
+        'the cell is prefixed with a quote, so Excel reads it as text rather than running it',
+      );
+      expect.absent(
+        /(^|[,\n])=HYPERLINK/.test(text),
+        'an unescaped "=HYPERLINK" opens a cell in the file, so the export would execute in ' +
+          'Excel — CSV injection, out of an issue summary anyone with create permission can set',
+      );
+    },
+  },
+  {
     name: 'history: Export CSV hands over the history report, not the time-in-status one',
     app: 'issue-history',
     screen: 'issue-history-page',

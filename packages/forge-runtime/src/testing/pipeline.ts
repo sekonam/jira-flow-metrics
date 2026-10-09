@@ -206,11 +206,38 @@ export const IN_FLIGHT_ISSUES: readonly FixtureIssue[] = [
         status: { id: '10100', name: 'Blocked', statusCategory: { key: 'new' } },
         project: { id: PIPELINE_PROJECT_ID, key: 'FLOW' },
       },
-      changelog: { total: 2, values: [], isLast: false },
+      changelog: { total: 3, values: [], isLast: false },
     },
     changelog: [
       statusChange('2026-03-03T11:00:00.000+0000', TO_DO, IN_PROGRESS),
       statusChange('2026-03-03T14:00:00.000+0000', IN_PROGRESS, BLOCKED),
+      // ★ A summary a spreadsheet would execute.
+      //
+      // `csvCell` prefixes a quote to anything opening with `=`, `+`, `-`,
+      // `@`, tab or CR, so an issue summary cannot run as a formula when the
+      // export is opened in Excel. That escaping was unit-tested and nothing
+      // carried a dangerous value far enough to prove it survives into the
+      // file a user actually receives — named as an open gap in
+      // `docs/E2E-TEST-PLAN.md`, which says it needs a fixture rather than
+      // another flow. This is that fixture. The value is a real Excel
+      // formula, not a token starting with `=`, so the test fails in the way
+      // the threat actually arrives.
+      {
+        id: '930303150',
+        created: '2026-03-03T15:00:00.000+0000',
+        author: { accountId: 'acc-anna', displayName: 'Anna Weber', active: true },
+        items: [
+          {
+            field: 'summary',
+            fieldtype: 'jira',
+            fieldId: 'summary',
+            from: null,
+            fromString: 'Retry failed webhook deliveries',
+            to: null,
+            toString: '=HYPERLINK("https://example.invalid/x","payroll")',
+          },
+        ],
+      },
     ],
     worklogs: [],
   },
