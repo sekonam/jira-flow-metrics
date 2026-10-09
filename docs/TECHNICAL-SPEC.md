@@ -811,6 +811,23 @@ the real `invoke`, its payload validation and its rate limiter all run.
       consumption-priced platform). Until one is chosen, the banner above is what carries the
       warning.
 
+    - **`queryHistory` orders `changed_at ASC`** — so listing 5's page, which asks for 500 rows at
+      offset 0 and exposes no filters, shows the **oldest** 500 changes in the project. Observed on
+      a real tenant 2026-10-09: JFMB holds 18,736 changes, and the 500 reachable ones were all from
+      the first two seconds of 11 September. Three consequences, in increasing order of how much
+      they matter: the twenty pages of pagination all sit inside that slice, so nothing newer is
+      reachable by clicking; the "busiest field" tile is computed over it (`175 changes across 46
+issues`, beside a true total of 18,736); and an audit log whose reachable rows are its oldest
+      answers the opposite of the question it is opened with, which is "what changed recently".
+      The cap banner is honest about the _magnitude_ — every figure is a lower bound — and says
+      nothing about the _slice_, which is the same omission item 14 fixed on the flow report.
+      Unlike its two siblings above, the fix here is cheap: `KEY (project_id, changed_at)` already
+      exists, so `DESC` reads the same number of rows at the same cost and needs no migration. It
+      is listed here rather than applied because it changes which rows listing 5 shows and the
+      order of its CSV, which is a product decision, not a correctness one — the recommendation is
+      to take it, together with the v1.1 filter controls that make any slice reachable
+      (`docs/LISTING-COPY-issue-history.md`, note 2).
+
 ---
 
 ## 12. ⚠️ The unverified surface, exhaustively
