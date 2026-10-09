@@ -186,16 +186,35 @@ export const flows = [
       const rows = await tableRows(page);
       expect.ok(rows.length > 1, 'the report lists more than one change, so order is observable');
 
-      let previous = -Infinity;
+      // ★ Newest first, and that direction is the assertion — not an
+      // incidental consequence of how the rows arrive.
+      //
+      // This page asks for 500 rows at offset 0 and has no filter controls,
+      // so the ordering decides which changes a reader can reach at all, not
+      // merely the order they appear in. Ascending meant that on a large
+      // project the only reachable rows were the oldest — found on a real
+      // 18,736-change tenant on 2026-10-09, where every reachable change came
+      // from the project's first two seconds. An audit log is opened to ask
+      // what changed *recently*.
+      let previous = Infinity;
       for (const row of rows) {
         const at = whenOf(row[0]);
         expect.ok(
-          at >= previous,
+          at <= previous,
           `the changes are out of order at "${row[0]}" — a reader cannot follow a sequence that ` +
             'is not in one, which is the only thing this view offers over Jira’s per-issue tab',
         );
         previous = at;
       }
+
+      const first = whenOf(rows[0][0]);
+      const last = whenOf(rows[rows.length - 1][0]);
+      expect.ok(
+        first > last,
+        'the newest change leads the table — ascending order is in one order too, and would ' +
+          'pass the loop above while putting the oldest 500 changes of a large project in ' +
+          'front of a reader and nothing since',
+      );
 
       const footnote = page.getByText('changes shown').first();
       await footnote.waitFor({ state: 'visible', timeout: 30_000 });
